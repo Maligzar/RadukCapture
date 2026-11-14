@@ -1611,7 +1611,8 @@ paths pass fault injection, and one unattended sky run completes.
    qualification report. 157.0 can start once 153.0's harness exists.
    **157.0's first part written 2026-11-14 (3.3.15)**: the emulator's
    faults and their test, and a camera dying mid-run now ends the run.
-   Next: 157.0b, the GoTo panel's slew timeout.
+   **157.0b written (3.3.16)**: the GoTo panel's slew timeout. Next: 157.1,
+   the soak, and 157.2, independent file checks.
 24. **Phase 156 (row 56), the unattended live-sky test run**, after the
    validation mode (155.4) it consumes and the controllers (153.1-153.2)
    it drives. Its CI dress rehearsal (156.5) can start once 153.0's

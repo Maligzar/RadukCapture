@@ -42,6 +42,8 @@
 #include <chrono>
 #include "../sky/PointingModel.h"
 #include "../core/IMount.h"
+#include "../core/SlewWatch.h"   // phase 157.0b
+#include "../core/CoreLog.h"
 #include "../core/TestProbe.h"
 #include "../core/FrameSlot.h"
 #include "WindowChrome.h"
@@ -2127,12 +2129,26 @@ private:
 
             // Wait for slew to complete (up to 90s)
             int waitMs = 0;
+            bool arrived = false;
             while (waitMs < 90000 && !m_surveyAbort.load()) {
-                if (!m_mount->IsSlewing()) break;
+                if (!m_mount->IsSlewing()) { arrived = true; break; }
                 Sleep(500);
                 waitMs += 500;
             }
             if (m_surveyAbort.load()) break;
+            // Phase 157.0b: it used to carry on here and solve wherever
+            // the mount happened to be. A slew that did not finish ends
+            // the survey, with the mount stopped.
+            if (!arrived) {
+                m_mount->CancelGoTo();
+                m_mount->StopSlew(0);
+                m_mount->StopSlew(1);
+                raduk::core::CoreLog("[GoToPanel] Survey %d/%d: the slew did not finish in 90 s - survey stopped\n",
+                                     i + 1, (int)m_surveyGrid.size());
+                auto* ws = new std::wstring(L"Survey stopped: a slew did not finish in 90 s - check the mount");
+                PostMessageW(m_hwnd, WM_USER+20, 0, (LPARAM)ws);
+                break;
+            }
 
             // Settle time — vibration dampening
             Sleep(5000);
@@ -2638,13 +2654,32 @@ private:
         // call it only ONCE per tick (it was previously called twice,
         // racing against the slew ending between the two calls).
         if (!m_lastSlewing) return;
-        if (!m_mount || !m_mount->IsConnected()) { m_lastSlewing = false; return; }
-        if (m_mount->IsSlewing()) {
+        if (!m_mount || !m_mount->IsConnected()) { m_lastSlewing = false; m_slewWatch.Cancel(); return; }
+        // Phase 157.0b: a GoTo that never arrives is a fault, not a long
+        // slew. The mount is stopped, it is said, and nothing acquires.
+        const double nowSec = (double)GetTickCount64() / 1000.0;
+        if (m_slewWatch.Current() == raduk::core::SlewWatch::State::Idle)
+            m_slewWatch.Start(nowSec);   // a GoTo seeded without DoGoTo still gets its limit
+        switch (m_slewWatch.Update(nowSec, m_mount->IsSlewing())) {
+        case raduk::core::SlewWatch::State::Slewing:
             SetWindowTextW(m_lblStatus, L"SLEWING...");
-        } else {
+            break;
+        case raduk::core::SlewWatch::State::TimedOut:
             m_lastSlewing = false;
+            m_mount->CancelGoTo();
+            m_mount->StopSlew(0);
+            m_mount->StopSlew(1);
+            SetWindowTextW(m_lblStatus, L"GOTO DID NOT FINISH - mount stopped; check it");
+            raduk::core::CoreLog("[GoToPanel] GoTo to %s still slewing after %.0f s: stopped the mount\n",
+                                 m_currentTarget.c_str(), m_slewWatch.Elapsed(nowSec));
+            m_slewWatch.Cancel();
+            break;
+        default:   // arrived
+            m_lastSlewing = false;
+            m_slewWatch.Cancel();
             SetWindowTextW(m_lblStatus, L"SLEW COMPLETE — consider plate solving");
             if (m_onGoToComplete) m_onGoToComplete(m_currentTarget);
+            break;
         }
     }
 
@@ -2719,6 +2754,7 @@ private:
         }
         m_mount->GoToRADec(ra_h, dec_deg);
         m_lastSlewing = true;
+        m_slewWatch.Start((double)GetTickCount64() / 1000.0);   // phase 157.0b
         if (predicted) {
             char cb[220];
             sprintf_s(cb, "Pointing map (%s) predicts %+.0f\" east, %+.0f\" north here - %s",
@@ -3406,6 +3442,7 @@ private:
 
     // GoTo state
     bool        m_lastSlewing   = false;
+    raduk::core::SlewWatch m_slewWatch;   // phase 157.0b
     int         m_alignPoints   = 0;
     std::string m_currentTarget;
     std::function<void(const std::string&)> m_onTargetChanged;
