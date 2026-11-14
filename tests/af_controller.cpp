@@ -33,12 +33,21 @@ struct FakeRoutine {
     bool IsRunning() const { return running; }
     void Abort() { ++aborts; running = false; }
     bool Start(int pos, bool fine) { ++starts; lastPos = pos; lastFine = fine; running = true; return true; }
+    // Phase 161.3.
+    int calStarts = 0; raduk::core::FocusCalibration cal;
+    bool StartCalibration(int pos) { ++calStarts; lastPos = pos; running = true; return true; }
+    raduk::core::FocusCalibration Calibration() const { return cal; }
+    // Phase 161: AE between the stages.
+    bool wants = false; int settledCalls = 0;
+    bool WantsExposure() const { return wants; }
+    void ExposureSettled() { ++settledCalls; wants = false; }
 };
 struct FakeAe {
     bool enabled = false, autoMode = false, settled = false;
     void SetEnabled(bool e) { enabled = e; }
     void SetAuto(bool a) { autoMode = a; }
     bool Settled() const { return settled; }
+    bool IsAuto() const { return autoMode; }
 };
 struct FakeFocuser : raduk::core::IFocuser {
     bool open = true; int pos = 12345;
@@ -54,6 +63,17 @@ struct FakeFocuser : raduk::core::IFocuser {
     int  ApproachBacklash() const override { return 0; }
     void SetApproachDirection(int) override {}
     int   GetPosition() const override { return pos; }
+    // Phase 161.0a.
+    bool readFails = false;
+    bool TryGetPosition(int& p) const override { if (readFails) return false; p = pos; return true; }
+    bool MoveToFar(int p) override { pos = p; return true; }
+    unsigned StopGeneration() const override { return 0; }
+    bool MoveInSequence(unsigned, int p, bool) override { pos = p; return true; }
+    void Service() override {}
+    void SetMaxTravel(int) override {}
+    int  MaxTravel() const override { return 0; }
+    raduk::core::MoveRefusal LastRefusalKind() const override { return raduk::core::MoveRefusal::None; }
+    std::string LastRefusal() const override { return ""; }
     int   GetMaxPosition() const override { return 200000; }
     float GetTemperature() const override { return 10.0f; }
     void SetReverse(bool) override {}
@@ -152,18 +172,132 @@ int main() {
     }
     {
         Rig r;
-        r.c.OnComplete(Result{true, 168000, 82.5f, 12.25f, ""});
+        r.c.OnComplete(Result{true, 168000, 82.5f, 12.25f, ""}); r.c.Deliver();
         Check(r.LastStatus() == "AF done: pos=168000  sharp=82.5%  +12.2%" &&
               r.ui.Saw("[AF] Complete: pos=168000  sharp=82.5%  improvement=+12.2%") &&
               !r.running.empty() && !r.running.back() && r.failed == 0,
               "success: the panel, the log, the button", r.LastStatus());
-        r.c.OnComplete(Result{true, 168000, 82.5f, 12.25f, "not bracketed"});
+        r.c.OnComplete(Result{true, 168000, 82.5f, 12.25f, "not bracketed"}); r.c.Deliver();
         Check(r.LastStatus().find("+12.2% \xE2\x80\x94 not bracketed") != std::string::npos,
               "a caveat on success still reaches the panel");
-        r.c.OnComplete(Result{false, 0, 0, 0, "Focus got worse"});
+        r.c.OnComplete(Result{false, 0, 0, 0, "Focus got worse"}); r.c.Deliver();
         Check(r.LastStatus() == "Focus got worse" && r.sessions.back() == "AutoFocus failed: Focus got worse" &&
               r.ui.Saw("[AF] Failed: Focus got worse") && r.failed == 1,
               "failure: said everywhere, and Autorun told");
+    }
+
+    // Phase 161.3: CALIBRATE FOCUS goes in the way autofocus does (AE
+    // first), starts the calibration and not a sweep, and ends through
+    // its own hook.
+    {
+        Rig r;
+        int calibrated = 0; bool okSeen = false;
+        AutofocusHooks h;
+        h.running = [&](bool b) { r.running.push_back(b); };
+        h.status  = [&](const std::string& s) { r.statuses.push_back(s); };
+        h.failed  = [&] { ++r.failed; };
+        h.calibrated = [&](const raduk::core::FocusCalibration& c) { ++calibrated; okSeen = c.ok; };
+        r.c.SetHooks(h);
+        r.c.StartCalibration();
+        Check(r.c.WaitingForAE() && r.ae.enabled && r.ae.autoMode && r.c.Calibrating(),
+              "calibration: AE on and in AUTO first, as for autofocus");
+        Check(!r.c.Tick(false, false, true) && r.af.calStarts == 0, "nothing starts while AE has not settled");
+        r.ae.settled = true;
+        Check(r.c.Tick(false, false, true) && r.af.calStarts == 1 && r.af.starts == 0 && r.af.lastPos == 12345,
+              "then the calibration run, not a sweep, from the focuser's position");
+        r.af.running = false; r.af.cal.ok = true; r.af.cal.haveSlack = true;
+        r.c.OnComplete(Result{true, 12345, 0, 0, ""}); r.c.Deliver();
+        Check(calibrated == 1 && okSeen && r.failed == 0 && !r.c.Calibrating() && !r.c.Busy(),
+              "its result goes to the calibration hook, once");
+        // And the next press of AUTO FOCUS is autofocus again.
+        r.ae.settled = true;
+        r.c.Start(); r.c.Tick(false, false, true);
+        Check(r.af.starts == 1 && r.af.calStarts == 1, "the next start is a sweep again");
+        r.af.running = false;
+        r.c.OnComplete(Result{true, 168000, 80, 5, ""}); r.c.Deliver();
+        Check(calibrated == 1, "whose result does not go to the calibration hook");
+        // A run that measured nothing is a failure.
+        r.ae.settled = true;
+        r.c.StartCalibration(); r.c.Tick(false, false, true);
+        r.af.running = false; r.af.cal = raduk::core::FocusCalibration{};
+        r.c.OnComplete(Result{false, 0, 0, 0, "nothing could be measured"}); r.c.Deliver();
+        Check(calibrated == 2 && !okSeen && r.failed == 1, "a calibration that measured nothing: said, and counted as a failure");
+        // Aborted while still waiting for AE: the next start is a sweep.
+        r.ae.settled = false;
+        r.c.StartCalibration();
+        r.c.Abort();
+        Check(!r.c.Calibrating(), "aborted before it began: no calibration is left pending");
+    }
+
+    // Phase 161.1: the routine's thread only leaves the result; the hooks
+    // run when the frame loop calls Deliver(), on its own thread.
+    {
+        Rig r;
+        r.ae.settled = true;
+        r.c.Start();
+        r.c.Tick(false, false, true);
+        const size_t before = r.statuses.size();
+        r.af.running = false;                                   // the routine has finished
+        r.c.OnComplete(Result{false, 0, 0, 0, "Focus got worse"});  // on its thread
+        Check(r.statuses.size() == before && r.failed == 0,
+              "a completion runs no hook on the routine's thread");
+        Check(r.c.Busy(), "and autofocus still reads as busy: Autorun has not been told yet");
+        Check(r.c.Deliver() && r.failed == 1 && r.LastStatus() == "Focus got worse",
+              "Deliver() runs them: the panel, and Autorun told", r.LastStatus());
+        Check(!r.c.Busy(), "and only then is it idle");
+        Check(!r.c.Deliver(), "a second Deliver() has nothing to do");
+    }
+
+    // Phase 161: AE is part of autofocus from the first press to the
+    // result. Settled before the sweep (above), held inside a stage,
+    // released while the routine waits for it at the coarse focus.
+    {
+        Rig r;
+        Check(r.c.ExposureHold() == nullptr, "idle: autofocus holds nothing");
+        r.c.Start();
+        Check(r.ae.enabled && r.ae.autoMode, "starting turns AE on, in AUTO");
+        Check(r.c.ExposureHold() == nullptr, "waiting for AE: it must be free to act");
+        r.ae.settled = true;
+        r.c.Tick(false, false, true);
+        Check(r.c.ExposureHold() != nullptr && std::string(r.c.ExposureHold()) == "autofocus",
+              "sweeping: AE is held, and says for what");
+        r.ae.settled = false;                 // held: it has not looked
+        r.c.ExposureTicked(false);
+        Check(r.af.settledCalls == 0, "no window open: nothing is told to the routine");
+
+        r.af.wants = true;                    // parked at the coarse focus
+        Check(r.c.ExposureHold() == nullptr, "between the stages: AE is released");
+        r.c.ExposureTicked(false);
+        Check(r.af.settledCalls == 0 && r.af.wants, "AE still working: the routine keeps waiting");
+        r.ae.settled = true;
+        r.c.ExposureTicked(false);
+        Check(r.af.settledCalls == 1, "AE has looked and has nothing to change: the routine is told");
+        Check(r.c.ExposureHold() != nullptr, "and AE is held again for the fine pass");
+
+        r.af.wants = true; r.ae.settled = false;
+        r.c.ExposureTicked(true);
+        Check(r.af.settledCalls == 2, "a recording holds AE: the routine is not kept waiting");
+        r.af.wants = true; r.ae.autoMode = false;
+        r.c.ExposureTicked(false);
+        Check(r.af.settledCalls == 3, "AE taken out of AUTO meanwhile: the same");
+    }
+
+    // Phase 161.0a: the sweep is centred on the focuser's position, so a
+    // position that could not be read starts nothing.
+    {
+        Rig r;
+        r.ae.settled = true;
+        r.c.Start();
+        r.f.readFails = true;
+        Check(!r.c.Tick(false, false, true) && r.af.starts == 0,
+              "a position that cannot be read: no sweep", r.LastStatus());
+        Check(!r.c.Busy() && r.failed == 1 && !r.running.empty() && !r.running.back() &&
+              r.LastStatus().find("could not be read") != std::string::npos,
+              "said on the panel, the button released, Autorun told");
+        r.f.readFails = false;
+        r.c.Start();
+        Check(r.c.Tick(false, false, true) && r.af.starts == 1 && r.af.lastPos == 12345,
+              "and the next press, with a good read, sweeps from it");
     }
 
     if (g_fail) { printf("af_controller: %d FAILED\n", g_fail); return 1; }

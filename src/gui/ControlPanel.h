@@ -224,6 +224,7 @@ public:
     // Phase 9 — autofocus
     // cb(true) = start autofocus; cb(false) = abort
     void SetAutofocusCallback(std::function<void(bool)> cb) { m_onAutofocus = cb; }
+    void SetCalibrateFocusCallback(std::function<void()> cb) { m_onCalibrateFocus = cb; }   // 161.3
     // Mount controller button — clicked to show/reposition the floating panel
     void SetMountCtrlCallback(std::function<void()> cb) { m_onMountCtrl = cb; }
     // Phase 67: "cables dressed" zeroes the cord-wrap total. It is the
@@ -789,6 +790,17 @@ private:
 
     raduk::core::ASICamera*    m_camera  = nullptr;
     raduk::core::EAFFocuser*   m_focuser = nullptr;
+    // Phase 161.0a: a focuser move that was refused says so on the focus
+    // status line, and a move past the travel guard is asked for twice.
+    raduk::core::FarMoveConfirm m_farFocusMove;
+    void FocusMoveSaid(bool moved) {
+        if (moved || !m_focuser) return;
+        SetAutofocusStatus((L"Focuser did not move: " +
+                            raduk::core::ToWide(m_focuser->LastRefusal())).c_str());
+    }
+    void FocusStep(int steps) {
+        if (m_focuser) FocusMoveSaid(m_focuser->MoveRelative(steps));
+    }
     raduk::core::IMount*       m_mount   = nullptr;
 
     // ── Camera controls ────────────────────────────────────────
@@ -1008,6 +1020,7 @@ private:
     std::function<void(const std::string&)> m_onGoTo;
     std::function<void()>                   m_onSolveSync;
     std::function<void(bool)>               m_onAutofocus;  // Phase 9
+    std::function<void()>                   m_onCalibrateFocus;   // phase 161.3
     std::function<void()>                   m_onMountCtrl;  // floating mount controller toggle
     std::function<void()>                   m_onCablesDressed;  // cord-wrap reset
     std::function<void()>                   m_onRigSetup;
