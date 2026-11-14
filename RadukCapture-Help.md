@@ -1559,6 +1559,34 @@ figure scatters widely. To check it:
 4. Set `FocuserBacklashSteps` in rig.ini a little above it, and leave the
    EAF's own backlash at 0, which the app already does while connected.
 
+**CALIBRATE FOCUS: measuring what a step does.** Hold `Ctrl` and click
+**AUTO FOCUS** (or send the remote command `calibrate_focus`). Run autofocus
+first: the calibration starts from where the focuser is and takes that as
+focus. On a planet or a bright star, well up in the sky, not while
+recording. It takes a few minutes and ends where it began. Auto-exposure
+settles first, as for autofocus, and gets a turn before each wing. It
+measures:
+- **How well a position repeats:** the same step approached five times.
+- **The knob's slack:** it moves out to where the image is clearly softer,
+  then reverses in small moves until the image answers. That count is what
+  belongs in `FocuserBacklashSteps`, and `FocuserOvershootSteps` must be
+  larger than it.
+- **Steps to defocus:** how fast the target's half-flux diameter grows on
+  both sides of focus. With the pixel size, focal ratio and
+  `CentralObstruction` from rig.ini, that is the focal-plane travel of one
+  step, and so the width of the focus zone in steps.
+
+The status line gives the result (for example "3.4 um a step, the focus zone
+is 79 steps; slack 590 steps"), and a block is appended to
+`focus_calibration.ini` in the data folder with the time, the EAF's
+temperature, the altitude and every figure. Blocks are never overwritten:
+run it again at another altitude or temperature and compare. A figure it
+could not measure is left out and the status line says why; a target that
+fills the frame (the Moon) gives the slack but not the steps to defocus,
+which need a disc with sky round it. On a disc the steps-to-defocus figure
+reads about 3% low, from the arithmetic of a blurred disc; a star reads
+true.
+
 **Tips:**
 - Start near focus. The sweep covers ±3000 steps; if true focus is
   outside that it will say so rather than guess.
@@ -2973,6 +3001,7 @@ real site is stored. Most of it is written for you.
 | `CaptureFormat` | `ser` or `fits`, as the toolbar's selector leaves it. |
 | `FocuserBacklashSteps` | The focuser's backlash in steps. `-1` (the default) uses the EAF's own figure, else 200. Set it once several autofocus runs' `Backlash measured` lines agree. |
 | `FocuserOneSidedMoves` | `1` (default): every focuser move ends travelling one way by at least the backlash. `0` off. |
+| `CentralObstruction` | The central obstruction as a fraction of the aperture's diameter: `0.34` (default, the 8SE). CALIBRATE FOCUS uses it to turn the growth of a defocused image into focal-plane travel per step. `0` for a refractor. |
 | `FocuserOvershootSteps` | How far a one-sided focuser move goes past its target before coming back, in steps. It has only to be larger than the knob's real slack: too large costs a second or two a move, too small leaves the mirror inside the slack. `-1` (the default): three times the backlash figure, at least 1500. Unlike `FocuserBacklashSteps`, it does not have to be measured to be safe. |
 | `FocuserMaxTravelSteps` | The furthest one focuser command may travel, in steps: `12000` (default), about two turns of the 8SE's knob. A longer move is refused and says why; the panel's GO TO asks for a second press and then makes it; autofocus stays within this of where it started. A move is also refused when the focuser's position cannot be read. `0` turns the guard off. |
 | `FocuserFinalDirection` | `out` (default, rising step numbers) or `in`: which way every move ends. Set it so the last travel pushes the primary toward the corrector. See [Autofocus Routine](#autofocus-routine). |
@@ -3225,7 +3254,7 @@ order.
 | 3.3.11 | 153.1 | Nothing changes on screen. Autofocus's wiring (the press-twice when it is not ready, waiting for auto-exposure, the Moon's fine pass, its messages) moved out of the main program into a controller with its own tests |
 | 3.3.12 | 153.2 | Nothing changes on screen. Recording's wiring (starting, the one way a run stops, the quality gate, the disk, limit and derotation stops, and whether a finished run is auto-stacked) moved into a controller with its own tests |
 | 3.3.13 | 153.3 | Nothing changes on screen. A sequence of runs (`[RUNS]`) is driven by a controller with its own tests: when to focus and record, each run noted, the seeing hold and the Jupiter deferral announced, and the ranked list at the end |
-| 3.3.14 | 161 plan, 161.0a to 161.2 | The focuser no longer moves from a position it could not read (a failed read used to count as step 0), and no single command travels further than `FocuserMaxTravelSteps` (12,000 by default): a longer one is refused and the focus status line says why, and GO TO asks for a second press. A second key press during a move adds to where that move ends. Autofocus checks that every move was accepted and arrived, stops the motor when one fails, and says "Aborted" for an abort. A stop cannot be overtaken: once STOP, an abort or the emergency stop has been pressed, no move of a running sweep can start, and the panel's STOP now ends a sweep. Focuser moves now go past by `FocuserOvershootSteps` (1,500 by default) before coming back, apart from the backlash figure, so an unmeasured backlash no longer leaves the mirror inside the knob's slack. The preview can no longer step back to an older frame when the camera pauses, and autofocus only counts a measurement from a frame taken after the focuser had settled. Auto-exposure, which already settled before a sweep and was held through it, now also gets a turn between the coarse sweep and the fine pass, at the coarse focus, so an exposure set on a defocused disc cannot clip the focused one. With it, the plan for phase 161 from a first-principles review of the focuser and autofocus. |
+| 3.3.14 | 161 plan, 161.0a to 161.3 | The focuser no longer moves from a position it could not read (a failed read used to count as step 0), and no single command travels further than `FocuserMaxTravelSteps` (12,000 by default): a longer one is refused and the focus status line says why, and GO TO asks for a second press. A second key press during a move adds to where that move ends. Autofocus checks that every move was accepted and arrived, stops the motor when one fails, and says "Aborted" for an abort. A stop cannot be overtaken: once STOP, an abort or the emergency stop has been pressed, no move of a running sweep can start, and the panel's STOP now ends a sweep. `Ctrl`+click on AUTO FOCUS runs CALIBRATE FOCUS, which measures the knob's slack, how well a position repeats, and the focal-plane travel of one step (so the focus zone in steps), and appends them to `focus_calibration.ini`. Focuser moves now go past by `FocuserOvershootSteps` (1,500 by default) before coming back, apart from the backlash figure, so an unmeasured backlash no longer leaves the mirror inside the knob's slack. The preview can no longer step back to an older frame when the camera pauses, and autofocus only counts a measurement from a frame taken after the focuser had settled. Auto-exposure, which already settled before a sweep and was held through it, now also gets a turn between the coarse sweep and the fine pass, at the coarse focus, so an exposure set on a defocused disc cannot clip the focused one. With it, the plan for phase 161 from a first-principles review of the focuser and autofocus. |
 
 ---
 

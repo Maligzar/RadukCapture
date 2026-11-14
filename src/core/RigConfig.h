@@ -192,6 +192,14 @@ struct RigConfig {
     }
     // Phase 108: sets the resolution a run can lose to rotation.
     float  apertureMm = 203.0f;
+    // Phase 161.3: the central obstruction as a fraction of the aperture's
+    // diameter. CALIBRATE FOCUS turns the growth of a defocused image into
+    // focal-plane travel per step, and the size of the hole in that image
+    // is part of the sum. 0.34 is the 8SE's secondary baffle over its 203
+    // mm; a refractor is 0.
+    //   CentralObstruction=0.34
+    // UNVERIFIED(item 59): the 8SE's obstruction, measured on a defocused star (hole diameter over disc diameter)
+    float  centralObstruction = 0.34f;
     // Phase 77: hand each finished recording to AutoStakkert
     // automatically. Off by default - stacking is minutes of CPU and
     // should be opted into, not sprung on someone mid-session.
@@ -539,6 +547,7 @@ struct RigConfig {
         wf("GrsDriftDegPerMonth", grsDriftDegPerMonth);
         wf("NeoMagLimit", neoMagLimit);
         wf("ApertureMm", apertureMm);
+        wf("CentralObstruction", centralObstruction);
         ws("AutoStackOnStop", autoStackOnStop ? "1" : "0");
         ws("AutoStakkertPath", autoStakkertPath);
         wf("GuideRateArcsecPerSec", guideRateArcsecPerSec);
@@ -752,6 +761,8 @@ private:
         cfg.grsDriftDegPerMonth   = rf("GrsDriftDegPerMonth", cfg.grsDriftDegPerMonth);
         cfg.neoMagLimit           = (float)rf("NeoMagLimit", cfg.neoMagLimit);
         cfg.apertureMm            = (float)rf("ApertureMm", cfg.apertureMm);
+        cfg.centralObstruction    = (float)rf("CentralObstruction", cfg.centralObstruction);
+        if (!(cfg.centralObstruction >= 0.0f) || cfg.centralObstruction > 0.9f) cfg.centralObstruction = 0.34f;
         cfg.autoStackOnStop       = rs("AutoStackOnStop", cfg.autoStackOnStop ? "1" : "0") == "1";
         cfg.autoStakkertPath      = rs("AutoStakkertPath", cfg.autoStakkertPath);
         cfg.guideRateArcsecPerSec = (float)rf("GuideRateArcsecPerSec", cfg.guideRateArcsecPerSec);

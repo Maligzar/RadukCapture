@@ -224,6 +224,7 @@ public:
     // Phase 9 — autofocus
     // cb(true) = start autofocus; cb(false) = abort
     void SetAutofocusCallback(std::function<void(bool)> cb) { m_onAutofocus = cb; }
+    void SetCalibrateFocusCallback(std::function<void()> cb) { m_onCalibrateFocus = cb; }   // 161.3
     // Mount controller button — clicked to show/reposition the floating panel
     void SetMountCtrlCallback(std::function<void()> cb) { m_onMountCtrl = cb; }
     // Phase 67: "cables dressed" zeroes the cord-wrap total. It is the
@@ -1019,6 +1020,7 @@ private:
     std::function<void(const std::string&)> m_onGoTo;
     std::function<void()>                   m_onSolveSync;
     std::function<void(bool)>               m_onAutofocus;  // Phase 9
+    std::function<void()>                   m_onCalibrateFocus;   // phase 161.3
     std::function<void()>                   m_onMountCtrl;  // floating mount controller toggle
     std::function<void()>                   m_onCablesDressed;  // cord-wrap reset
     std::function<void()>                   m_onRigSetup;

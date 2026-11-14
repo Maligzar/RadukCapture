@@ -101,6 +101,16 @@ Bench stages first: they need no sky, and the sky stages are not safe to run bef
 
 ### 161.3 Calibrate the focuser on the sky (clear night, M)
 
+**The routine written 2026-11-14 (3.3.14); the run on the sky is clear-night item 59.** As built:
+- `Ctrl`+click on AUTO FOCUS, or the remote `calibrate_focus`. It goes in through `AutofocusController::StartCalibration`, the same way as autofocus: AE on and settled first, held during a measurement, given a turn before each wing. It starts from where the focuser is, taken as focus, so autofocus is run first.
+- **Repeatability:** one step approached the final way five times, the edge score's spread.
+- **Slack:** out the final way to where the edge score is about 0.6 of its top (on the slope: at the top a small move does not show), then back in 10, 25 and 50-step moves until two readings leave the band. Corrected for half a probe and for the mirror travel the score needed to cross the threshold. It probes three overshoots, at most 4,000 steps, and says "more than" beyond that.
+- **Scale:** it steps out until the half-flux diameter is 1.5 times its focus value, then measures four points a wing from there to twice that, each wing travelling the final way. The figure is the square root of the leading term of a parabola through HFD squared (`FitWings`). Checked on a simulated disc convolved with a 34%-obstructed annulus at Mars, Saturn and Jupiter sizes: 3 to 4% low, where a straight line through the same points is 8 to 12% low.
+- With rig.ini's pixel size, focal ratio and the new `CentralObstruction` (0.34, UNVERIFIED), that becomes um per step and the focus zone in steps (`ScaleFrom`).
+- A block is appended to `focus_calibration.ini` in the data root: time, the EAF's temperature, the altitude, the target, every figure. What was not measured is left out. The emulator's blur constant and the routine's "2,000 steps per mm" note are NOT changed here: they wait for a real figure.
+- **Not built:** the settle-time curve and the image shift across a reversal (the routine is not fed the centroid). Both stay in the table below for a later PR.
+- Gated by `tests/focus_calibration.cpp`: the arithmetic on hand-worked figures; the real routine on an emulated focuser with 600 steps of slack it is not told and a known 0.12 px of HFD a step (it returned 0.118 to 0.122 and 591 to 616 over three runs, and ended on the step and mirror position it began at); a frame-filling target (slack, no scale, and it says why); no edge score (it stops without moving); a slack beyond the reversal's reach. `af_controller` covers the way in and out.
+
 One command, CALIBRATE FOCUS, on a bright star or a planet's limb at 45° or higher. About ten minutes. It writes `focus_calibration.ini` beside rig.ini with the date, the EAF's temperature and the altitude, and never overwrites an older block.
 
 | Measured | How | Gives |

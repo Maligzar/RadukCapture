@@ -31,6 +31,7 @@
 #include <string>
 
 #include "../core/IFocuser.h"
+#include "../core/FocusCalibration.h"   // phase 161.3
 #include "Clock.h"
 #include "UiSink.h"
 
@@ -43,6 +44,9 @@ struct AutofocusHooks {
     std::function<void()>                   showAutoExposure; // CAMERA open, AE shown as AUTO
     std::function<void(const std::string&)> session;          // a Focuser line in the session log
     std::function<void()>                   failed;           // a sweep failed (Autorun reads it)
+    // Phase 161.3: a calibration run ended (measured or not). The app
+    // works out the optics and appends the block to focus_calibration.ini.
+    std::function<void(const raduk::core::FocusCalibration&)> calibrated;
 };
 
 template <class Routine, class Ae>
@@ -102,9 +106,22 @@ public:
         m_waitStart = m_clock->Now();
     }
 
+    // Phase 161.3: CALIBRATE FOCUS. The same way in as autofocus (AE on,
+    // settled, then held), because auto-exposure is part of anything
+    // that sweeps the focuser; what starts when AE is done is the
+    // calibration run, not a sweep. From a position already in focus.
+    void StartCalibration() {
+        m_calibrate = true;
+        Start();
+        if (!m_waitingForAE) m_calibrate = false;   // no focuser: nothing started
+        else Status("AE AUTO on: settling exposure before calibrating the focuser");
+    }
+    bool Calibrating() const { return m_calibrate; }
+
     // The user's abort: the panel says so.
     void Abort() {
         m_waitingForAE = false;
+        if (!m_af.IsRunning()) m_calibrate = false;   // aborted while still waiting for AE
         m_af.Abort();
         if (m_hooks.running) m_hooks.running(false);
         Status("Aborted");
@@ -129,6 +146,7 @@ public:
         int pos = 0;
         if (!m_focuser.TryGetPosition(pos)) {
             if (m_hooks.running) m_hooks.running(false);
+            m_calibrate = false;
             Status("The focuser's position could not be read: autofocus not started");
             Session("AutoFocus not started: the focuser's position could not be read");
             Line("[AF] Not started: the focuser's position could not be read\n");
@@ -139,6 +157,21 @@ public:
         std::snprintf(b, sizeof(b), "[AF] AE %s after %.1fs; V-curve scan from pos=%d\n",
                       settled ? "settled" : "not settled, going anyway", waited, pos);
         Line(b);
+        if (m_calibrate) {
+            // Phase 161.3: the calibration run, from here.
+            std::snprintf(b, sizeof(b), "Focuser calibration: starting at pos=%d", pos);
+            Session(b);
+            Status("Calibrating the focuser (a few minutes), AE held between its measurements");
+            Line("[CAL] calibration run started through the autofocus controller\n");
+            if (!m_af.StartCalibration(pos)) {
+                m_calibrate = false;
+                if (m_hooks.running) m_hooks.running(false);
+                Status("The focuser calibration could not start");
+                if (m_hooks.failed) m_hooks.failed();
+                return false;
+            }
+            return true;
+        }
         std::snprintf(b, sizeof(b), "AutoFocus: starting from pos=%d", pos);
         Session(b);
         Status("Sweeping, AE held until it ends");
@@ -210,6 +243,22 @@ private:
     template <class Result>
     void Complete(const Result& r) {
         if (m_hooks.running) m_hooks.running(false);
+        if (m_calibrate) {
+            // Phase 161.3: a calibration's own ending. The hook writes the
+            // figures and the status line; a run that measured nothing is
+            // a failure like any other.
+            m_calibrate = false;
+            const raduk::core::FocusCalibration cal = m_af.Calibration();
+            Line(std::string("[CAL] ") + (cal.ok ? "finished" : "ended without a figure") +
+                 (r.message.empty() ? "" : ": " + r.message) + "\n");
+            if (m_hooks.calibrated) m_hooks.calibrated(cal);
+            else Status(cal.ok ? "Focuser calibrated" : "Focuser calibration: " + r.message);
+            if (!cal.ok) {
+                Session("Focuser calibration failed: " + r.message);
+                if (m_hooks.failed) m_hooks.failed();
+            }
+            return;
+        }
         char b[320];
         if (r.success) {
             const char* sep = r.message.empty() ? "" : " \xE2\x80\x94 ";   // " — "
@@ -245,6 +294,7 @@ private:
     bool                   m_waitingForAE = false;
     double                 m_waitStart = 0.0;
     double                 m_confirmUntil = -1e18;
+    bool                   m_calibrate = false;   // phase 161.3: what Tick starts is a calibration
     std::mutex             m_resultMx;            // phase 161.1
     std::function<void()>  m_result;
     std::atomic<bool>      m_resultPending{false};

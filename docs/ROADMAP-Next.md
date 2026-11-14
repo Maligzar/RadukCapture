@@ -1639,7 +1639,8 @@ checked against the eye (clear-night items 1, 37, 55, 57 and 58).
 25a. **161.3 to 161.6 (row 61)**: the focuser calibrated on the sky
     (um per step, slack, repeatability, settle), the sweep in units of
     the critical focus zone, and a result with an error bar. 158 builds
-    on its figures.
+    on its figures. **161.3's routine written 2026-11-14 (3.3.14)**:
+    CALIBRATE FOCUS; its run on the sky is clear-night item 59.
     Model: **Fable** for 161.3, 161.4 and 161.5a (the noise gate);
     **Opus** for 161.5b (the region, the green option) and 161.6.
 26. **Phases 147 and 148 (rows 47, 48)**: AVI, then TIFF.

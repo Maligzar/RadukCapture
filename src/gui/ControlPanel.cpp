@@ -1024,6 +1024,13 @@ bool ControlPanel::HandleCommand(WPARAM wParam, LPARAM lParam) {
         }
 
         case ID_BTN_AUTOFOCUS:
+            // Phase 161.3: Ctrl+click starts CALIBRATE FOCUS instead of a
+            // sweep (from a position already in focus). A running sweep
+            // or calibration is aborted by a plain click, as before.
+            if (!m_afRunning && (GetKeyState(VK_CONTROL) & 0x8000) && m_onCalibrateFocus) {
+                m_onCalibrateFocus();
+                return true;
+            }
             if (m_onAutofocus) m_onAutofocus(!m_afRunning);
             return true;
 

@@ -33,6 +33,10 @@ struct FakeRoutine {
     bool IsRunning() const { return running; }
     void Abort() { ++aborts; running = false; }
     bool Start(int pos, bool fine) { ++starts; lastPos = pos; lastFine = fine; running = true; return true; }
+    // Phase 161.3.
+    int calStarts = 0; raduk::core::FocusCalibration cal;
+    bool StartCalibration(int pos) { ++calStarts; lastPos = pos; running = true; return true; }
+    raduk::core::FocusCalibration Calibration() const { return cal; }
     // Phase 161: AE between the stages.
     bool wants = false; int settledCalls = 0;
     bool WantsExposure() const { return wants; }
@@ -180,6 +184,49 @@ int main() {
         Check(r.LastStatus() == "Focus got worse" && r.sessions.back() == "AutoFocus failed: Focus got worse" &&
               r.ui.Saw("[AF] Failed: Focus got worse") && r.failed == 1,
               "failure: said everywhere, and Autorun told");
+    }
+
+    // Phase 161.3: CALIBRATE FOCUS goes in the way autofocus does (AE
+    // first), starts the calibration and not a sweep, and ends through
+    // its own hook.
+    {
+        Rig r;
+        int calibrated = 0; bool okSeen = false;
+        AutofocusHooks h;
+        h.running = [&](bool b) { r.running.push_back(b); };
+        h.status  = [&](const std::string& s) { r.statuses.push_back(s); };
+        h.failed  = [&] { ++r.failed; };
+        h.calibrated = [&](const raduk::core::FocusCalibration& c) { ++calibrated; okSeen = c.ok; };
+        r.c.SetHooks(h);
+        r.c.StartCalibration();
+        Check(r.c.WaitingForAE() && r.ae.enabled && r.ae.autoMode && r.c.Calibrating(),
+              "calibration: AE on and in AUTO first, as for autofocus");
+        Check(!r.c.Tick(false, false, true) && r.af.calStarts == 0, "nothing starts while AE has not settled");
+        r.ae.settled = true;
+        Check(r.c.Tick(false, false, true) && r.af.calStarts == 1 && r.af.starts == 0 && r.af.lastPos == 12345,
+              "then the calibration run, not a sweep, from the focuser's position");
+        r.af.running = false; r.af.cal.ok = true; r.af.cal.haveSlack = true;
+        r.c.OnComplete(Result{true, 12345, 0, 0, ""}); r.c.Deliver();
+        Check(calibrated == 1 && okSeen && r.failed == 0 && !r.c.Calibrating() && !r.c.Busy(),
+              "its result goes to the calibration hook, once");
+        // And the next press of AUTO FOCUS is autofocus again.
+        r.ae.settled = true;
+        r.c.Start(); r.c.Tick(false, false, true);
+        Check(r.af.starts == 1 && r.af.calStarts == 1, "the next start is a sweep again");
+        r.af.running = false;
+        r.c.OnComplete(Result{true, 168000, 80, 5, ""}); r.c.Deliver();
+        Check(calibrated == 1, "whose result does not go to the calibration hook");
+        // A run that measured nothing is a failure.
+        r.ae.settled = true;
+        r.c.StartCalibration(); r.c.Tick(false, false, true);
+        r.af.running = false; r.af.cal = raduk::core::FocusCalibration{};
+        r.c.OnComplete(Result{false, 0, 0, 0, "nothing could be measured"}); r.c.Deliver();
+        Check(calibrated == 2 && !okSeen && r.failed == 1, "a calibration that measured nothing: said, and counted as a failure");
+        // Aborted while still waiting for AE: the next start is a sweep.
+        r.ae.settled = false;
+        r.c.StartCalibration();
+        r.c.Abort();
+        Check(!r.c.Calibrating(), "aborted before it began: no calibration is left pending");
     }
 
     // Phase 161.1: the routine's thread only leaves the result; the hooks

@@ -1352,6 +1352,16 @@ the bench already showed, so the night only has to confirm it. The plan is
     knob's slack by hand: approach a sharp view outward, then reverse in
     10-step moves and count until the image changes. `FocuserOvershootSteps`
     (1,500 unless set) must be larger than that count; if it is not, set
-    it, and put the count itself in `FocuserBacklashSteps`. When 161.3 is
-    built, its CALIBRATE FOCUS run (um per step, slack, repeatability,
-    settle time, image shift) is this item too.
+    it, and put the count itself in `FocuserBacklashSteps`. Then CALIBRATE FOCUS
+    (161.3): run autofocus on a planet or a bright star above 45 degrees,
+    then `Ctrl`+click AUTO FOCUS. Read the status line and the new block
+    in `focus_calibration.ini`. Three things to judge: the slack against
+    the hand count above (they should agree within a few tens of steps);
+    `um_per_step` against the 3.4 to 4.8 expected from the thread and the
+    moving primary, and against the 0.5 the routine's old note implies;
+    and `return_ratio`, which should be near 1. Run it again at about 30
+    degrees and about 70 on another night. Put the slack in
+    `FocuserBacklashSteps`, make `FocuserOvershootSteps` larger than it,
+    and note `critical_zone_steps`: phase 161.4 sizes the sweep from it.
+    Check `CentralObstruction` on a well-defocused star: the dark hole's
+    diameter over the disc's.

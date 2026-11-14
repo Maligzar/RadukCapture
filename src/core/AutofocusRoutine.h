@@ -50,6 +50,7 @@
 #include "FocusDirection.h"   // phase 139
 #include "CoreLog.h"
 #include "Timestamp.h"      // phase 161.1
+#include "FocusCalibration.h"   // phase 161.3
 
 namespace raduk::core {
 
@@ -185,6 +186,23 @@ public:
     // fineOnly (phase 145.3): the target fills the frame (the Moon), so
     // there is no disc for the coarse HFD sweep; the fine pass alone runs,
     // round the current position.
+    // Phase 161.3: CALIBRATE FOCUS, from a position already in focus (run
+    // autofocus first). Measures what a step does: how well a position
+    // repeats, the knob's slack, and the growth of the half-flux diameter
+    // with defocus on both sides. The focuser returns to where it began.
+    // The result is Calibration(), valid once the completion has fired.
+    bool StartCalibration(int currentPosition) {
+        m_calibrate = true;
+        const bool ok = Start(currentPosition, false);
+        if (!ok) m_calibrate = false;
+        return ok;
+    }
+    bool Calibrating() const { return m_runCalibration; }
+    FocusCalibration Calibration() const {
+        std::lock_guard<std::mutex> lk(m_calMutex);
+        return m_cal;
+    }
+
     bool Start(int currentPosition, bool fineOnly = false) {
         if (m_state.load() == AFState::Scanning ||
             m_state.load() == AFState::Moving)
@@ -193,6 +211,8 @@ public:
             return false;
 
         m_abortFlag.store(false);
+        m_runCalibration = m_calibrate;   // 161.3: this run's kind
+        m_calibrate = false;
         m_stopGen = m_focuser->StopGeneration();   // 161.0b: this run's
         m_aeWindow.store(false);
         m_aeSettled.store(false);
@@ -339,6 +359,7 @@ private:
     void ScanThread() {
         m_state.store(AFState::Scanning);
         m_notBracketed = false;
+        if (m_runCalibration) { RunCalibration(); return; }
         if (m_fineOnly) { RunFineOnly(); return; }
 
         // Build list of positions to sample
@@ -1176,6 +1197,232 @@ private:
                "edge metric only (the target fills the frame)");
     }
 
+    // ── Phase 161.3: CALIBRATE FOCUS ──────────────────────────
+    //
+    // Three measurements, each of which stands or falls alone, so a
+    // night that allows only one still leaves a figure:
+    //   1. Repeatability: the same step, approached the final way five
+    //      times, scored on the edge metric each time.
+    //   2. Slack: out the final way to a step on the SLOPE of the edge
+    //      score, then back in small moves until the score answers.
+    //   3. Scale: the half-flux diameter on both wings, far enough out
+    //      that the blur has outgrown the target (FocusCalibration.h).
+    // Every position is approached the final way, so the step numbers
+    // mean one mirror position each. The focuser ends where it began.
+    void RunCalibration() {
+        const int dir = m_params.finalDir < 0 ? -1 : 1;
+        const int S = m_startPosition;
+        FocusCalibration cal;
+        cal.position = S;
+        std::string notes;
+        auto note = [&](const std::string& n) { if (!notes.empty()) notes += "; "; notes += n; };
+        auto fail = [&](const char* why) {
+            cal.ok = false;
+            cal.message = why;
+            { std::lock_guard<std::mutex> lk(m_calMutex); m_cal = cal; }
+            Finish(false, S, 0.0f, 0.0f, why);
+        };
+        auto inBounds = [&](int p) { return p >= m_params.minStepBound && p <= m_params.maxStepBound; };
+        Emit("[CAL] Calibrating the focuser at pos=%d, finishing %s, overshoot %d\n", S,
+             dir > 0 ? "outward" : "inward", Over());
+
+        // ── 1. Repeatability ──────────────────────────────────
+        SetStatus("Calibrating: repeatability...");
+        std::vector<float> rep;
+        for (int k = 0; k < 5; ++k) {
+            if (!DriveFinal(S)) { fail(MoveFailure()); return; }
+            int got = 0;
+            const float e = ScoreHere(&got);
+            if (got >= (std::max)(3, m_params.fineFrames / 2) && e > 0.0f) rep.push_back(e);
+            Emit("[CAL] Repeat %d/5  pos=%d  edge=%.4f  (%d frames)\n", k + 1, S, e, got);
+            if (m_abortFlag.load()) { fail("Aborted by user"); return; }
+        }
+        if (rep.size() < 3) { fail("the edge score could not be read at the start: is the target in the frame?"); return; }
+        const float base0 = ScorePercentile(rep, 0.5f);
+        float lo = rep[0], hi = rep[0];
+        for (float v : rep) { lo = (std::min)(lo, v); hi = (std::max)(hi, v); }
+        cal.haveRepeat = true;
+        cal.repeats = (int)rep.size();
+        cal.repeatScatterPct = base0 > 0 ? 100.0 * (hi - lo) / base0 : 0.0;
+        const float sigmaRel = base0 > 0 ? (hi - lo) / (2.0f * base0) : 0.1f;   // half the spread
+        Emit("[CAL] Repeatability: edge %.4f, spread %.1f%% over %d approaches\n", base0,
+             cal.repeatScatterPct, cal.repeats);
+
+        // The half-flux diameter at focus, for the wings to grow from.
+        const float h0 = HfdHere(3);
+        cal.hfdAtFocusPx = h0;
+
+        // ── 2. Slack ──────────────────────────────────────────
+        // Outward (the final way) in growing steps to where the edge
+        // score has fallen to about 0.6 of its top: on the slope, where a
+        // small move of the mirror shows.
+        SetStatus("Calibrating: the knob's slack...");
+        int P = S;
+        float eP = base0, ePrev = base0;
+        int   pPrev = S;
+        bool onSlope = false;
+        for (int d = 25; d <= 6400; d *= 2) {
+            const int p = S + dir * d;
+            if (!inBounds(p)) break;
+            if (!GoDirect(p)) { fail(MoveFailure()); return; }
+            int got = 0;
+            const float e = ScoreHere(&got);
+            Emit("[CAL] Out %d  pos=%d  edge=%.4f\n", d, p, e);
+            if (got < 3) break;
+            pPrev = P; ePrev = eP;
+            P = p; eP = e;
+            if (e < 0.7f * base0) { onSlope = (e > 0.1f * base0); break; }
+        }
+        if (onSlope) {
+            const double slope = std::fabs((double)(ePrev - eP)) / (std::max)(1, std::abs(P - pPrev));
+            const float  thr = (std::max)(3.0f * sigmaRel * eP, 0.08f * eP);
+            std::vector<int> travel;
+            std::vector<float> score;
+            const int limit = (std::min)(4000, (std::max)(600, 3 * Over()));
+            int t = 0;
+            while (t < limit && !m_abortFlag.load()) {
+                t += (t < 300) ? 10 : (t < 1000 ? 25 : 50);
+                const int p = P - dir * t;
+                if (!inBounds(p)) break;
+                if (!GoDirect(p)) { fail(MoveFailure()); return; }
+                int got = 0;
+                const float e = ScoreHere(&got);
+                if (got < 3) break;
+                travel.push_back(t);
+                score.push_back(e);
+                // Two readings out of the band: it has answered.
+                const size_t n = score.size();
+                if (n >= 2 && std::fabs(score[n - 1] - eP) > thr && std::fabs(score[n - 2] - eP) > thr) break;
+            }
+            if (m_abortFlag.load()) { fail("Aborted by user"); return; }
+            const SlackFit sf = SlackFromProbes(travel, score, eP, thr, slope);
+            if (sf.found) {
+                cal.haveSlack = true;
+                cal.slackSteps = sf.steps;
+                Emit("[CAL] Slack: %.0f steps (the score answered after %d of reversal; threshold %.4f)\n",
+                     sf.steps, travel.empty() ? 0 : travel.back(), thr);
+            } else {
+                cal.slackAtLeast = sf.probedTo;
+                note("the slack is more than the reversal probed");
+                Emit("[CAL] Slack: no answer within %.0f steps of reversal\n", sf.probedTo);
+            }
+        } else {
+            note("the edge score did not fall enough on the way out to measure the slack");
+            Emit("[CAL] Slack not measured: no slope found within reach\n");
+        }
+
+        // ── 3. Scale, from the wings ──────────────────────────
+        SetStatus("Calibrating: steps to defocus...");
+        if (h0 > 0.0f) {
+            // How far out before the blur has outgrown the target.
+            if (!DriveFinal(S)) { fail(MoveFailure()); return; }
+            int R = 0;
+            for (int d = 100; d <= 12800; d *= 2) {
+                const int p = S + dir * d;
+                if (!inBounds(p) || !inBounds(S - dir * 2 * d)) break;
+                if (!GoDirect(p)) { fail(MoveFailure()); return; }
+                const float h = HfdHere(3);
+                Emit("[CAL] Reach %d  pos=%d  hfd=%.1f px (focus %.1f)\n", d, p, h, h0);
+                if (h <= 0.0f) break;                 // the target left the measure
+                if (h >= (float)kWingMinGrowth * h0) { R = d; break; }
+            }
+            if (R > 0) {
+                std::vector<int> wp;
+                std::vector<float> wh;
+                const double f[4] = {1.0, 4.0 / 3.0, 5.0 / 3.0, 2.0};
+                wp.push_back(S); wh.push_back(h0);
+                // Both wings travelling the final way: the far wing from
+                // its far end inward-to-focus, the near wing outward.
+                std::vector<int> order;
+                for (int k = 3; k >= 0; --k) order.push_back(S - dir * (int)std::lround(R * f[k]));
+                for (int k = 0; k < 4; ++k)  order.push_back(S + dir * (int)std::lround(R * f[k]));
+                bool first = true;
+                for (int p : order) {
+                    if (!inBounds(p)) continue;
+                    if (first || p == S + dir * R) {
+                        // Slack taken up the final way before each wing,
+                        // and AE's turn: each wing is a different light.
+                        if (!DriveFinal(p)) { fail(MoveFailure()); return; }
+                        if (!ExposureTurn()) { fail("Aborted by user"); return; }
+                        first = false;
+                    } else if (!GoDirect(p)) { fail(MoveFailure()); return; }
+                    const float h = HfdHere(3);
+                    Emit("[CAL] Wing  pos=%d  hfd=%.1f px\n", p, h);
+                    if (h > 0.0f) { wp.push_back(p); wh.push_back(h); }
+                    if (m_abortFlag.load()) { fail("Aborted by user"); return; }
+                }
+                const WingFit wf = FitWings(wp, wh);
+                if (wf.ok) {
+                    cal.haveScale = true;
+                    cal.hfdPxPerStep = wf.hfdPxPerStep;
+                    cal.leftSlope = wf.leftSlope;
+                    cal.rightSlope = wf.rightSlope;
+                    cal.wingPoints = wf.nLeft + wf.nRight;
+                    cal.wingReach = 2 * R;
+                    Emit("[CAL] Scale: HFD grows %.5f px a step (wings %.5f and %.5f, %d points, "
+                         "lines cross at %.0f, start %d)\n", wf.hfdPxPerStep, wf.leftSlope, wf.rightSlope,
+                         cal.wingPoints, wf.crossing, S);
+                } else {
+                    note(std::string("steps to defocus not measured: ") + wf.why);
+                    Emit("[CAL] Scale not measured: %s\n", wf.why);
+                }
+            } else {
+                note("steps to defocus not measured: the half-flux diameter did not grow by half within reach");
+            }
+        } else {
+            note("steps to defocus not measured: no half-flux diameter at the start (a target that fills the frame has none)");
+        }
+
+        // ── Back to where it began ────────────────────────────
+        SetStatus("Calibrating: returning to focus...");
+        if (!DriveFinal(S)) { fail(MoveFailure()); return; }
+        {
+            int got = 0;
+            const float e = ScoreHere(&got);
+            if (got >= 3 && base0 > 0) cal.returnRatio = e / base0;
+            Emit("[CAL] Back at pos=%d  edge=%.4f (was %.4f)\n", S, e, base0);
+            if (cal.returnRatio > 0 && cal.returnRatio < 0.8)
+                note("the image was softer on return than at the start: the sky changed, or the focuser does not repeat");
+        }
+        cal.ok = cal.haveScale || cal.haveSlack;
+        cal.message = notes;
+        { std::lock_guard<std::mutex> lk(m_calMutex); m_cal = cal; }
+        m_bestPosition.store(S);
+        if (cal.ok) Finish(true, S, cal.returnRatio > 0 ? base0 * (float)cal.returnRatio : base0, base0, notes.c_str());
+        else        Finish(false, S, 0.0f, 0.0f, notes.empty() ? "nothing could be measured" : notes.c_str());
+    }
+
+    // The half-flux diameter here, in pixels, from n fresh analyses (the
+    // coarse score is 1000/HFD). 0 when none arrived.
+    float HfdHere(int n) {
+        Sleep(m_params.settleMs);
+        ArmSamples(n);
+        WaitForSamples(n, 4000 + 2000 * n);
+        DisarmSamples();
+        std::vector<float> got;
+        { std::lock_guard<std::mutex> lk(m_sharpnessMutex); got = m_sharpnessSamples; }
+        const float sc = ScorePercentile(got, 0.5f);
+        return sc > 0.0f ? 1000.0f / sc : 0.0f;
+    }
+
+    // AE's turn where the focuser already is (see SettleExposure). False
+    // only on an abort.
+    bool ExposureTurn() {
+        if (m_params.exposureWindowMs <= 0) return true;
+        Sleep(m_params.settleMs);
+        m_aeSettled.store(false);
+        m_aeWindow.store(true);
+        const auto start = std::chrono::steady_clock::now();
+        while (!m_aeSettled.load() && !m_abortFlag.load()) {
+            const auto waited = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - start).count();
+            if (waited > m_params.exposureWindowMs) break;
+            Sleep(16);
+        }
+        m_aeWindow.store(false);
+        return !m_abortFlag.load();
+    }
+
     // Phase 145.5: settle, then the edge metric's percentile here.
     float ScoreHere(int* n) {
         Sleep(m_params.settleMs);
@@ -1393,6 +1640,11 @@ private:
     AutofocusParams  m_baseParams;   // as set
     std::string      m_moveError;    // scan thread only (and Start, before it)
     unsigned         m_stopGen = 0;  // the focuser's stop generation when this run began
+    // Phase 161.3.
+    bool             m_calibrate = false;       // the next Start() is a calibration
+    bool             m_runCalibration = false;  // this run is one
+    mutable std::mutex m_calMutex;
+    FocusCalibration m_cal;
 
     std::function<void(const char*)> m_logSink;
     std::thread      m_thread;

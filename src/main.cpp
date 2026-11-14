@@ -4523,6 +4523,43 @@ static int RunApp(bool useEmulator) {
         };
         h.session = [&](const std::string& t) { slog.Focuser("%s", t.c_str()); };
         h.failed  = [&]() { core.arCtl.NoteFocusFailed(); };
+        // Phase 161.3: a calibration run's figures. The optics come from
+        // rig.ini; the block is appended to focus_calibration.ini in the
+        // data root and never rewritten, because the figures move with
+        // altitude and temperature and the history is the point.
+        h.calibrated = [&](const raduk::core::FocusCalibration& cal) {
+            const auto& rig = raduk::core::RigConfig::Get();
+            const double fRatio = rig.Train().FocalRatio(rig.apertureMm);
+            const raduk::core::FocusScale sc =
+                raduk::core::ScaleFrom(cal, rig.cameraPixelUm, fRatio, rig.centralObstruction);
+            const std::string line = raduk::core::CalibrationSummary(cal, sc);
+            Log("[CAL] %s\n", line.c_str());
+            slog.Focuser("%s", line.c_str());
+            controls.SetAutofocusStatus(raduk::core::ToWide(line).c_str());
+            double alt = -99.0, az = 0.0;
+            if (mount && mount->IsConnected()) mount->GetAltAz(alt, az);
+            float tempC = 0.0f; bool haveTemp = false;
+            if (focuser.IsOpen()) { tempC = focuser.GetTemperature(); haveTemp = true; }
+            const std::string block = raduk::core::FormatCalibration(
+                cal, sc, raduk::core::FormatUtcIso((int64_t)std::time(nullptr)), tempC, haveTemp, alt,
+                profiles.Active() ? profiles.Active()->name : std::string(),
+                rig.cameraPixelUm, fRatio, rig.centralObstruction);
+            const std::string path = raduk::core::Paths::Root() + "\\focus_calibration.ini";
+            FILE* fp = nullptr;
+            if (fopen_s(&fp, path.c_str(), "ab") == 0 && fp) {
+                fwrite(block.data(), 1, block.size(), fp);
+                fclose(fp);
+                Log("[CAL] appended to %s\n", path.c_str());
+            } else {
+                Log("[CAL] could not write %s\n", path.c_str());
+                notifBar.NotifyWarn(L"Focuser calibration: the result could not be saved");
+            }
+            if (cal.ok && sc.zoneSteps > 0.0) {
+                wchar_t w[200];
+                swprintf(w, 200, L"Focuser calibrated: the focus zone is %.0f steps", sc.zoneSteps);
+                notifBar.NotifyInfo(w);
+            }
+        };
         core.afCtl.SetHooks(std::move(h));
     }
     autofocus.SetOnComplete([&](raduk::core::AFResult result) { core.afCtl.OnComplete(result); });
@@ -4545,6 +4582,17 @@ static int RunApp(bool useEmulator) {
     controls.SetAutofocusCallback([&](bool start) {
         core.afCtl.Press(start, afReady.ready, afReady.why);
     });
+    // Phase 161.3: Ctrl+click on AUTO FOCUS, or the remote command.
+    auto calibrateFocus = [&]() {
+        if (core.afCtl.Busy()) return;
+        if (capturer.IsRecording()) {
+            controls.SetAutofocusStatus(L"Not while recording: the calibration moves the focuser a long way");
+            return;
+        }
+        Log("[CAL] Focuser calibration asked for\n");
+        core.afCtl.StartCalibration();
+    };
+    controls.SetCalibrateFocusCallback(calibrateFocus);
 
     // MOUNT CTRL button in panel - shows floating controller at default position
     controls.SetMountCtrlCallback([&]() {
@@ -6588,6 +6636,12 @@ static int RunApp(bool useEmulator) {
                     Log("[WS] Remote autofocus\n");
                     slog.Focuser("APEX: autofocus triggered");
                     startAutofocus();
+                }
+            } else if (rc.cmd == "calibrate_focus") {
+                if (!core.afCtl.Busy() && focuser.IsOpen()) {   // phase 161.3
+                    Log("[WS] Remote calibrate_focus\n");
+                    slog.Focuser("APEX: focuser calibration triggered");
+                    calibrateFocus();
                 }
             } else if (rc.cmd == "move_eaf_rel") {
                 int steps = 0;
