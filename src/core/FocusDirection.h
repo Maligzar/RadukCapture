@@ -321,6 +321,41 @@ inline std::vector<int> FineVisitOrder(int n) {
     return order;
 }
 
+//    The centre is still read twice, first and last. The ratio of the
+//    two says how much the whole picture changed while the pass ran.
+//      - Within 10%: nothing is done.
+//      - Up to a factor of three: the scores are detrended, taking the
+//        change as steady (exponential in time, so linear in the
+//        logarithm the fit works in). The order already takes most of
+//        a steady change out (the light halving through a nine-point
+//        pass moves the peak 3.6 steps of a 60-step spacing, uncorrected);
+//        detrending with the right ratio takes out the rest, and with a
+//        ratio misread by 15% leaves under 3 steps. A ratio misread by a
+//        third does more harm than good (6 steps), which is why nothing
+//        is done inside 10%, where the ratio is mostly seeing
+//        (tests/af_fine_pass.cpp). 161.4a first shipped with no
+//        correction and the old give-up at 40%: on CI's Windows runner,
+//        where the emulated motor is about ten times slower than under
+//        wine, the pass ran long enough for a test's 6% a second fade to
+//        cross that line, and a sound pass was thrown away.
+//      - Beyond a factor of three: the pass is given up. That is not a
+//        fade, it is a different picture.
+enum class RepeatAction { None, Detrend, GiveUp };
+inline RepeatAction RepeatVerdict(float ratio) {
+    if (!(ratio > 0.0f)) return RepeatAction::GiveUp;
+    if (ratio >= 0.9f && ratio <= 1.0f / 0.9f) return RepeatAction::None;
+    // UNVERIFIED(item 58): a factor of three between the fine pass's two centre readings is the right place to give up
+    if (ratio >= 1.0f / 3.0f && ratio <= 3.0f) return RepeatAction::Detrend;
+    return RepeatAction::GiveUp;
+}
+// The factor that brings a score read at time t to the light at tFirst,
+// for a steady change that took the centre from 1 to `ratio` between
+// tFirst and tEnd.
+inline double DetrendFactor(float ratio, double t, double tFirst, double tEnd) {
+    if (!(ratio > 0.0f) || !(tEnd > tFirst)) return 1.0;
+    return std::exp(-std::log((double)ratio) * (t - tFirst) / (tEnd - tFirst));
+}
+
 // 2. The fit. A parabola through the best point and its two neighbours
 //    uses three of the points. When five or more lie within half the
 //    top's height, round the best, a parabola through the LOGARITHM of

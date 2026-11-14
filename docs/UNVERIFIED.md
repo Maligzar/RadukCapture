@@ -6,7 +6,7 @@ Line numbers are left out on purpose, so an edit elsewhere in a file does not ma
 
 A tag is removed when its clear-night item has been run and the value confirmed or replaced, with the night noted in the checklist.
 
-24 constants across 11 checklist items.
+25 constants across 11 checklist items.
 
 ## Item 1: SHARP_CEIL = 1000
 
@@ -77,6 +77,7 @@ A tag is removed when its clear-night item has been run and the value confirmed 
 | `AF_EXPOSURE_WINDOW_MS` | `10000` | `src/core/AutofocusRoutine.h` | AE settles at the coarse focus inside this, on a planet at the gain the night needs |
 | `if (ratio >= 0.9f && ratio <= 1.0f / 0.9f) return FadeAction::None;` |  | `src/core/FocusDirection.h` | the fine-pass fade-check ratio on a clear, steady night |
 | `if (ratio >= 0.6f && ratio <= 1.0f / 0.6f) return FadeAction::Correct;` |  | `src/core/FocusDirection.h` | a real fade (dew or cloud) during a fine pass, and whether correcting helped |
+| `if (ratio >= 1.0f / 3.0f && ratio <= 3.0f) return RepeatAction::Detrend;` |  | `src/core/FocusDirection.h` | a factor of three between the fine pass's two centre readings is the right place to give up |
 | `kEdgeGateK` | `3.0f` | `src/core/FocusMetric.h` | the 7 fine-pass edge scores rise and fall once on a real planet |
 
 ## Item 59: The focuser's travel guard, and its calibration

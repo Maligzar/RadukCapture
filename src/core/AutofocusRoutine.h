@@ -1105,6 +1105,11 @@ private:
         std::vector<std::vector<float>> frames((size_t)n);
         const std::vector<int> order = FineVisitOrder(n);
         const int need = (std::max)(3, m_params.fineFrames / 2);
+        std::vector<double> tAt((size_t)n, 0.0);   // seconds into the pass
+        const auto t0 = std::chrono::steady_clock::now();
+        auto since = [&] {
+            return std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+        };
         for (size_t k = 0; k < order.size(); ++k) {
             const int i = order[k];
             if (m_abortFlag.load()) return -1;
@@ -1121,28 +1126,37 @@ private:
                 return -1;
             }
             sc[(size_t)i] = p;
+            tAt[(size_t)i] = since();
         }
 
-        // The centre again, last. Phase 145.5 turned the ratio of the two
-        // readings into a straight-line correction of every score; with
-        // the points visited centre-out a slow change no longer tilts the
-        // curve, so nothing is corrected. The ratio is kept for what it
-        // does say: whether the same step, approached the same way, gives
-        // the same picture twice. Far from 1, the pass is not to be
-        // trusted (the sky changed a great deal, or the mirror does not
-        // repeat), and it is given up as before.
+        // The centre again, last: how much the picture changed while the
+        // pass ran (see RepeatVerdict in FocusDirection.h).
         {
             const size_t c = (size_t)(n / 2);
             if (!DriveFinal(pos[c]) || m_abortFlag.load()) return -1;
             int got = 0;
             const float again = ScoreHere(&got);
+            const double tEnd = since();
             const float ratio = (got >= need) ? FadeRatio(sc[c], again) : 1.0f;
-            if (FadeVerdict(ratio) == FadeAction::GiveUp) {
-                Emit("[AF] Fine pass: the centre read %.4f first and %.4f last (x%.2f); too much changed "
-                     "to fit, giving the fine pass up\n", sc[c], again, ratio);
+            switch (RepeatVerdict(ratio)) {
+            case RepeatAction::None:
+                Emit("[AF] Fine pass repeat check: centre %.4f first, %.4f last (x%.2f), steady\n",
+                     sc[c], again, ratio);
+                break;
+            case RepeatAction::Detrend:
+                Emit("[AF] Fine pass repeat check: centre %.4f first, %.4f last (x%.2f) over %.0f s; "
+                     "scores detrended for a steady change\n", sc[c], again, ratio, tEnd - tAt[c]);
+                for (size_t i = 0; i < (size_t)n; ++i) {
+                    const float f = (float)DetrendFactor(ratio, tAt[i], tAt[c], tEnd);
+                    sc[i] *= f;
+                    for (float& v : frames[i]) v *= f;
+                }
+                break;
+            case RepeatAction::GiveUp:
+                Emit("[AF] Fine pass: the centre read %.4f first and %.4f last (x%.2f); that is a "
+                     "different picture, giving the fine pass up\n", sc[c], again, ratio);
                 return -1;
             }
-            Emit("[AF] Fine pass repeat check: centre %.4f first, %.4f last (x%.2f)\n", sc[c], again, ratio);
         }
 
         const FinePeak fp = FitFinePeak(pos, sc);

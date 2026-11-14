@@ -282,7 +282,16 @@ public:
 private:
     // Motor simulation: moves position toward target at ~1000 steps/sec
     void MotorLoop() {
-        const int STEPS_PER_TICK = 10;   // steps moved per millisecond tick
+        // 10 steps a tick of Sleep(1). Under wine a tick is about 1 ms; on
+        // Windows it is the timer's 15.6 ms unless something has raised its
+        // resolution, so the same emulator is about ten times slower on
+        // CI's runner. RADUK_EMU_STEPS_PER_TICK lets a test build ask for
+        // that pace anywhere (phase 161.4a: a fine pass that was sound
+        // under wine ran long enough on CI to trip a fade threshold).
+#ifndef RADUK_EMU_STEPS_PER_TICK
+#define RADUK_EMU_STEPS_PER_TICK 10
+#endif
+        const int STEPS_PER_TICK = RADUK_EMU_STEPS_PER_TICK;
         while (m_isOpen) {
             {
                 std::lock_guard<std::mutex> lk(m_mutex);

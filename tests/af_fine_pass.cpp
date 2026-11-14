@@ -105,6 +105,42 @@ int main() {
               "visited centre-out, the same fade moves it under half as far, uncorrected", N(b.pos - 300, 1));
     }
 
+    {
+        // The centre read twice, and what is done about it.
+        Check(RepeatVerdict(0.95f) == RepeatAction::None && RepeatVerdict(1.08f) == RepeatAction::None,
+              "within 10%: nothing");
+        Check(RepeatVerdict(0.5f) == RepeatAction::Detrend && RepeatVerdict(2.5f) == RepeatAction::Detrend,
+              "up to a factor of three: detrended, not given up");
+        Check(RepeatVerdict(0.3f) == RepeatAction::GiveUp && RepeatVerdict(3.5f) == RepeatAction::GiveUp &&
+              RepeatVerdict(0.0f) == RepeatAction::GiveUp, "beyond it, or no reading: given up");
+        // A pass in which the light halves, steadily. Nine points, visited
+        // centre-out; the centre read first (visit 0) and again (visit 9).
+        std::vector<int> pos; for (int k = 0; k < 9; ++k) pos.push_back(k * 60);
+        const double focus = 255.0, rate = std::log(2.0) / 9.0;
+        const std::vector<int> order = FineVisitOrder(9);
+        std::vector<float> raw(9); std::vector<double> t(9);
+        for (int v = 0; v < 9; ++v) {
+            const int i = order[(size_t)v];
+            t[(size_t)i] = v;
+            raw[(size_t)i] = (float)(Curve(pos[(size_t)i], focus, 120) * std::exp(-rate * v));
+        }
+        auto fitWith = [&](float ratio) {
+            std::vector<float> sc = raw;
+            for (int i = 0; i < 9; ++i) sc[(size_t)i] *= (float)DetrendFactor(ratio, t[(size_t)i], 0.0, 9.0);
+            return FitFinePeak(pos, sc).pos - focus;
+        };
+        const double none = FitFinePeak(pos, raw).pos - focus;
+        const double right = fitWith(0.5f), low = fitWith(0.43f), high = fitWith(0.58f), bad = fitWith(0.35f);
+        Check(std::fabs(right) < 1.0, "the light halving through the pass, detrended: on the peak", N(right, 2));
+        Check(std::fabs(none) < 8.0, "left alone it is not far off either: the order does most of the work",
+              N(none, 2));
+        Check(std::fabs(low) < 3.0 && std::fabs(high) < 3.0,
+              "a ratio misread by 15% either way: still within 3 steps", N(low, 2) + " and " + N(high, 2));
+        Check(std::fabs(bad) > std::fabs(none),
+              "a ratio misread by a third does more harm than good: why nothing is done inside 10%",
+              N(bad, 2) + " against " + N(none, 2) + " untouched");
+    }
+
     std::printf("\n2. The fit\n");
     {
         std::vector<int> pos; for (int k = 0; k < 9; ++k) pos.push_back(1000 + k * 60);
