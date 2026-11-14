@@ -21,6 +21,7 @@
 #include "IFocuser.h"
 #include "FocusDirection.h"
 #include "CoreLog.h"
+#include "EmuFault.h"   // phase 157.0
 
 namespace raduk::core {
 
@@ -53,6 +54,11 @@ public:
         m_optic    = 166500.0;
         m_isOpen   = true;
         m_moving   = false;
+        // Phase 157.0: RADUK_EMU_FAULT=eaf-stall@T stops the motor at T s.
+        m_stallArmed = ActiveEmuFault("eaf-stall", m_stall);
+        m_openedAt = std::chrono::steady_clock::now();
+        if (m_stallArmed)
+            raduk::core::CoreLog("[EAFEmulator] stall injection armed at t+%.0fs\n", m_stall.startSec);
         // Start the motor simulation thread
         m_motorThread = std::thread(&EAFFocuser::MotorLoop, this);
         raduk::core::CoreLog("[EAFEmulator] Opened: id=0, pos=%d, maxStep=600000\n", m_position.load());
@@ -287,7 +293,11 @@ private:
             {
                 std::lock_guard<std::mutex> lk(m_mutex);
                 int pos = m_position.load();
-                if (pos != m_target && !m_stalled.load() &&
+                // Phase 157.0: RADUK_EMU_FAULT=eaf-stall@T freezes it the
+                // same way SetStalled does (phase 161's test hook).
+                const bool faultStalled = m_stallArmed && m_stall.InEffect(
+                    std::chrono::duration<double>(std::chrono::steady_clock::now() - m_openedAt).count());
+                if (pos != m_target && !m_stalled.load() && !faultStalled &&
                     std::chrono::steady_clock::now() >= m_startAt) {
                     int delta = m_target - pos;
                     int step = std::min(std::abs(delta), STEPS_PER_TICK);
@@ -333,6 +343,10 @@ private:
     std::chrono::steady_clock::time_point m_startAt{};
     std::thread         m_motorThread;
     std::atomic<int>    m_tempTick{0};
+    // Phase 157.0: fault injection.
+    bool     m_stallArmed = false;
+    EmuFault m_stall;
+    std::chrono::steady_clock::time_point m_openedAt{};
 };
 
 } // namespace raduk::core

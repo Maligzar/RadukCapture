@@ -1609,6 +1609,9 @@ paths pass fault injection, and one unattended sky run completes.
 23. **Phase 157 (row 57), reliability qualification**: fault injection, a
    soak, SER and FITS read back by independent readers in CI, and the
    qualification report. 157.0 can start once 153.0's harness exists.
+   **157.0's first part written 2026-11-14 (3.3.15)**: the emulator's
+   faults and their test, and a camera dying mid-run now ends the run.
+   Next: 157.0b, the GoTo panel's slew timeout.
 24. **Phase 156 (row 56), the unattended live-sky test run**, after the
    validation mode (155.4) it consumes and the controllers (153.1-153.2)
    it drives. Its CI dress rehearsal (156.5) can start once 153.0's

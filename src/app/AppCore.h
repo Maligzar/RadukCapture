@@ -70,14 +70,14 @@ public:
     AutorunController arCtl;
 
     AppCore() : afCtl(autofocus, ae, focuser, m_steady, m_null, raduk::core::AF_AE_SETTLE_LIMIT_S),
-                recCtl(capturer, m_null),
+                recCtl(capturer, m_steady, m_null),
                 arCtl(seeing, m_null),
                 m_clock(&m_steady), m_ui(&m_null) {}
     AppCore(const AppCore&) = delete;
     AppCore& operator=(const AppCore&) = delete;
 
     // The seams. Not owned; must outlive the core. Null restores the default.
-    void SetClock(const IClock* c) { m_clock = c ? c : &m_steady; afCtl.SetClock(*m_clock); }
+    void SetClock(const IClock* c) { m_clock = c ? c : &m_steady; afCtl.SetClock(*m_clock); recCtl.SetClock(*m_clock); }
     void SetUi(IUiSink* u)         { m_ui = u ? u : &m_null; afCtl.SetUi(*m_ui); recCtl.SetUi(*m_ui); arCtl.SetUi(*m_ui); }
     const IClock& Clock() const    { return *m_clock; }
     IUiSink&      Ui()             { return *m_ui; }
