@@ -127,6 +127,16 @@ One command, CALIBRATE FOCUS, on a bright star or a planet's limb at 45° or hig
 
 ### 161.4 The sweep in optical units (bench, then one clear night, M)
 
+**161.4a written 2026-11-14 (3.3.15): the fine pass refitted.** The half of this stage that does not need a calibration figure:
+- **Order.** The fine points are visited centre-out, the leading side swapping with each ring (`FineVisitOrder`), each approached the final way past the overshoot. One way across, a 20% fade over a seven-point pass moved the fitted peak 7.5 steps of a 100-step spacing; this order leaves 2.8 (the pair beside the centre is still one visit apart). `FadeCorrect` is no longer used by the routine; the centre is still read twice, as a repeat check and a give-up test.
+- **Fit.** `FitFinePeak`: a parabola through the logarithm of every point within half the top's height when there are five, and its vertex lies within one and a half spacings of the best point; else three points. With 8% noise a point its scatter was 11.0 steps against three points' 18.5.
+- **Error bar.** `BootstrapFinePeak` resamples each point's frames 200 times and refits. On independent frames the bar matched the real scatter (4.9 against 5.0 steps over 150 passes). On the sky it is a lower bound, since neighbouring frames share their seeing and it knows nothing of the mirror's repeatability. `AFResult::errorSteps`, shown as `pos=N ±e`.
+- **Missing coarse points** are left out of the fit, and fewer than three ends the sweep at the start with the reason.
+- **Coarse cross-check, logged only:** the vertex of a parabola through HFD squared over every coarse point, beside the peak-window fit. Not acted on until a night shows which to believe.
+- Gated by `tests/af_fine_pass.cpp`; `autofocus_saturn` case 9b now asserts that nothing is corrected.
+
+**161.4b, still planned,** needs the focus zone in steps from a CALIBRATE FOCUS run on the sky: the coarse sweep bracketed by growth, the fine points spaced half a zone apart with a 2 s dwell, acceptance at a quarter of the zone, and a stage repeated when exposure or gain changes under it.
+
 - **Coarse, by growth.** Step outward each way until HFD has grown by 30% over its minimum, with the step size taken from the calibration (a blur of about a quarter of the disc per step). A fixed ±3,000 becomes the fallback when no calibration exists. This brackets Mars and Jupiter alike, where a fixed span is too wide for one and too narrow for the other.
 - **Coarse fit.** A weighted least-squares parabola on HFD² over every point, checked against the three-point vertex; a disagreement beyond one coarse step is logged and the wider bracket rerun.
 - **Fine, by the zone.** Nine points spaced half a critical zone apart, so the span is about four zones and the curve's top is covered. Each point: approached the final way past the full overshoot, a measured settle, then at least 2 s of frames, because seeing has power at 1 to 5 s that 0.7 s of frames does not average.
@@ -159,7 +169,7 @@ The owner asked on 2026-11-14 for each stage to be marked: needs Fable, or Opus 
 | 161.1 Completion on the GUI thread, running from the first instant, the forward-only ring, samples tied to frames | Fable | Lock-free state shared with the time-critical capture thread, and a Win32 delivery path CI cannot run |
 | 161.2 Overshoot apart from backlash | Opus | Two settings and three test cases, in code 139 already structured for it |
 | 161.3 CALIBRATE FOCUS | Fable | A new measurement on real hardware: the wing-slope optics, the reversal test's threshold, and a state machine that must be safe when the sky does not cooperate |
-| 161.4 The sweep in optical units | Fable | The fits, the shuffled order and the bootstrap decide the final position; a subtle bias is invisible without knowing where to look |
+| 161.4a The fine pass refitted (written); 161.4b the sweep sized by the focus zone | Fable | The fits, the shuffled order and the bootstrap decide the final position; a subtle bias is invisible without knowing where to look |
 | 161.5a The edge metric's noise gate | Fable | A noise model that must hold from gain 100 to 450 on light the emulator does not reproduce |
 | 161.5b The region from focus, and `AutofocusChannel=green` | Opus | Sizing and a channel switch, gated by `focus_metric` |
 | 161.6 The operator's view | Opus | Display only |

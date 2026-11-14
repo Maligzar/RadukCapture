@@ -262,11 +262,14 @@ private:
         char b[320];
         if (r.success) {
             const char* sep = r.message.empty() ? "" : " \xE2\x80\x94 ";   // " — "
-            std::snprintf(b, sizeof(b), "AF done: pos=%d  sharp=%.1f%%  +%.1f%%%s%s",
-                          r.bestPosition, r.bestSharpness, r.improvement, sep, r.message.c_str());
+            // Phase 161.4: with the fine pass's error bar when it has one.
+            char pm[40] = "";
+            if (r.errorSteps >= 0.0f) std::snprintf(pm, sizeof(pm), " \xC2\xB1%.0f", (double)r.errorSteps);   // " ±N"
+            std::snprintf(b, sizeof(b), "AF done: pos=%d%s  sharp=%.1f%%  +%.1f%%%s%s",
+                          r.bestPosition, pm, r.bestSharpness, r.improvement, sep, r.message.c_str());
             Status(b);
-            std::snprintf(b, sizeof(b), "AutoFocus: pos=%d  sharp=%.1f%%  +%.1f%%%s%s",
-                          r.bestPosition, r.bestSharpness, r.improvement, sep, r.message.c_str());
+            std::snprintf(b, sizeof(b), "AutoFocus: pos=%d%s  sharp=%.1f%%  +%.1f%%%s%s",
+                          r.bestPosition, pm, r.bestSharpness, r.improvement, sep, r.message.c_str());
             Session(b);
             std::snprintf(b, sizeof(b), "[AF] Complete: pos=%d  sharp=%.1f%%  improvement=+%.1f%%%s%s\n",
                           r.bestPosition, r.bestSharpness, r.improvement, sep, r.message.c_str());

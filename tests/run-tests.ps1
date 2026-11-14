@@ -72,6 +72,7 @@ $Tests = @(
     @{ Name = "af_sample_window";  Sources = @() }
     @{ Name = "af_overshoot";      Sources = @() }
     @{ Name = "focus_calibration"; Sources = @() }
+    @{ Name = "af_fine_pass";      Sources = @() }
     @{ Name = "ring_monotonic";    Sources = @() }
     @{ Name = "af_readiness";      Sources = @() }
     @{ Name = "jupiter_events";    Sources = @() }

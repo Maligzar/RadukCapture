@@ -270,8 +270,10 @@ int main() {
             std::printf("   from %d ended %+d from focus %s\n", st, end - kFocus, m.c_str());
             worst = (std::max)(worst, std::abs(end - kFocus));
         }
-        std::printf("   fine passes corrected for a fade: %d\n", g_fadeCorrected.load());
-        CHECK(g_fadeCorrected.load() >= 1, "the fade was never seen and corrected");
+        // Phase 161.4: the fine pass visits its points centre-out, so a
+        // fade no longer tilts its curve and nothing is "corrected"; what
+        // is asserted is the result.
+        CHECK(g_fadeCorrected.load() == 0, "the fine pass still corrects for a fade (%d)", g_fadeCorrected.load());
         CHECK(worst <= 150, "a fade inside the fine pass: worst %d steps from focus", worst);
     }
 

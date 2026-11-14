@@ -151,6 +151,9 @@ struct AFResult {
     int   startPosition = 0;
     float improvement  = 0.0f;  // sharpness gain vs start position sharpness
     std::string message;
+    // Phase 161.4: the fine pass's error bar in steps (a lower bound, from
+    // resampling its frames). Negative: none, the position is a coarse one.
+    float errorSteps   = -1.0f;
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -211,6 +214,7 @@ public:
             return false;
 
         m_abortFlag.store(false);
+        m_fineError = -1.0f;
         m_runCalibration = m_calibrate;   // 161.3: this run's kind
         m_calibrate = false;
         m_stopGen = m_focuser->StopGeneration();   // 161.0b: this run's
@@ -542,7 +546,24 @@ private:
         for (int i = 0; i < n; i++) {
             const float a = outScore[(size_t)i], b = backScore[(size_t)i];
             const int k = (a > 0.0f) + (b > 0.0f);
-            m_samples.push_back({posAt[(size_t)i], k ? ((a > 0 ? a : 0) + (b > 0 ? b : 0)) / k : 0.0f});
+            // Phase 161.4: a position where nothing was measured is left
+            // out, not scored as 0. A zero beside the peak made a steep
+            // false shoulder that the three-point fit took for curvature.
+            if (k == 0) {
+                Emit("[AF] pos=%d: nothing measured on either visit, left out of the fit\n", posAt[(size_t)i]);
+                continue;
+            }
+            m_samples.push_back({posAt[(size_t)i], ((a > 0 ? a : 0) + (b > 0 ? b : 0)) / k});
+        }
+        if (m_samples.size() < 3) {
+            if (!GoOneSided(m_startPosition)) {
+                Finish(false, m_startPosition, 0.0f, startSharpness, MoveFailure());
+                return;
+            }
+            Finish(false, m_startPosition, 0.0f, startSharpness,
+                   "the target could not be measured at enough positions - left at the start; "
+                   "check it is in the frame");
+            return;
         }
         {
             std::string line = "[AF] Out-and-back means:";
@@ -572,6 +593,27 @@ private:
         // Local fit around the peak first; the global least-squares fit is
         // the fallback, since the tails of a defocus curve bias it.
         bestPos = FitPeakWindow();
+        // Phase 161.4, a second opinion, logged and not yet acted on: the
+        // vertex of a parabola through HFD SQUARED over every point. The
+        // score is 1000/HFD, whose peak three points fit with a bias of
+        // up to about a fifth of the spacing when focus lies between two
+        // of them; HFD squared is close to a true parabola in defocus.
+        {
+            std::vector<double> qx, qy;
+            const double x0 = m_samples[m_samples.size() / 2].position;
+            for (const auto& smp : m_samples)
+                if (smp.sharpness > 0.0f) {
+                    const double h = 1000.0 / smp.sharpness;
+                    qx.push_back(smp.position - x0); qy.push_back(h * h);
+                }
+            double A = 0, B = 0, C = 0;
+            if (qx.size() >= 4 && FitParabola(qx, qy, A, B, C) && A > 0.0) {
+                const double v = x0 - B / (2.0 * A);
+                Emit("[AF] Coarse cross-check: HFD^2 over all %d points puts focus at %.0f; the "
+                     "peak-window fit says %d (%+.0f)\n", (int)qx.size(), v, bestPos,
+                     bestPos >= 0 ? bestPos - v : 0.0);
+            }
+        }
         if (m_notBracketed && pass < MAX_EXTRA_SWEEPS) {
             int pk = 0;
             for (int k = 1; k < (int)m_samples.size(); k++)
@@ -668,6 +710,7 @@ private:
                 fineUsed = true;
             } else {
                 Emit("[AF] Fine pass gave no result; keeping the coarse %d\n", bestPos);
+                m_fineError = -1.0f;
             }
         }
 
@@ -1046,81 +1089,81 @@ private:
     // endBest: when the best point is at an end of the span (focus lies
     // beyond it), that point, so the caller can sweep once more there.
     int FineSweep(int center, int span, float* bestScore, int* endBest = nullptr) {
+        m_fineError = -1.0f;
         const int dir = m_params.finalDir < 0 ? -1 : 1;
-        const std::vector<int> pts = FineSweepPositions(center, span, m_params.finePoints, dir,
-                                                        m_params.minStepBound, m_params.maxStepBound);
-        if (pts.size() < 3) return -1;
-        Emit("[AF] Fine pass: %d points across %d steps round %d, travelling %s, %d frames a "
-             "point, edge metric at the %.0fth percentile\n", (int)pts.size(), span, center,
+        std::vector<int> pos = FineSweepPositions(center, span, m_params.finePoints, 1,
+                                                  m_params.minStepBound, m_params.maxStepBound);   // ascending
+        const int n = (int)pos.size();
+        if (n < 3) return -1;
+        Emit("[AF] Fine pass: %d points across %d steps round %d, visited centre-out, each approached "
+             "%s, %d frames a point, edge metric at the %.0fth percentile\n", n, span, center,
              dir > 0 ? "outward" : "inward", m_params.fineFrames, m_params.finePercentile * 100.0f);
-        if (Over() > 0) {
-            int pre = pts.front() - dir * Over();
-            pre = (std::max)(m_params.minStepBound, (std::min)(m_params.maxStepBound, pre));
-            if (!GoDirect(pre)) return -1;
-        }
-        std::vector<int> pos;
-        std::vector<float> sc;
-        std::vector<double> tAt;   // seconds into the pass, for 145.5
-        const auto t0 = std::chrono::steady_clock::now();
-        auto since = [&] {
-            return std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-        };
-        for (size_t k = 0; k < pts.size(); ++k) {
+
+        // Phase 161.4: centre-out and alternating, every point approached
+        // the final way past the overshoot (see FineVisitOrder).
+        std::vector<float> sc((size_t)n, 0.0f);
+        std::vector<std::vector<float>> frames((size_t)n);
+        const std::vector<int> order = FineVisitOrder(n);
+        const int need = (std::max)(3, m_params.fineFrames / 2);
+        for (size_t k = 0; k < order.size(); ++k) {
+            const int i = order[k];
             if (m_abortFlag.load()) return -1;
             char st[64];
-            sprintf_s(st, "Fine pass %d/%d  pos=%d", (int)k + 1, (int)pts.size(), pts[k]);
+            sprintf_s(st, "Fine pass %d/%d  pos=%d", (int)k + 1, n, pos[(size_t)i]);
             SetStatus(st);
-            if (!GoDirect(pts[k])) return -1;
+            if (!DriveFinal(pos[(size_t)i])) return -1;
             int got = 0;
-            const float p = ScoreHere(&got);
-            Emit("[AF] Fine %d/%d  pos=%d  edge=%.4f  (%d frames)\n", (int)k + 1, (int)pts.size(),
-                 pts[k], p, got);
-            if (got < (std::max)(3, m_params.fineFrames / 2)) {
+            const float p = ScoreHere(&got, &frames[(size_t)i]);
+            Emit("[AF] Fine %d/%d  pos=%d  edge=%.4f  (%d frames)\n", (int)k + 1, n, pos[(size_t)i], p, got);
+            if (got < need) {
                 Emit("[AF] Fine pass: too few frames scored at pos=%d (is the target in the frame?)\n",
-                     pts[k]);
+                     pos[(size_t)i]);
                 return -1;
             }
-            pos.push_back(pts[k]);
-            sc.push_back(p);
-            tAt.push_back(since());
+            sc[(size_t)i] = p;
         }
 
-        // Phase 145.5: the centre again, approached the final way, to see
-        // whether the light moved while the pass went one way across.
+        // The centre again, last. Phase 145.5 turned the ratio of the two
+        // readings into a straight-line correction of every score; with
+        // the points visited centre-out a slow change no longer tilts the
+        // curve, so nothing is corrected. The ratio is kept for what it
+        // does say: whether the same step, approached the same way, gives
+        // the same picture twice. Far from 1, the pass is not to be
+        // trusted (the sky changed a great deal, or the mirror does not
+        // repeat), and it is given up as before.
         {
-            const size_t c = pts.size() / 2;
-            if (!DriveFinal(pts[c]) || m_abortFlag.load()) return -1;
+            const size_t c = (size_t)(n / 2);
+            if (!DriveFinal(pos[c]) || m_abortFlag.load()) return -1;
             int got = 0;
             const float again = ScoreHere(&got);
-            const double tEnd = since();
-            const float ratio = (got >= (std::max)(3, m_params.fineFrames / 2)) ? FadeRatio(sc[c], again) : 1.0f;
-            switch (FadeVerdict(ratio)) {
-            case FadeAction::None:
-                Emit("[AF] Fine pass fade check: centre %.4f then %.4f (x%.2f), steady\n", sc[c], again, ratio);
-                break;
-            case FadeAction::Correct:
-                Emit("[AF] Fine pass fade: centre %.4f then %.4f (x%.2f) over %.0f s; scores corrected "
-                     "for a linear change\n", sc[c], again, ratio, tEnd - tAt[c]);
-                sc = FadeCorrect(sc, tAt, ratio, tAt[c], tEnd);
-                break;
-            case FadeAction::GiveUp:
-                Emit("[AF] Fine pass fade: centre %.4f then %.4f (x%.2f); too much changed to fit, "
-                     "giving the fine pass up\n", sc[c], again, ratio);
+            const float ratio = (got >= need) ? FadeRatio(sc[c], again) : 1.0f;
+            if (FadeVerdict(ratio) == FadeAction::GiveUp) {
+                Emit("[AF] Fine pass: the centre read %.4f first and %.4f last (x%.2f); too much changed "
+                     "to fit, giving the fine pass up\n", sc[c], again, ratio);
                 return -1;
             }
+            Emit("[AF] Fine pass repeat check: centre %.4f first, %.4f last (x%.2f)\n", sc[c], again, ratio);
         }
-        if (dir < 0) { std::reverse(pos.begin(), pos.end()); std::reverse(sc.begin(), sc.end()); }
-        const CurvePeak c = PeakWindow3(pos, sc);
-        int best = 0;
-        for (int i = 1; i < (int)sc.size(); ++i) if (sc[(size_t)i] > sc[(size_t)best]) best = i;
-        if (!c.bracketed) {
+
+        const FinePeak fp = FitFinePeak(pos, sc);
+        if (!fp.bracketed) {
             Emit("[AF] Fine pass: best point at an end of its span (pos=%d), not bracketed\n",
-                 pos[(size_t)best]);
-            if (endBest) *endBest = pos[(size_t)best];
+                 pos[(size_t)fp.bestIndex]);
+            if (endBest) *endBest = pos[(size_t)fp.bestIndex];
             return -1;
         }
-        if (bestScore) *bestScore = sc[(size_t)best];
-        return c.ok ? (int)std::lround(c.pos) : pos[(size_t)best];
+        if (bestScore) *bestScore = sc[(size_t)fp.bestIndex];
+        const int result = fp.ok ? (int)std::lround(fp.pos) : pos[(size_t)fp.bestIndex];
+        const FineError fe = BootstrapFinePeak(pos, frames, m_params.finePercentile);
+        if (fe.ok) {
+            m_fineError = (float)fe.sigma;
+            Emit("[AF] Fine fit: %d +/- %.0f steps (%d points in the fit; the +/- is from resampling "
+                 "the frames, and is a lower bound)\n", result, fe.sigma, fp.used);
+        } else {
+            Emit("[AF] Fine fit: %d (%d points in the fit; no error bar: the resampled passes did "
+                 "not agree on a peak)\n", result, fp.used);
+        }
+        return result;
     }
 
     // The Moon, or anything else that fills the frame: no disc, so no
@@ -1424,7 +1467,7 @@ private:
     }
 
     // Phase 145.5: settle, then the edge metric's percentile here.
-    float ScoreHere(int* n) {
+    float ScoreHere(int* n, std::vector<float>* all = nullptr) {
         Sleep(m_params.settleMs);
         { std::lock_guard<std::mutex> lk(m_fastMutex); m_fastScores.clear(); }
         m_fastNotBeforeUs.store(Timestamp::Now());   // 161.1: frames from now on
@@ -1434,6 +1477,7 @@ private:
         std::vector<float> got;
         { std::lock_guard<std::mutex> lk(m_fastMutex); got = m_fastScores; }
         if (n) *n = (int)got.size();
+        if (all) *all = got;
         return ScorePercentile(got, m_params.finePercentile);
     }
 
@@ -1611,6 +1655,7 @@ private:
         result.bestSharpness = finalSharp;
         result.startPosition = m_startPosition;
         result.improvement   = finalSharp - startSharp;
+        result.errorSteps    = success ? m_fineError : -1.0f;
         result.message       = msg ? msg : "";
 
         if (success) {
@@ -1640,6 +1685,7 @@ private:
     AutofocusParams  m_baseParams;   // as set
     std::string      m_moveError;    // scan thread only (and Start, before it)
     unsigned         m_stopGen = 0;  // the focuser's stop generation when this run began
+    float            m_fineError = -1.0f;   // 161.4: the last fine fit's error bar, steps (scan thread)
     // Phase 161.3.
     bool             m_calibrate = false;       // the next Start() is a calibration
     bool             m_runCalibration = false;  // this run is one
