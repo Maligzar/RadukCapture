@@ -17,6 +17,7 @@
 #ifndef NOMINMAX
 #define NOMINMAX  // keep windows.h min/max macros away from std::min/max
 #endif
+#include "EmuFault.h"   // phase 157.0
 #include "ThreadName.h"
 #include <windows.h>
 #include <timeapi.h>
@@ -774,6 +775,12 @@ public:
             if (m_removeAfterS > 0)
                 raduk::core::CoreLog("[CameraEmulator] USB-drop injection armed at t+%.0fs\n",
                        m_removeAfterS);
+            // Phase 157.0: RADUK_EMU_FAULT=camera-drop@T[+D]: gone at T s,
+            // back after D s, or never without a duration.
+            m_dropArmed = ActiveEmuFault("camera-drop", m_drop);
+            if (m_dropArmed)
+                raduk::core::CoreLog("[CameraEmulator] camera-drop injection armed at t+%.0fs%s\n",
+                       m_drop.startSec, m_drop.durationSec < 0 ? ", for good" : "");
         }
         raduk::core::CoreLog("[CameraEmulator] Video capture started (%dx%d)\n", m_roiW, m_roiH);
         return true;
@@ -1905,10 +1912,15 @@ private:
     std::chrono::steady_clock::time_point m_captureStart{};
     float                       m_removeAfterS = 0.0f;
 
+    bool     m_dropArmed = false;   // phase 157.0
+    EmuFault m_drop;
+
     bool InRemovedWindow() const {
-        if (m_removeAfterS <= 0.0f || !m_isCapturing) return false;
+        if (!m_isCapturing) return false;
         float t = std::chrono::duration<float>(
             std::chrono::steady_clock::now() - m_captureStart).count();
+        if (m_dropArmed && m_drop.InEffect(t)) return true;
+        if (m_removeAfterS <= 0.0f) return false;
         return t >= m_removeAfterS && t < m_removeAfterS + 10.0f;
     }
 };

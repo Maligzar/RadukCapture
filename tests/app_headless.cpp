@@ -196,7 +196,9 @@ static void GroupRecord() {
             rv.valid = last.valid; rv.centroidValid = last.centroidValid;
             rv.centroidX = (uint32_t)last.centroidX; rv.centroidY = (uint32_t)last.centroidY;
             rv.sharpnessPct = last.sharpnessPct; rv.seeingScore = last.seeingScore;
-            core.recCtl.Service(false, 0.0f, rv);
+            const double fps = core.capture.Stats().fps.load();
+            core.recCtl.Service(false, 0.0f, rv, core.capture.Stats().lastFrameTimestamp.load(),
+                                fps > 0.01 ? 1.0 / fps : 0.0);
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }

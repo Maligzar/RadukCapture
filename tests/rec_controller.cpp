@@ -48,10 +48,10 @@ struct FakeCapture {
 };
 
 struct Rig {
-    FakeCapture cap; RecordingUiSink ui;
+    FakeCapture cap; RecordingUiSink ui; ManualClock clk;
     std::vector<bool> usb; std::vector<std::string> sessions;
     std::vector<std::pair<ToastLevel, std::string>> toasts; int fx = 0;
-    RecordingControllerT<FakeCapture> c{cap, ui};
+    RecordingControllerT<FakeCapture> c{cap, clk, ui};
     Rig() {
         RecordingHooks h;
         h.usbCapturing = [this](bool on) { usb.push_back(on); };
@@ -159,6 +159,34 @@ int main() {
         Check(!c.stack && r.ui.Saw("passes over a run in a sequence"), "inside a sequence: no stack");
         c = r.c.Complete("C:\\cap\\a.fits", true, true, false, true);
         Check(!c.stack && c.fitsNotice && r.ui.Saw("passes over FITS"), "FITS: no stack, and a notice");
+    }
+
+    // Phase 157.0: a camera gone quiet.
+    {
+        Rig r; r.c.Begin(640, 480, 8, false);
+        uint64_t stamp = 1000;
+        r.c.Service(false, 0, RecordingFrameView{}, stamp, 0.01);
+        for (int i = 0; i < 100; ++i) { r.clk.Advance(0.2); stamp += 20; r.c.Service(false, 0, RecordingFrameView{}, stamp, 0.01); }
+        Check(r.cap.recording, "frames arriving: the run goes on");
+        r.clk.Advance(14.0); r.c.Service(false, 0, RecordingFrameView{}, stamp, 0.01);
+        Check(r.cap.recording, "14 s of silence: still recording (a USB drop may recover)");
+        r.clk.Advance(1.5); r.c.Service(false, 0, RecordingFrameView{}, stamp, 0.01);
+        Check(!r.cap.recording && !r.cap.lastNormal && r.ui.Saw("stopped (the camera stopped sending frames)") &&
+              !r.toasts.empty() && r.toasts.back().first == ToastLevel::Error &&
+              r.toasts.back().second.find("no frames from the camera for 16 s") != std::string::npos,
+              "past 15 s: stopped abnormally, and said", r.toasts.empty() ? "" : r.toasts.back().second);
+    }
+    {
+        Rig r; r.c.SetExpectedFrameSec(60.0); r.c.Begin(640, 480, 16, false);
+        Check(r.c.SilenceLimitSec(0.0) == 300.0, "a 60 s exposure: five frames' worth, 300 s");
+        r.c.Service(false, 0, RecordingFrameView{}, 5, 0.0);
+        r.clk.Advance(120.0); r.c.Service(false, 0, RecordingFrameView{}, 5, 0.0);
+        Check(r.cap.recording, "two minutes without a frame is not silence on a long exposure");
+        r.clk.Advance(200.0); r.c.Service(false, 0, RecordingFrameView{}, 5, 0.0);
+        Check(!r.cap.recording, "but past five frames' worth it is");
+        Rig q; q.c.Begin(640, 480, 8, false);
+        Check(q.c.SilenceLimitSec(10.0) == 50.0 && q.c.SilenceLimitSec(0.001) == 15.0,
+              "the measured rate counts too, never under 15 s");
     }
 
     if (g_fail) { printf("rec_controller: %d FAILED\n", g_fail); return 1; }

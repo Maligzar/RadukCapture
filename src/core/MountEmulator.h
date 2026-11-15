@@ -53,6 +53,7 @@
 #include <chrono>
 #include "IMount.h"
 #include "CoreLog.h"
+#include "EmuFault.h"   // phase 157.0
 
 namespace raduk::core {
 
@@ -81,6 +82,12 @@ public:
                 raduk::core::CoreLog("[MountEmulator] NexStar semantics: commands replace tracking, "
                        "azimuth mirrored, tracking mis-set\n");
         }
+        // Phase 157.0: RADUK_EMU_FAULT=slew-stuck@T: from T s, a GoTo
+        // never arrives (the mount reports it is still slewing).
+        m_stuckArmed = ActiveEmuFault("slew-stuck", m_stuck);
+        m_connectedAt = std::chrono::steady_clock::now();
+        if (m_stuckArmed)
+            raduk::core::CoreLog("[MountEmulator] slew-stuck injection armed at t+%.0fs\n", m_stuck.startSec);
         // Start with Jupiter's approximate RA/DEC (good test target)
         m_raHours   = 5.5833;  // ~05h 35m (near Orion)
         m_decDeg    = -5.3833; // ~-05° 23'
@@ -337,7 +344,10 @@ private:
             {
                 std::lock_guard<std::mutex> lk(m_mutex);
 
-                if (m_slewing) {
+                if (m_slewing && m_stuckArmed && m_stuck.InEffect(
+                        std::chrono::duration<double>(std::chrono::steady_clock::now() - m_connectedAt).count())) {
+                    // Phase 157.0: stuck. Still slewing, going nowhere.
+                } else if (m_slewing) {
                     m_nsValid = false;   // 133.1: re-read the axes after a GoTo
                     // GoTo: move toward target
                     double dRA  = m_gotoRA  - m_raHours;
@@ -538,6 +548,10 @@ private:
     bool IsPulseGuiding() override { return false; } // emulator: instantaneous
 
     bool        m_connected = false;
+    // Phase 157.0: fault injection.
+    bool        m_stuckArmed = false;
+    EmuFault    m_stuck;
+    std::chrono::steady_clock::time_point m_connectedAt{};
     std::string m_comPort;
 
     // Position (protected by m_mutex)
