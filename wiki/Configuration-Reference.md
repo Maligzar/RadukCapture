@@ -148,6 +148,7 @@ The full list, with every key, is the help file's
 | `FocuserMaxTravelSteps` | `12000` | The furthest one focuser command may travel; a longer one is refused, and GO TO asks twice. `0` off (161.0a) |
 | `FocuserFinalDirection` | `out` | `out` (rising numbers) or `in`; set so the last travel pushes the SCT's primary toward the corrector (145) |
 | `AutofocusFineStage` | `1` | The edge-contrast fine pass after the coarse sweep, and alone on the Moon (145) |
+| `AutofocusChannel` | `luminance` | What the fine pass scores: `luminance` or `green` (the two green Bayer sites) (161.5b) |
 | `GrsLonSys2` / `GrsEpoch` / `GrsDriftDegPerMonth` | `91` / `2026-06-01` / `1.75` | The Red Spot's System II longitude, its date, and its drift a month (137) |
 | `AutorunPrimeDeferMin` | `30` | On Jupiter, how long `[RUNS]` puts a due focus sweep off for the Red Spot or a moon (144) |
 | `TimeServer` | `pool.ntp.org` | The NTP server for the mutual-event clock check (141) |

@@ -214,6 +214,7 @@ public:
             return false;
 
         m_abortFlag.store(false);
+        m_fineRegionHfd.store(0.0f);
         m_fineError = -1.0f;
         m_runCalibration = m_calibrate;   // 161.3: this run's kind
         m_calibrate = false;
@@ -325,6 +326,10 @@ public:
         m_fastScores.push_back(score);
     }
     bool FineOnly() const { return m_fineOnly; }
+    // Phase 161.5b: the target's half-flux diameter IN FOCUS, from the
+    // coarse sweep's best point, for sizing the fine pass's region. 0: not
+    // known (the fine pass alone, on a target that fills the frame).
+    float FineRegionHfdPx() const { return m_fineRegionHfd.load(); }
     // Phase 161.1: scores left out because their frame predated the window.
     int  StaleDropped() const { return m_staleDropped.load(); }
 
@@ -681,6 +686,7 @@ private:
         // final way, narrows it. Any failure keeps the coarse result.
         bool fineUsed = false;   // the final position came from the fine pass
         if (m_params.fineStage) {
+            m_fineRegionHfd.store(peakSharp > 0.0f ? 1000.0f / peakSharp : 0.0f);   // 161.5b
             std::vector<int> cp;
             std::vector<float> cs;
             for (const auto& smp : m_samples) { cp.push_back(smp.position); cs.push_back(smp.sharpness); }
@@ -1720,6 +1726,7 @@ private:
     std::atomic<uint64_t>  m_notBeforeUs{0};
     std::atomic<uint64_t>  m_fastNotBeforeUs{0};
     std::atomic<int>       m_staleDropped{0};
+    std::atomic<float>     m_fineRegionHfd{0.0f};   // phase 161.5b
 
     int              m_startPosition = 0;
     std::vector<AFSample>  m_samples;

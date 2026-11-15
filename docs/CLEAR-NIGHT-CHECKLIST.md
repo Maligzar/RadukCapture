@@ -1365,3 +1365,6 @@ the bench already showed, so the night only has to confirm it. The plan is
     and note `critical_zone_steps`: phase 161.4 sizes the sweep from it.
     Check `CentralObstruction` on a well-defocused star: the dark hole's
     diameter over the disc's.
+    Also for 161.5b: on a planet below about 30 degrees, run autofocus
+    with `AutofocusChannel=luminance` and again with `green`, and judge
+    the two results by eye at 200%; above 50 degrees they should agree.

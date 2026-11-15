@@ -1642,7 +1642,8 @@ checked against the eye (clear-night items 1, 37, 55, 57 and 58).
     on its figures. **161.3's routine written 2026-11-14 (3.3.14)**:
     CALIBRATE FOCUS; its run on the sky is clear-night item 59. **161.4a
     written 2026-11-14 (3.3.15)**: the fine pass visited centre-out, fitted
-    over all its points, with an error bar.
+    over all its points, with an error bar. **161.5b written 2026-11-15
+    (3.3.15)**: the region from focus, `AutofocusChannel=green`.
     Model: **Fable** for 161.3, 161.4 and 161.5a (the noise gate);
     **Opus** for 161.5b (the region, the green option) and 161.6.
 26. **Phases 147 and 148 (rows 47, 48)**: AVI, then TIFF.
