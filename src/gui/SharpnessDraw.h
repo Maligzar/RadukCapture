@@ -73,13 +73,26 @@ struct StarFigure {
     int   saturated    = 0;
 };
 
+// 2026-11-15: the focus verdict (core/FocusVerdict.h), drawn in place of
+// the old SHARP / PK / AV labels, which said how sharp the frame was on
+// an uncalibrated scale and left "is it in focus?" to the reader.
+// state: a raduk::core::FocusState, as an int so this header stays free
+// of core. show = false keeps the old labels (nothing to judge against).
+struct FocusFigure {
+    bool  show      = false;
+    int   state     = 0;      // FocusState: 0 no ref, 1 measuring, 2 focused, 3 soft, 4 out
+    float nowPct    = 0.0f;   // mean of the last few readings
+    float refPct    = 0.0f;   // at the last good autofocus; 0 = none
+};
+
 inline void Draw(ID2D1RenderTarget* rt, IDWriteTextFormat* font,
                  const Brushes& br,
                  const float* samples, int count,
                  float x, float y, float w, float h,
                  float labelW, float barW, float gap,
                  bool drawGridlines,
-                 const StarFigure& star = {}) {
+                 const StarFigure& star = {},
+                 const FocusFigure& focus = {}) {
     if (!rt) return;
 
     const float plotW = w - labelW;
@@ -131,18 +144,43 @@ inline void Draw(ID2D1RenderTarget* rt, IDWriteTextFormat* font,
     font->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
     wchar_t buf[24];
 
-    rt->DrawText(L"SHARP", 5, font,
-                 D2D1::RectF(lx, y, x + w, y + lh),
-                 br.dim ? br.dim : labelBrush);
+    ID2D1SolidColorBrush* dimOr = br.dim ? br.dim : labelBrush;
+    if (focus.show) {
+        // Line 1, the verdict, coloured by it. Line 2, the live figure.
+        // Line 3, what it is judged against -- or what to do for one.
+        static const wchar_t* kWord[] = { L"NO REF", L"WAIT", L"FOCUSED", L"SOFT", L"OUT" };
+        const int s = (focus.state >= 0 && focus.state <= 4) ? focus.state : 0;
+        ID2D1SolidColorBrush* vb = dimOr;
+        if (s == 2 && br.green) vb = br.green;
+        if (s == 3 && br.amber) vb = br.amber;
+        if (s == 4 && br.red)   vb = br.red;
+        rt->DrawText(kWord[s], (UINT32)wcslen(kWord[s]), font,
+                     D2D1::RectF(lx, y, x + w, y + lh), vb);
 
-    swprintf(buf, 24, L"PK %.0f%%", peak);
-    rt->DrawText(buf, (UINT32)wcslen(buf), font,
-                 D2D1::RectF(lx, y + lh, x + w, y + lh * 2.0f), labelBrush);
+        if (focus.refPct > 0.0f)
+            swprintf(buf, 24, L"%.0f%% of AF", 100.0f * focus.nowPct / focus.refPct);
+        else
+            swprintf(buf, 24, L"NOW %.0f%%", focus.nowPct);
+        rt->DrawText(buf, (UINT32)wcslen(buf), font,
+                     D2D1::RectF(lx, y + lh, x + w, y + lh * 2.0f), vb);
 
-    swprintf(buf, 24, L"AV %.0f%%", mean);
-    rt->DrawText(buf, (UINT32)wcslen(buf), font,
-                 D2D1::RectF(lx, y + lh * 2.0f, x + w, y + lh * 3.0f),
-                 br.dim ? br.dim : labelBrush);
+        if (s == 1)                  swprintf(buf, 24, L"measuring");
+        else if (focus.refPct > 0.0f) swprintf(buf, 24, L"AF %.0f%%", focus.refPct);
+        else                          swprintf(buf, 24, L"RUN AF");
+        rt->DrawText(buf, (UINT32)wcslen(buf), font,
+                     D2D1::RectF(lx, y + lh * 2.0f, x + w, y + lh * 3.0f), dimOr);
+    } else {
+        rt->DrawText(L"SHARP", 5, font,
+                     D2D1::RectF(lx, y, x + w, y + lh), dimOr);
+
+        swprintf(buf, 24, L"PK %.0f%%", peak);
+        rt->DrawText(buf, (UINT32)wcslen(buf), font,
+                     D2D1::RectF(lx, y + lh, x + w, y + lh * 2.0f), labelBrush);
+
+        swprintf(buf, 24, L"AV %.0f%%", mean);
+        rt->DrawText(buf, (UINT32)wcslen(buf), font,
+                     D2D1::RectF(lx, y + lh * 2.0f, x + w, y + lh * 3.0f), dimOr);
+    }
 
     // Phase 95. Only on a star: see FrameAnalyzer::SetStarMode. A
     // planetary session shows nothing here rather than showing the

@@ -47,6 +47,9 @@ struct AutofocusHooks {
     // Phase 161.3: a calibration run ended (measured or not). The app
     // works out the optics and appends the block to focus_calibration.ini.
     std::function<void(const raduk::core::FocusCalibration&)> calibrated;
+    // 2026-11-15: a sweep succeeded and left the focuser at its best fit.
+    // The focus readout takes its reference from the next live readings.
+    std::function<void()>                   succeeded;
 };
 
 template <class Routine, class Ae>
@@ -271,6 +274,7 @@ private:
             std::snprintf(b, sizeof(b), "[AF] Complete: pos=%d  sharp=%.1f%%  improvement=+%.1f%%%s%s\n",
                           r.bestPosition, r.bestSharpness, r.improvement, sep, r.message.c_str());
             Line(b);
+            if (m_hooks.succeeded) m_hooks.succeeded();
         } else {
             Status(r.message);
             Session("AutoFocus failed: " + r.message);

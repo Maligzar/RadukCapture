@@ -17,7 +17,7 @@ profile star.ini capture limit_value=150
 expect 30  [SCENARIO] Autorun
 wait   3
 goto   Kochab
-expect 30  No matching profile for
+expect 30  [PROFILE] Created 'kochab.ini' for 'Kochab' from the Star profile
 press  LOAD PROFILE Star
 expect 10  [PROFILE] Applying: Star
 expect 120 SEARCHING

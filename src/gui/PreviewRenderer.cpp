@@ -1597,7 +1597,7 @@ void PreviewRenderer::DrawQualityGraph(float px, float pw, float ph) {
     const float GRAPH_W   = 220.0f;  // total graph width
     const float GRAPH_H   = 48.0f;   // bar chart height
     const float MARGIN    = 10.0f;   // left margin from preview edge
-    const float LABEL_W   = 60.0f;   // label area to the right of bars
+    const float LABEL_W   = 84.0f;   // label area: "100% of AF" fits (2026-11-15)
     const float BAR_W     = 1.5f;
     const float GAP       = 0.5f;
 
@@ -1637,7 +1637,7 @@ void PreviewRenderer::DrawQualityGraph(float px, float pw, float ph) {
     sharpness::Draw(m_renderTarget, m_hudFont, br, flat, n,
                     gx, gy, GRAPH_W + LABEL_W, GRAPH_H,
                     LABEL_W, BAR_W, GAP, /*gridlines*/ false,
-                    m_starFigure);
+                    m_starFigure, m_focusFigure);
 }
 
 void PreviewRenderer::SetDisplayFX(DisplayFX fx) {

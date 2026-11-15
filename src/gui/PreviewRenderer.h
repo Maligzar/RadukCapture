@@ -475,6 +475,7 @@ public:
     // sit on screen reading as defocus.
     void SetStarFigure(const sharpness::StarFigure& f) { m_starFigure = f; }
     const sharpness::StarFigure& StarFigure() const { return m_starFigure; }
+    void SetFocusFigure(const sharpness::FocusFigure& f) { m_focusFigure = f; }
 
     void SetRoseEnabled(bool e) { m_roseOn = e; }
     bool RoseEnabled()    const { return m_roseOn; }
@@ -678,6 +679,7 @@ private:
     double                  m_fieldRotRate  =
         raduk::sky::DefaultFieldRotationDegPerHour();
     sharpness::StarFigure   m_starFigure{};   // phase 95
+    sharpness::FocusFigure  m_focusFigure{};  // 2026-11-15
     bool                    m_roseOn        = true;
     bool                    m_hasJog        = false;
     float                   m_jogEx = 0.0f, m_jogEy = 0.0f;

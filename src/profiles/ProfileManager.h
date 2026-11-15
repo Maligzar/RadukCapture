@@ -10,6 +10,8 @@
 #include <vector>
 #include <windows.h>
 #include <cstdio>
+#include <algorithm>
+#include <cctype>
 #include "core/Paths.h"
 
 namespace raduk::profiles {
@@ -79,6 +81,8 @@ public:
         };
 
         WS("profile", "name", profile.name);
+        WS("profile", "target_type", profile.targetType);
+        WS("camera",  "model",       profile.camera);
 
         WI("camera",  "gain",          profile.gain);
         WF("camera",  "exposure_ms",   profile.exposureMs);
@@ -156,6 +160,10 @@ public:
         };
 
         out.name         = RS("profile", "name", "Unknown");
+        // A file without these keeps what the caller seeded (the
+        // factory default for the standard profiles).
+        out.targetType   = RS("profile", "target_type", out.targetType.c_str());
+        out.camera       = RS("camera",  "model",       out.camera.c_str());
 
         out.gain         = RI("camera",  "gain",          100);
         out.exposureMs   = RF("camera",  "exposure_ms",   8.0);
@@ -246,11 +254,101 @@ public:
             m_profiles.push_back(profile);
         }
 
+        // Profiles made for a target (CreateFor), after the standard
+        // ones, in name order. Only names ending exactly in ".ini":
+        // FindFirstFile's pattern also matches backups such as
+        // saturn.ini.working-2026-10-08 on some volumes.
+        std::vector<std::string> extra;
+        WIN32_FIND_DATAA fd{};
+        HANDLE hf = FindFirstFileA((m_dir + "\\*.ini").c_str(), &fd);
+        if (hf != INVALID_HANDLE_VALUE) {
+            do {
+                if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+                const std::string fn = fd.cFileName;
+                if (fn.size() < 5 || _stricmp(fn.c_str() + fn.size() - 4, ".ini") != 0) continue;
+                bool standard = false;
+                for (const char* d : defaults) if (_stricmp(d, fn.c_str()) == 0) standard = true;
+                if (!standard) extra.push_back(fn);
+            } while (FindNextFileA(hf, &fd));
+            FindClose(hf);
+        }
+        std::sort(extra.begin(), extra.end(), [](const std::string& a, const std::string& b) {
+            return _stricmp(a.c_str(), b.c_str()) < 0;
+        });
+        for (const auto& fn : extra) {
+            TargetProfile profile = DefaultStar();   // fields a file lacks
+            profile.notes.clear();
+            profile.histogram_target.clear();
+            if (Load(m_dir + "\\" + fn, profile)) m_profiles.push_back(profile);
+        }
+
         printf("[ProfileManager] Loaded %d profiles from %s\n",
                (int)m_profiles.size(), m_dir.c_str());
     }
 
+    // ── A profile per target ─────────────────────────────────────
+    //
+    // The profile for a target is the one named for it. Among several
+    // of that name, one made for the connected camera wins, then one
+    // made for any camera (camera empty), then any. -1 when there is
+    // none.
+    int FindForTarget(const std::string& target, const std::string& camera) const {
+        int any = -1, blank = -1;
+        for (int i = 0; i < (int)m_profiles.size(); ++i) {
+            const auto& p = m_profiles[i];
+            if (_stricmp(p.name.c_str(), target.c_str()) != 0) continue;
+            if (!camera.empty() && _stricmp(p.camera.c_str(), camera.c_str()) == 0) return i;
+            if (p.camera.empty() && blank < 0) blank = i;
+            if (any < 0) any = i;
+        }
+        return blank >= 0 ? blank : any;
+    }
+
+    // A file name for a target: lower case, letters and digits, the
+    // rest folded to '_'. "M 31" -> "m_31.ini", "Alpha Lyr" -> "alpha_lyr.ini".
+    static std::string FileNameFor(const std::string& target) {
+        std::string s;
+        for (unsigned char c : target) {
+            if (std::isalnum(c)) s += (char)std::tolower(c);
+            else if (!s.empty() && s.back() != '_') s += '_';
+        }
+        while (!s.empty() && s.back() == '_') s.pop_back();
+        if (s.empty()) s = "target";
+        return s + ".ini";
+    }
+
+    // Makes, saves and adds a profile for a target that has none, with
+    // the settings of `seed` (the class of target: Star for a star, DSO
+    // for a deep-sky object, otherwise the profile in use). Its own name,
+    // file, file prefix and an empty note: the note is for this object.
+    // Returns its index.
+    int CreateFor(const std::string& target, TargetProfile seed, const std::string& camera) {
+        seed.name       = target;
+        seed.camera     = camera;
+        seed.gotoTarget = target;
+        seed.notes.clear();
+        seed.histogram_target.clear();
+        std::string base = FileNameFor(target);
+        base.resize(base.size() - 4);
+        seed.filePrefix = base + "_";
+        // Never over another profile's file.
+        std::string fn = base + ".ini";
+        for (int n = 2; FileTaken(fn); ++n) fn = base + "_" + std::to_string(n) + ".ini";
+        seed.filename = fn;
+        Save(seed);
+        m_profiles.push_back(seed);
+        return (int)m_profiles.size() - 1;
+    }
+
+    const std::string& Dir() const { return m_dir; }
+
 private:
+    bool FileTaken(const std::string& fn) const {
+        for (const auto& p : m_profiles)
+            if (_stricmp(p.filename.c_str(), fn.c_str()) == 0) return true;
+        return GetFileAttributesA((m_dir + "\\" + fn).c_str()) != INVALID_FILE_ATTRIBUTES;
+    }
+
     std::string              m_dir;
     std::vector<TargetProfile> m_profiles;
     int                      m_activeIndex = 0; // Default to Jupiter

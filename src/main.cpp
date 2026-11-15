@@ -38,6 +38,7 @@
 #include "Version.h"
 #include "core/DeviceFactory.h"
 #include "core/RingBuffer.h"
+#include "core/FocusVerdict.h"
 #include "core/CaptureThread.h"
 #include "core/CaptureManager.h"
 #include "core/USBTrafficManager.h"
@@ -1980,57 +1981,82 @@ static int RunApp(bool useEmulator) {
             return "";
         });
 
-    gotoPanel.SetProfileAutoLoadCallback([&](const std::string& targetName) {
-        // Find best matching profile by name
-        int bestIdx = -1;
+    // ── The profile follows the target (2026-11-15) ───────────────
+    //
+    // A GoTo or an ALIGN names what the scope is pointed at, and the
+    // active profile -- the status bar's [name], the OUTPUT tab's
+    // profile and its note -- follows it. A target with no profile of
+    // its own gets one, so its note is about that object: before this,
+    // a GoTo to Vega found no "Vega" profile and kept Jupiter's, and the
+    // status bar said [Jupiter] while the scope sat on Vega.
+    //
+    // A lunar feature uses the Moon's profile (one Moon, one note).
+    // Otherwise a new profile starts from the settings of its class:
+    // Star for a star, DSO for a Messier/NGC/IC object, else the profile
+    // in use. It is stamped with the connected camera, and among
+    // profiles of the same name one for that camera is preferred.
+    std::function<void(const std::string&)> profileForTarget =
+        [&](const std::string& targetName) {
+        // Typed coordinates name no object: there is nothing to keep a
+        // profile for, so the one in use stays.
+        if (targetName.empty() || _stricmp(targetName.c_str(), "Manual coords") == 0) return;
+        const std::string camName = raduk::core::RigConfig::Get().cameraName;
 
-        // 1. Try exact name match first (e.g. "Jupiter", "Saturn")
-        for (int i = 0; i < (int)profiles.Profiles().size(); i++) {
-            const auto& p = profiles.Profiles()[i];
-            if (_stricmp(p.name.c_str(), targetName.c_str()) == 0) {
-                bestIdx = i;
-                break;
+        std::string want = targetName;
+        if (gotoPanel.TargetIsLunarFeature(targetName)) want = "Moon";
+        int idx = profiles.FindForTarget(want, camName);
+
+        if (idx < 0) {
+            auto startsWithNum = [&](const char* pre) {
+                const size_t n = strlen(pre);
+                return targetName.size() > n && _strnicmp(targetName.c_str(), pre, n) == 0 &&
+                       (isdigit((unsigned char)targetName[n]) ||
+                        (targetName[n] == ' ' && targetName.size() > n + 1 &&
+                         isdigit((unsigned char)targetName[n + 1])));
+            };
+            const bool isDso = startsWithNum("M") || startsWithNum("NGC") || startsWithNum("IC");
+            const TargetProfile* seed = nullptr;
+            if (TargetIsStar(targetName)) seed = profiles.Find("Star");
+            else if (isDso)              seed = profiles.Find("DSO");
+            if (!seed) seed = profiles.Active();
+            TargetProfile base = seed ? *seed : raduk::profiles::DefaultStar();
+            const std::string from = seed ? seed->name : std::string("defaults");
+            // Same optics, so where the focuser is now is a better start
+            // than the seed's number from another night -- which the
+            // focuser guard would refuse anyway when it is far off.
+            {
+                int fp = 0;
+                if (focuser.IsOpen() && focuser.TryGetPosition(fp)) base.focusPosition = fp;
             }
+            idx = profiles.CreateFor(targetName, base, camName);
+            Log("[PROFILE] Created '%s' for '%s' from the %s profile (camera %s)\n",
+                profiles.Profiles()[idx].filename.c_str(), targetName.c_str(),
+                from.c_str(), camName.empty() ? "any" : camName.c_str());
+            slog.Profile("Created: %s (from %s)", targetName.c_str(), from.c_str());
+            std::vector<std::string> names;
+            for (const auto& p : profiles.Profiles()) names.push_back(p.name);
+            controls.SetProfileNames(names);
         }
 
-        // 2. For non-planet targets, match by profile name keywords
-        if (bestIdx < 0) {
-            bool isMoon   = (targetName.find("Moon") != std::string::npos);
-            bool isMessier = (targetName.size() > 1
-                              && targetName[0] == 'M'
-                              && targetName[1] >= '0' && targetName[1] <= '9');
-
-            // Find profile whose name contains "Moon" or "DSO"
-            std::string wantName = "";
-            if (isMoon)         wantName = "Moon";
-            else if (isMessier) wantName = "DSO";
-
-            if (!wantName.empty()) {
-                for (int i = 0; i < (int)profiles.Profiles().size(); i++) {
-                    if (_stricmp(profiles.Profiles()[i].name.c_str(),
-                                 wantName.c_str()) == 0) {
-                        bestIdx = i;
-                        break;
-                    }
-                }
-            }
+        if (idx == profiles.ActiveIndex() && profiles.Active() &&
+            _stricmp(profiles.Active()->name.c_str(), want.c_str()) == 0) {
+            controls.SetActiveProfile(idx);
+            return;   // already on it: re-applying would move the focuser again
         }
-
-        if (bestIdx >= 0) {
-            const TargetProfile& p = profiles.Profiles()[bestIdx];
-            Log("[PROFILE] Auto-loading '%s' profile for GoTo target '%s'\n",
-                p.name.c_str(), targetName.c_str());
-            slog.Profile("Auto: %s → %s", targetName.c_str(), p.name.c_str());
-            ApplyProfile(p, &cam,
-                focuser.IsOpen() ? &focuser : nullptr,
-                mount, slog, profileHooks);
-            controls.SetActiveProfile(bestIdx);
-            profiles.SetActive(bestIdx);
-        } else {
-            Log("[PROFILE] No matching profile for '%s' — keeping current settings\n",
-                targetName.c_str());
-        }
-    });
+        const TargetProfile p = profiles.Profiles()[idx];
+        Log("[PROFILE] Auto-loading '%s' profile for target '%s'\n",
+            p.name.c_str(), targetName.c_str());
+        slog.Profile("Auto: %s → %s", targetName.c_str(), p.name.c_str());
+        profiles.SetActive(idx);
+        ApplyProfile(p, &cam,
+            focuser.IsOpen() ? &focuser : nullptr,
+            mount, slog, profileHooks);
+        controls.SetActiveProfile(idx);
+        CaptureConfig cfg = capturer.Config();
+        cfg.filePrefix = p.filePrefix.empty() ? p.name : p.filePrefix;
+        capturer.SetConfig(cfg);
+    };
+    gotoPanel.SetProfileAutoLoadCallback(profileForTarget);
     gotoPanel.SetSyncCallback([&](double ra, double dec) {
         Log("[GOTO] Sync: RA=%.4fh Dec=%.4f\u00B0\n", ra, dec);
         slog.Mount("Sync: RA=%.4fh Dec=%.4f\u00B0", ra, dec);
@@ -2842,6 +2868,8 @@ static int RunApp(bool useEmulator) {
             notifBar.NotifyWarn(L"Synced on " + wname + L" - mount refused tracking");
         else
             notifBar.NotifyError(L"Mount refused the sync - not aligned");
+        // The scope is on this object now: its profile follows (2026-11-15).
+        if (synced) profileForTarget(name);
     });
 
     // RC is always in control - no CPWI. Set initial state before callbacks wired.
@@ -2983,7 +3011,7 @@ static int RunApp(bool useEmulator) {
         const std::string editedName = prof.name;
 
         // ── Dialog dimensions ─────────────────────────────────
-        const int DW = 420, DH = 520;
+        const int DW = 420, DH = 548;
         const int LW = 130, EW = 250, EH = 22;
         const int PX = 12, PY = 10, ROWH = 28;
 
@@ -3026,12 +3054,12 @@ static int RunApp(bool useEmulator) {
         enum EditIds {
             ED_NAME=3001, ED_GAIN, ED_EXP, ED_GAMMA,
             ED_WBR, ED_WBB, ED_USB, ED_FOCUS,
-            ED_LIMIT, ED_PREFIX, ED_NOTES,
+            ED_LIMIT, ED_PREFIX, ED_NOTES, ED_CAMERA,
             BTN_SAVE=3100, BTN_CANCEL
         };
 
         wchar_t tmp[64];
-        struct Row { const wchar_t* lbl; HWND edit; } rows[11];
+        struct Row { const wchar_t* lbl; HWND edit; } rows[12];
         int ri = 0;
 
         // Name
@@ -3098,6 +3126,15 @@ static int RunApp(bool useEmulator) {
         MkLabel(L"Notes:", PX, y+3, LW, EH);
         const std::wstring wNotes = raduk::core::ToWide(prof.notes);
         rows[ri++] = {L"Notes:", MkEdit(wNotes.c_str(), PX+LW, y, EW, EH, ED_NOTES)};
+        y += ROWH;
+
+        // Camera (2026-11-15): the camera these settings are for. A
+        // profile that names none is offered the one connected now, so
+        // saving it stamps it; cleared, it means any camera.
+        MkLabel(L"Camera:", PX, y+3, LW, EH);
+        const std::wstring wCam = raduk::core::ToWide(
+            prof.camera.empty() ? raduk::core::RigConfig::Get().cameraName : prof.camera);
+        rows[ri++] = {L"Camera:", MkEdit(wCam.c_str(), PX+LW, y, EW, EH, ED_CAMERA)};
         y += ROWH + 6;
 
         // ── Buttons ───────────────────────────────────────────
@@ -3209,6 +3246,7 @@ static int RunApp(bool useEmulator) {
             prof.limitValue    = GetEditI(ED_LIMIT, prof.limitValue);
             prof.filePrefix    = GetEditA(ED_PREFIX);
             prof.notes         = GetEditA(ED_NOTES);
+            prof.camera        = GetEditA(ED_CAMERA);
 
             // Clamp values to valid ranges
             prof.gain          = std::max(0,      std::min(570,    prof.gain));
@@ -4504,6 +4542,11 @@ static int RunApp(bool useEmulator) {
         }
     });
 
+    // 2026-11-15: is it in focus? Judged against the live sharpness just
+    // after the last good autofocus on this target (core/FocusVerdict.h).
+    raduk::core::FocusReference focusRef;
+    std::string focusRefTarget;   // the profile the reference belongs to
+
     // ── Phase 9: Autofocus ────────────────────────────────────
     // Completion callback — fires from scan thread, no Win32 UI calls here
     // Phase 153.1: autofocus's wiring is AppCore's AutofocusController;
@@ -4523,6 +4566,11 @@ static int RunApp(bool useEmulator) {
         };
         h.session = [&](const std::string& t) { slog.Focuser("%s", t.c_str()); };
         h.failed  = [&]() { core.arCtl.NoteFocusFailed(); };
+        h.succeeded = [&]() {
+            focusRef.ArmAfterAutofocus();
+            Log("[FOCUS] autofocus succeeded: the next %d readings are the reference\n",
+                raduk::core::FocusReference::kRefSamples);
+        };
         // Phase 161.3: a calibration run's figures. The optics come from
         // rig.ini; the block is appended to focus_calibration.ini in the
         // data root and never rewritten, because the figures move with
@@ -7225,6 +7273,29 @@ static int RunApp(bool useEmulator) {
                 sf.saturated   = lastAnalysis.starSaturated;
                 sf.arcsecPerPx = raduk::core::RigConfig::Get().plateScaleArcsecPx;
                 preview.SetStarFigure(sf);
+            }
+            // The focus verdict. A new target drops the reference: a
+            // figure measured on Jupiter says nothing about Vega.
+            {
+                const std::string tgt = profiles.Active() ? profiles.Active()->name : std::string();
+                if (tgt != focusRefTarget) {
+                    if (focusRef.HasReference() || focusRef.Measuring())
+                        Log("[FOCUS] target %s -> %s: reference dropped\n",
+                            focusRefTarget.c_str(), tgt.c_str());
+                    focusRef.Reset();
+                    focusRefTarget = tgt;
+                }
+                const bool hadRef = focusRef.HasReference();
+                if (lastAnalysis.valid) focusRef.Submit(lastAnalysis.sharpnessPct);
+                if (!hadRef && focusRef.HasReference())
+                    Log("[FOCUS] reference %.1f%% for %s\n", focusRef.Reference(), tgt.c_str());
+                raduk::gui::sharpness::FocusFigure ff;
+                ff.show   = true;
+                ff.state  = (int)focusRef.State();
+                ff.nowPct = focusRef.Now();
+                ff.refPct = focusRef.Reference();
+                preview.SetFocusFigure(ff);
+                sharpWindow.SetFocusFigure(ff);
             }
             freshAnalysis = true;
         }

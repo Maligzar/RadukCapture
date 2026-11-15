@@ -159,6 +159,11 @@ struct TargetProfile {
     std::string name;
     std::string filename;
     std::string targetType;  // "planet", "moon", "dso", "star"
+    // The camera these settings were made for, as the SDK names it
+    // ("ZWO ASI678MC"). Empty = any camera. Selecting a profile for a
+    // target prefers one whose camera is the one connected, so a second
+    // camera can carry its own settings for the same target.
+    std::string camera;
 
     // ── Phase 100: the rail this profile is held to ────────────
     //

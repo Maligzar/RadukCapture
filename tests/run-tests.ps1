@@ -36,6 +36,8 @@ $Tests = @(
     @{ Name = "mount_jog";         Sources = @() }
     @{ Name = "planet_apparent_size"; Sources = @() }
     @{ Name = "profile_notes";     Sources = @() }
+    @{ Name = "profile_per_target"; Sources = @() }
+    @{ Name = "focus_verdict";     Sources = @() }
     @{ Name = "recentre";          Sources = @() }
     @{ Name = "observation_record"; Sources = @() }
     @{ Name = "hardware_link";     Sources = @() }
