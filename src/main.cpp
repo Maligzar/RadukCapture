@@ -4304,6 +4304,9 @@ static int RunApp(bool useEmulator) {
             // reason it exists, and the format-change path on line ~2147
             // has always passed it. Only this one, the RECORD button,
             // did not.
+            // Phase 157.0: a long exposure is not a silent camera.
+            core.recCtl.SetExpectedFrameSec(
+                cam.GetControlValue(ControlId::ExposureUs) / 1.0e6);
             core.recCtl.Begin(roiWidth, roiHeight, roiBits, stopAtWindow);   // phase 153.2
         }
         // Immediately sync the button visual — don't wait for the 500ms readout tick.
@@ -7138,7 +7141,12 @@ static int RunApp(bool useEmulator) {
             rv.centroidY = (uint32_t)lastAnalysis.centroidY;
             rv.sharpnessPct = lastAnalysis.sharpnessPct;
             rv.seeingScore = lastAnalysis.seeingScore;
-            const bool held = core.recCtl.Service(gateEnabled, gateThresh, rv);
+            // Phase 157.0: and a camera gone quiet, from the capture
+            // thread's newest frame time and its measured rate.
+            const double fpsNow = capture.Stats().fps.load();
+            const bool held = core.recCtl.Service(gateEnabled, gateThresh, rv,
+                capture.Stats().lastFrameTimestamp.load(),
+                fpsNow > 0.01 ? 1.0 / fpsNow : 0.0);
             if (gateEnabled) controls.SetGateActive(held);
         }
 

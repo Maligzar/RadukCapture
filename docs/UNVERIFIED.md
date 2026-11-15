@@ -6,7 +6,7 @@ Line numbers are left out on purpose, so an edit elsewhere in a file does not ma
 
 A tag is removed when its clear-night item has been run and the value confirmed or replaced, with the night noted in the checklist.
 
-24 constants across 11 checklist items.
+25 constants across 11 checklist items.
 
 ## Item 1: SHARP_CEIL = 1000
 
@@ -68,6 +68,7 @@ A tag is removed when its clear-night item has been run and the value confirmed 
 
 | Constant | Value | File | What verifies it |
 |---|---|---|---|
+| `kMinSilenceSec` | `15.0` | `src/app/RecordingController.h` | count camera faults on the real camera; a run that stops while the camera recovers means this is too short |
 | `kWedgeFloorMs` | `1500.0` | `src/core/WedgeBudget.h` | count 'Pipeline wedge' lines while frames flow on the real camera |
 
 ## Item 58: The fine pass, and which way moves end

@@ -12,7 +12,10 @@
 //      the writer's hints, and act on what the capture thread raised --
 //      the disk stopping the run (135.1), the frame/time limit or the
 //      derotation window, and the one-off warning when a run passes the
-//      window it was not stopped at.
+//      window it was not stopped at -- and (phase 157.0) a camera that has
+//      sent nothing for far longer than its frames take, which used to
+//      leave the run open for ever: the limits are only checked when a
+//      frame arrives.
 //    - Complete: what a finished recording means -- whether a sequence
 //      must stop, and whether to auto-stack (SER only, never in a
 //      sequence, never an empty or abnormal run).
@@ -24,11 +27,13 @@
 //  A template over the capture manager, so a test uses a fake.
 // ============================================================
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <functional>
 #include <string>
 
+#include "Clock.h"
 #include "UiSink.h"
 
 namespace raduk::app {
@@ -60,10 +65,26 @@ struct RecordingCompletion {
 template <class Capture>
 class RecordingControllerT {
 public:
-    RecordingControllerT(Capture& cap, IUiSink& ui) : m_cap(cap), m_ui(&ui) {}
+    // Phase 157.0: a run whose camera has gone quiet stops after this, or
+    // after five frame intervals, whichever is longer. Long enough for the
+    // capture thread to ride out a USB drop (it retries every second).
+    // UNVERIFIED(item 56): count camera faults on the real camera; a run that stops while the camera recovers means this is too short
+    static constexpr double kMinSilenceSec = 15.0;
+
+    RecordingControllerT(Capture& cap, const IClock& clock, IUiSink& ui)
+        : m_cap(cap), m_clock(&clock), m_ui(&ui) {}
 
     void SetHooks(RecordingHooks h) { m_hooks = std::move(h); }
     void SetUi(IUiSink& u)          { m_ui = &u; }
+    void SetClock(const IClock& c)  { m_clock = &c; }
+
+    // The exposure, at the start of a run, so a long frame is not taken
+    // for a silent camera.
+    void SetExpectedFrameSec(double s) { m_expectedFrameSec = s > 0.0 ? s : 0.0; }
+    double SilenceLimitSec(double frameIntervalSec) const {
+        const double frame = (std::max)(frameIntervalSec, m_expectedFrameSec);
+        return (std::max)(kMinSilenceSec, 5.0 * frame);
+    }
 
     // ── The derotation window (phase 108) ──────────────────────
     void SetDerotWindow(double sec, const std::string& body) {
@@ -76,6 +97,8 @@ public:
     // Start, with the configuration already set on the capture manager.
     bool Begin(int width, int height, int bits, bool stopAtWindow) {
         if (!m_cap.StartRecording(width, height, bits)) return false;
+        m_lastFrameAt = m_clock->Now();
+        m_haveStamp = false;
         Usb(true);
         const std::string st = UsbStatus();
         Session("USB capture mode \xE2\x80\x94 " + st);
@@ -104,9 +127,18 @@ public:
         Line(std::string("[REC] stopped (") + (why ? why : "manual") + "); USB polling restored: " + st + "\n");
     }
 
-    // Every frame while recording. Returns whether the gate is holding
-    // frames back (the panel shows it when the gate is enabled).
-    bool Service(bool gateEnabled, float gateThreshold, const RecordingFrameView& a) {
+    // Every pass of the loop while recording. `lastFrameStamp` is the
+    // capture thread's newest frame time, which moves whenever the camera
+    // delivers (gated or not); `frameIntervalSec` from its measured rate.
+    // Returns whether the gate is holding frames back.
+    bool Service(bool gateEnabled, float gateThreshold, const RecordingFrameView& a,
+                 uint64_t lastFrameStamp = 0, double frameIntervalSec = 0.0) {
+        const double now = m_clock->Now();
+        if (!m_haveStamp || lastFrameStamp != m_lastStamp) {
+            if (m_haveStamp) m_lastFrameAt = now;   // the first look only records the stamp
+            m_lastStamp = lastFrameStamp;
+            m_haveStamp = true;
+        }
         const bool seenOk = !gateEnabled || !a.valid || a.seeingScore >= gateThreshold;
         // The capture thread submits; this publishes its policy.
         m_cap.SetGateOpen(seenOk);
@@ -125,6 +157,13 @@ public:
             const bool derot = m_cap.DerotationStopped();
             End(true, derot ? "derotation window" : "frame/time limit reached");
             if (derot) Notify(ToastLevel::Info, "Run stopped at the derotation window");
+        } else if (now - m_lastFrameAt > SilenceLimitSec(frameIntervalSec)) {
+            const double quiet = now - m_lastFrameAt;
+            End(false, "the camera stopped sending frames");
+            char b[160];
+            std::snprintf(b, sizeof(b), "Recording stopped: no frames from the camera for %.0f s. "
+                          "Every frame it sent was saved", quiet);
+            Notify(ToastLevel::Error, b);
         } else if (m_derotSec > 0.0 && !m_derotWarned && m_cap.ElapsedSec() >= m_derotSec) {
             m_derotWarned = true;
             char b[96];
@@ -169,7 +208,12 @@ private:
     void Line(const std::string& s)       { m_ui->Line(s); }
 
     Capture&       m_cap;
+    const IClock*  m_clock;
     IUiSink*       m_ui;
+    double         m_lastFrameAt = 0.0;
+    uint64_t       m_lastStamp = 0;
+    bool           m_haveStamp = false;
+    double         m_expectedFrameSec = 0.0;
     RecordingHooks m_hooks;
     double         m_derotSec = 0.0;
     std::string    m_derotBody;
