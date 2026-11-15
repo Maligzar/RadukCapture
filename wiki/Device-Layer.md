@@ -194,18 +194,36 @@ Every profile value is clamped to these:
 
 ```cpp
 static int GetCount();
-bool  Open(int index);
+bool  Open(int index);             // fails if the position cannot be read
 void  Close();
-bool  MoveTo(int position);
-bool  MoveRelative(int steps);
-bool  Stop();
-bool  IsMoving() const;
-int   GetPosition() const;
+bool  MoveTo(int position);        // one-sided, guarded; false = refused
+bool  MoveToFar(int position);     // the same, past the travel guard
+bool  MoveToDirect(int position);  // one leg, guarded
+bool  MoveInSequence(unsigned stopGeneration, int position, bool oneSided);
+bool  MoveRelative(int steps);     // adds to the commanded target in flight
+bool  Stop();                      // advances the stop generation
+bool  IsMoving() const;            // a failed query counts as moving
+void  Service();                   // commands a one-sided move's second leg
+bool  TryGetPosition(int& pos) const;   // false when the read failed
+int   GetPosition() const;         // the last good read, never an invented 0
 int   GetMaxPosition() const;      // from EAF_INFO::MaxStep
+void  SetMaxTravel(int steps);     // rig.ini FocuserMaxTravelSteps
+std::string LastRefusal() const;   // why the last move did not happen
 void  SetReverse(bool);
 void  SetBacklash(int steps);
 float GetTemperature() const;
 ```
+
+**Since phase 161.0.** Both `EAFFocuser` and `EAFEmulator` move by one pure
+rule, `src/core/FocuserGuard.h`: no move from a position that could not be
+read, none outside the range, and none longer than the travel guard unless the
+caller overrides it. Every call to the SDK is made under one command lock, so
+the EAF SDK is never entered by two threads at once, and `Stop()` advances a
+stop generation under that lock: a sequence of moves begun before a stop is
+refused after it. The emulator can also fail reads, refuse moves, stall, lag
+before it reports moving, and stop short of its target, for tests; and
+`RADUK_EMU_STEPS_PER_TICK` sets its motor pace (a Windows runner's 15.6 ms
+timer tick makes it about ten times slower than under wine).
 
 Absolute positioning over a 0–600,000 step range. The real rig focuses near
 **168,187** steps. [Autofocus](Autofocus) drives this; the `+`/`-` and

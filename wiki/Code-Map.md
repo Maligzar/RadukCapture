@@ -98,7 +98,10 @@ See [Image Analysis](Image-Analysis).
 | File | Lines | Owns |
 |------|-------|------|
 | [`CentroidTracker.h`](https://github.com/Maligzar/Raduk-Capture/blob/master/src/core/CentroidTracker.h) / `.cpp` | 355 / 581 | Five-stage acquisition, `GuideCalibration`, 2×2 pixel solve, cos(alt) rescale |
-| [`AutofocusRoutine.h`](https://github.com/Maligzar/Raduk-Capture/blob/master/src/core/AutofocusRoutine.h) | 789 | V-curve scan, `FitPeakWindow`, backlash approach, the regression revert |
+| [`AutofocusRoutine.h`](https://github.com/Maligzar/Raduk-Capture/blob/master/src/core/AutofocusRoutine.h) | 1,757 | Coarse sweep out and back, the fine pass (centre-out, fitted over all its points, error bar), AE's turn between the stages, every move checked, CALIBRATE FOCUS (`StartCalibration`), the regression revert |
+| [`core/FocusDirection.h`](https://github.com/Maligzar/Raduk-Capture/blob/master/src/core/FocusDirection.h) | 464 | Phases 139, 145, 161. Pure: direction fits, one-sided moves, overshoot, the fine pass's order, fit, repeat check and error bar |
+| [`core/FocuserGuard.h`](https://github.com/Maligzar/Raduk-Capture/blob/master/src/core/FocuserGuard.h) | 204 | Phase 161.0. Pure: may a focuser move start, the travel guard, the move ledger, the second press past the guard |
+| [`core/FocusCalibration.h`](https://github.com/Maligzar/Raduk-Capture/blob/master/src/core/FocusCalibration.h) | 303 | Phase 161.3. Pure: HFD growth from both wings, um per step and the focus zone in steps, slack from a reversal, the `focus_calibration.ini` block |
 | [`CordWrap.h`](https://github.com/Maligzar/Raduk-Capture/blob/master/src/core/CordWrap.h) | 142 | Cumulative azimuth travel, GoTo-jump rejection |
 | [`AlignGuide.h`](https://github.com/Maligzar/Raduk-Capture/blob/master/src/core/AlignGuide.h) | 102 | Turns "point north" into the observer's own landmarks from one bearing |
 | [`core/RoiFollower.h`](https://github.com/Maligzar/Raduk-Capture/blob/master/src/core/RoiFollower.h) | 307 | Phase 107. Moves the sensor window on the capture thread, and proves each move landed |
@@ -107,6 +110,17 @@ See [Image Analysis](Image-Analysis).
 | [`core/DerotationLimit.h`](https://github.com/Maligzar/Raduk-Capture/blob/master/src/core/DerotationLimit.h) | 140 | Phase 108. Run length from the Rayleigh limit and tonight's apparent size |
 
 See [Tracking and Guiding](Tracking-and-Guiding), [Autofocus](Autofocus).
+
+## `src/app` — the core apart from the window (phase 153)
+
+| File | Lines | Owns |
+|------|-------|------|
+| [`AppCore.h`](https://github.com/Maligzar/Raduk-Capture/blob/master/src/app/AppCore.h) | 138 | The devices and the frame pipeline in RunApp's order, the clock and UI-sink seams, the controllers |
+| [`AutofocusController.h`](https://github.com/Maligzar/Raduk-Capture/blob/master/src/app/AutofocusController.h) | 306 | 153.1. The AUTO FOCUS press-twice, AE before the sweep and between its stages, the Moon path, CALIBRATE FOCUS, completion delivered on the loop's thread |
+| [`AutofocusFeed.h`](https://github.com/Maligzar/Raduk-Capture/blob/master/src/app/AutofocusFeed.h) | 131 | 153.0. The live stream to autofocus: 1000/HFD per fresh analysis, the edge score for the fine pass, its region from focus, the channel |
+| [`RecordingController.h`](https://github.com/Maligzar/Raduk-Capture/blob/master/src/app/RecordingController.h) | 179 | 153.2. Recording's start and stop wiring |
+| [`AutorunController.h`](https://github.com/Maligzar/Raduk-Capture/blob/master/src/app/AutorunController.h) | 237 | 153.3. Autorun's wiring |
+| [`Clock.h`](https://github.com/Maligzar/Raduk-Capture/blob/master/src/app/Clock.h), [`UiSink.h`](https://github.com/Maligzar/Raduk-Capture/blob/master/src/app/UiSink.h) | 45, 65 | The seams a test replaces |
 
 ## `src/core` — advisors and AI
 

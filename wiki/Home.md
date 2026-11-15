@@ -7,7 +7,7 @@ talking to each device directly: the ASI SDK for the camera, the EAF SDK for
 the focuser, and for the mount, ASCOM through CPWI when it is installed, else
 the raw NexStar serial command set. It never needs an internet connection.
 
-**Version 3.3** (source release; the title bar shows the exact build).
+**Version 3.3** (3.3.15 at the last update; source release; the title bar shows the exact build).
 Planetary imaging comes first. Deep sky and stars, with the ASI678MC and the
 ZWO cameras that follow it, are planned. See
 [Roadmap and Phase History](Roadmap-and-Phase-History#planned-from-2026-11-13).

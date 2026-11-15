@@ -84,7 +84,15 @@ zenith distance.
 USB 3.0.
 
 **Backlash** — Mechanical slop meaning the position reached depends on the
-direction of approach. [Autofocus always approaches from below](Autofocus#backlash-approach).
+direction of approach. Every focuser move ends travelling one way
+(`FocuserFinalDirection`), first going past by the overshoot
+(`FocuserOvershootSteps`) when it would otherwise end the other way; the
+measured backlash itself (`FocuserBacklashSteps`) is used only for the coarse
+autofocus result's half-backlash shift. See [Autofocus](Autofocus).
+
+**Critical focus zone** — The range of focuser travel over which the image is
+within a quarter-wave of perfect focus: 4.88 λN² at the focal plane, about
+270 um at f/10. CALIBRATE FOCUS turns it into focuser steps.
 
 **Bayer / RGGB** — The colour filter mosaic over the sensor: one red, two
 green, one blue per 2×2 block. Two consequences run through this codebase:
