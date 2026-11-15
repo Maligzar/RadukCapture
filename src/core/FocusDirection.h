@@ -334,10 +334,10 @@ inline std::vector<int> FineVisitOrder(int n) {
 //        third does more harm than good (6 steps), which is why nothing
 //        is done inside 10%, where the ratio is mostly seeing
 //        (tests/af_fine_pass.cpp). 161.4a first shipped with no
-//        correction and the old give-up at 40%: on CI's Windows runner,
-//        where the emulated motor is about ten times slower than under
-//        wine, the pass ran long enough for a test's 6% a second fade to
-//        cross that line, and a sound pass was thrown away.
+//        correction and 145.5's give-up at 40%, a line drawn for a pass
+//        that went one way across: at a slow motor's pace a steady 6% a
+//        second took the centre's two readings past it and a sound pass
+//        was thrown away for the coarse result.
 //      - Beyond a factor of three: the pass is given up. That is not a
 //        fade, it is a different picture.
 enum class RepeatAction { None, Detrend, GiveUp };

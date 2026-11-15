@@ -68,7 +68,7 @@ static Out Focus(double edgeFadePerSec, unsigned seed) {
         }
     });
     af.Start(f.GetPosition());
-    for (int i = 0; i < 12000 && !done.load(); ++i) Ms(10);
+    for (int i = 0; i < 30000 && !done.load(); ++i) Ms(10);   // a wait, not a tolerance
     out.done = done.load();
     feed.store(false);
     feeder.join();

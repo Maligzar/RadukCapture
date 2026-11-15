@@ -124,10 +124,19 @@ static int Run(int start, bool capped, std::string& msg, double fadePerSec = 0.0
         }
     });
     af.Start(start, o.fineOnly);
-    for (int i = 0; i < 6000 && !done.load(); ++i)
+    // How long the harness waits for a run to finish: five minutes. It was
+    // one. That is a wait, not a tolerance: on a Windows runner the
+    // emulated motor is about ten times slower than under wine (Sleep(1)
+    // is the 15.6 ms timer tick), a run from 8000 steps off with three
+    // sweeps takes most of a minute there, and since 161.4a the fine pass
+    // reverses at every point. When the wait ran out the routine was
+    // destroyed mid-sweep and the position it happened to be at was
+    // judged as its answer ("Aborted by user", +1000 steps).
+    for (int i = 0; i < 30000 && !done.load(); ++i)
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     feed.store(false);
     feeder.join();
+    if (!done.load()) { ++g_fail; std::printf("  FAIL the run from %d did not finish in five minutes\n", start); }
     msg = res.message;
     if (measured) *measured = af.MeasuredBacklash();
     return f.GetOpticalPosition();

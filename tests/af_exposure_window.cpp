@@ -117,7 +117,7 @@ static Run Go(int windowMs, Ae ae, int answerAfterMs = 300) {
         }
     });
     af.Start(f.GetPosition());
-    for (int i = 0; i < 6000 && !done.load(); ++i) Ms(10);
+    for (int i = 0; i < 30000 && !done.load(); ++i) Ms(10);   // a wait, not a tolerance
     out.done = done.load();
     feed.store(false);
     feeder.join();
