@@ -399,6 +399,9 @@ public:
 
     // Search catalog by name (case-insensitive), slew to first match.
     // Used by APEX remote commands and sky map auto-GoTo.
+    // 2026-11-15: main.cpp sends a lunar feature to the Moon's profile.
+    bool TargetIsLunarFeature(const std::string& name) const { return IsLunarFeature(name); }
+
     void RequestGoToByName(const std::string& name) {
         RefreshSky();
         auto results = m_catalog.Search(name.c_str());

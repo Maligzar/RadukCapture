@@ -102,6 +102,8 @@ public:
     // is to look back at it, and a window that starts empty every time
     // you open it could only ever show you the present, which is what
     // the overlay already does.
+    void SetFocusFigure(const sharpness::FocusFigure& f) { m_focus = f; }
+
     void Push(float sharpnessPct) {
         if ((int)m_samples.size() >= HISTORY)
             m_samples.erase(m_samples.begin());
@@ -219,7 +221,7 @@ private:
 
         const float top    = (float)m_chrome.CaptionHeight();
         const float pad    = 10.0f;
-        const float labelW = m_font->GetFontSize() * 6.0f;
+        const float labelW = m_font->GetFontSize() * 7.0f;   // "100% of AF"
         // Thin bars with no gap: a wide window should spend its width on
         // history rather than on spacing between bars that are one pixel
         // apart anyway.
@@ -227,7 +229,8 @@ private:
                         m_samples.data(), (int)m_samples.size(),
                         pad, top + pad, (float)m_w - pad * 2.0f,
                         (float)m_h - top - pad * 2.0f,
-                        labelW, 1.0f, 0.0f, /*gridlines*/ true);
+                        labelW, 1.0f, 0.0f, /*gridlines*/ true,
+                        {}, m_focus);
 
         m_chrome.Draw(m_rt, m_dwrite, m_w);
         m_rt->EndDraw();
@@ -294,6 +297,7 @@ private:
     bool                    m_fullscreen = false;
     WINDOWPLACEMENT         m_savedPlacement = {};
     std::vector<float>      m_samples;
+    sharpness::FocusFigure  m_focus{};   // 2026-11-15
 };
 
 } // namespace raduk::gui

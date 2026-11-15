@@ -1,0 +1,21 @@
+# 2026-11-15: a GoTo switches the profile to the target's own, making
+# one when there is none. On the rig a GoTo to Vega kept Jupiter's
+# profile, so the status bar said [Jupiter] with the scope on Vega.
+# The sandbox has its own profiles folder: nothing here touches the real one.
+name    Profile follows the target
+timeout 120
+
+expect 30 Started -- EMULATOR
+wait   3
+goto   Vega
+expect 15 [PROFILE] Created 'vega.ini' for 'Vega' from the Star profile
+expect 15 Auto-loading 'Vega' profile
+expect 15 Panel synced
+wait   2
+shot   vega
+goto   Jupiter
+expect 15 Auto-loading 'Jupiter' profile
+absent 3  [PROFILE] Created
+goto   Vega
+expect 15 Auto-loading 'Vega' profile
+absent 3  [PROFILE] Created
