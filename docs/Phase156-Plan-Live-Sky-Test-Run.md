@@ -51,6 +51,7 @@ A sky test should not take over a night, and only real-sky results count. So the
   - the plate solver, the session log, observation records and CoreLog.
 
 ## Stages
+- **Through Dash, with Playwright** (the owner, 2026-11-15). The sky groups drive the app through Dash's own controls, using the Playwright specs in `tests/web`, so the unattended run, a person on a phone and the tests all use one path (`docs/TESTING.md`). Playwright runs the groups unattended; Claude Code reads the results afterwards and spends nothing on driving them.
 - **156.0 Sky scenarios on the hardware build.**
   - The runner learns `--sky`: the hardware build, with the real camera, mount and focuser.
   - New verbs:

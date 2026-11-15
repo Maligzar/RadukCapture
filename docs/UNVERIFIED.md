@@ -6,7 +6,7 @@ Line numbers are left out on purpose, so an edit elsewhere in a file does not ma
 
 A tag is removed when its clear-night item has been run and the value confirmed or replaced, with the night noted in the checklist.
 
-25 constants across 11 checklist items.
+26 constants across 12 checklist items.
 
 ## Item 1: SHARP_CEIL = 1000
 
@@ -56,6 +56,12 @@ A tag is removed when its clear-night item has been run and the value confirmed 
 | Constant | Value | File | What verifies it |
 |---|---|---|---|
 | `autorunSeeingPct` | `80` | `src/core/RigConfig.h` | seeing figure logged beside the eye through a change in the sky |
+
+## Item 53: Pointing
+
+| Constant | Value | File | What verifies it |
+|---|---|---|---|
+| `kTimeoutSec` | `180.0` | `src/core/SlewWatch.h` | time the longest GoTo on the real mount (horizon to horizon); this must stay well above it |
 
 ## Item 55: Exposure ladder
 

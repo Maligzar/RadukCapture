@@ -53,7 +53,10 @@ These are left to the phases that own them, not duplicated here:
   - a short drop: the run rides it out;
   - a stuck slew.
 - **A gap it found, fixed.** A camera that died mid-recording left the run open for ever: the frame and time limits are checked only when a frame arrives, and nothing read the camera-fault flag but a log line. `RecordingController` now ends the run when the capture thread's newest frame has not moved for 15 s, or five frame intervals (from the measured rate or the exposure, whichever is longer). The 15 s is tagged UNVERIFIED against item 56.
-- **Found and owed: the GoTo panel's slew status has no timeout.** A GoTo that never arrives shows SLEWING for ever, and the survey loop moves on silently after 90 s. The mosaic (90 s) and satellite (120 s) paths do time out. 157.0b adds the panel's timeout.
+- **Found: the GoTo panel's slew status had no timeout**, so a GoTo that never arrived showed SLEWING for ever, and the survey loop moved on silently after 90 s. The mosaic (90 s) and satellite (120 s) paths did time out. **Fixed in 157.0b:**
+  - `src/core/SlewWatch.h` (pure, tested by `tests/slew_watch.cpp`) gives the panel a 180 s limit, tagged UNVERIFIED against item 53. Past it, the mount is stopped, the panel says so, and acquisition does not start.
+  - A survey slew that does not finish ends the survey with the mount stopped.
+  - The fault test's `slew-stuck` group drives the watch against the stuck emulated mount.
 - **Not injected yet:**
   - a mount that stops answering, which needs the real NexStar transport's timeouts and has no comms layer in the emulator to fake;
   - a disk filling, already covered by `tests/capture_write_fail.cpp` through its seams;
