@@ -10,9 +10,8 @@
 //                                  with their record, and the reason is said
 //    fault_injection camera-blip   a short drop: the run rides it out
 //    fault_injection slew-stuck    a GoTo never arrives: the mount keeps
-//                                  saying so (the GoTo panel's timeout is
-//                                  157.0b; the mosaic and satellite paths
-//                                  already time out)
+//                                  saying so, and the GoTo panel's watch
+//                                  (157.0b) calls it a fault past its limit
 //
 //  Real time, a minute or so a group.
 // ============================================================
@@ -22,6 +21,7 @@
 #include "core/CaptureThread.cpp"
 #include "core/FrameAnalyzer.cpp"
 #include "core/CentroidTracker.cpp"
+#include "core/SlewWatch.h"
 
 #include <atomic>
 #include <chrono>
@@ -188,6 +188,12 @@ static void GroupSlewStuck() {
     m.GoToRADec(ra + 1.0, dec + 5.0);
     std::this_thread::sleep_for(std::chrono::seconds(4));
     Check(m.IsSlewing(), "the mount still says it is slewing after 4 s, going nowhere");
+    // Phase 157.0b: the GoTo panel's watch, on the stuck mount's answers.
+    SlewWatch w; w.Start(0.0);
+    Check(w.Update(SlewWatch::kTimeoutSec - 1.0, m.IsSlewing()) == SlewWatch::State::Slewing,
+          "the panel's watch waits while inside its limit");
+    Check(w.Update(SlewWatch::kTimeoutSec + 1.0, m.IsSlewing()) == SlewWatch::State::TimedOut,
+          "and calls it a fault past it");
     m.CancelGoTo();
     std::this_thread::sleep_for(std::chrono::milliseconds(300));
     Check(!m.IsSlewing(), "and a cancel ends it");
