@@ -1613,6 +1613,10 @@ paths pass fault injection, and one unattended sky run completes.
    faults and their test, and a camera dying mid-run now ends the run.
    **157.0b written (3.3.16)**: the GoTo panel's slew timeout. Next: 157.1,
    the soak, and 157.2, independent file checks.
+   **Dash tests with Playwright written 2026-11-15 (3.3.17)**: `docs/TESTING.md`
+   and `tests/web`. The owner's rules: every control at the telescope is
+   reachable from Dash and tested through it; the suites run themselves
+   and Claude reviews the results. Found 151.4 (Dash's weather fetch).
 24. **Phase 156 (row 56), the unattended live-sky test run**, after the
    validation mode (155.4) it consumes and the controllers (153.1-153.2)
    it drives. Its CI dress rehearsal (156.5) can start once 153.0's

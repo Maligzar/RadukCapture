@@ -1,0 +1,13 @@
+{
+  "name": "raduk-dash-tests",
+  "private": true,
+  "description": "Playwright tests for Dash, RadukCapture's browser control page. See docs/TESTING.md.",
+  "scripts": {
+    "test": "playwright test --trace off",
+    "test:offline": "playwright test offline --trace off",
+    "test:live": "playwright test --grep @live --trace off"
+  },
+  "devDependencies": {
+    "@playwright/test": "*"
+  }
+}
