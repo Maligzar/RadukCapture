@@ -34,6 +34,84 @@ On a flat-topped, Jupiter-like curve in `tests/autofocus_saturn.cpp`, the coarse
 
 Plan: [`Phase145-Plan-Two-Stage-Focus.md`](https://github.com/Maligzar/Raduk-Capture/blob/master/docs/Phase145-Plan-Two-Stage-Focus.md). None of it has run on the sky yet: clear-night items 47 and 58.
 
+## Since v3.3.12: phase 161, safe, calibrated, with an error bar
+
+From a first-principles review on 2026-11-14. Plan:
+[`Phase161-Plan-Focus-Safety-And-Calibration.md`](https://github.com/Maligzar/Raduk-Capture/blob/master/docs/Phase161-Plan-Focus-Safety-And-Calibration.md).
+Where this page's older sections disagree with this one, this one is current.
+
+**The focuser cannot be sent somewhere by accident (161.0a).** One pure rule,
+`src/core/FocuserGuard.h`, used by the EAF wrapper and the emulator alike:
+- no move from a position that could not be read (a failed read used to come
+  back as 0, and the next relative step, autofocus start or profile save used
+  it);
+- none outside the focuser's range, and none longer than rig.ini
+  `FocuserMaxTravelSteps` (12,000) in one command; the panel's GO TO asks for a
+  second press past it, and a profile load or remote move is refused;
+- autofocus stays within the guard of where it started, and checks every move
+  (accepted, finished, within 2 steps), stopping the motor and ending the sweep
+  with the reason when one fails;
+- a relative step during a move adds to where that move ends.
+
+**Stop wins (161.0b).** Each focuser holds one command lock round every move,
+stop, second leg and SDK call, and `Stop()` advances a stop generation under
+it. Autofocus sends every move with the generation it started with
+(`IFocuser::MoveInSequence`), so once any stop has returned (the abort, the
+panel's STOP, the emergency stop) no move of that sweep can start. The panel's
+STOP now ends a sweep.
+
+**Overshoot apart from backlash (161.2).** How far a one-sided move goes past
+before coming back is rig.ini `FocuserOvershootSteps` (default three times the
+backlash figure, at least 1,500). It only has to exceed the knob's slack;
+`FocuserBacklashSteps` keeps its one job, the coarse result's half-backlash
+shift. With a slack the app is not told about, the old 200-step overshoot left
+one step number two mirror positions 800 steps apart; 1,500 left them the same.
+
+**Auto-exposure is part of autofocus.** It settles before the sweep and is
+held inside each stage, as since phase 112. New: after the coarse sweep the
+routine goes to the coarse result, releases AE there for up to 10 s, and holds
+it again for the fine pass, because an exposure set on a defocused (dim) disc
+can clip the focused one.
+
+**The fine pass, refitted (161.4a).**
+- Points are visited centre-out, the leading side swapping each ring, each
+  approached the final way. A 20% fade across a seven-point pass moved the
+  peak 7.5 steps one way across, 2.8 centre-out.
+- The centre is read first and last. Within 10% nothing is done; up to a
+  factor of three a steady change is taken out, in the logarithm; beyond that
+  the pass is given up.
+- The position comes from a parabola through the logarithm of every point
+  within half the top's height when there are five, else three points: at 8%
+  noise a point, 11 steps of scatter against 18.5.
+- The result has an error bar from resampling the frames: the status line
+  reads `AF done: pos=168214 ±9`. A lower bound on the sky.
+- The fine region is sized from the target's half-flux diameter at the coarse
+  best point (161.5b), and waits for a size rather than falling to 48 px.
+  rig.ini `AutofocusChannel=green` scores only the green Bayer sites, which
+  may focus better low in the sky where dispersion splits the colours.
+
+**CALIBRATE FOCUS (161.3).** `Ctrl`+click AUTO FOCUS (or remote
+`calibrate_focus`) after an autofocus. It measures how well a position repeats,
+the knob's slack (a reversal from the slope of the edge score), and the growth
+of the half-flux diameter on both wings; `src/core/FocusCalibration.h` turns
+that into micrometres per step and the focus zone in steps, using rig.ini's
+pixel size, focal ratio and `CentralObstruction`, and appends a block to
+`focus_calibration.ini`. This is the measurement the **Parameters** section
+below was never based on: the arithmetic (5,760 steps a turn, a 0.75 to
+1.06 mm thread, a moving primary's 26x) gives about 3.4 to 4.8 um a step and
+a focus zone of about 60 to 85 steps, against the "2,000 steps per mm" in the
+code's note. Clear-night item 59 runs it.
+
+**Threads (161.1).** The completion no longer runs hooks on the scan thread:
+the routine leaves its result with `AutofocusController`, and `Deliver()`,
+called from the frame loop, runs them on the GUI thread. `Start()` reads as
+running at once; each sample carries its frame's capture time and a collection
+window takes only frames taken after it opened.
+
+Tests: `focuser_safety`, `af_exposure_window`, `af_sample_window`,
+`af_overshoot`, `focus_calibration`, `af_fine_pass`, `ring_monotonic`, and
+cases in `af_controller`, `app_feed` and `focus_metric`.
+
 ## The algorithm
 
 ```
@@ -77,6 +155,12 @@ struct AutofocusParams {
 };
 ```
 
+> **These are v1.2.0's defaults.** Since phase 161 the struct also carries
+> `overshoot`, `exposureWindowMs` and the fine-pass fields, and the bounds are
+> narrowed at each start to the focuser's range and the travel guard. The
+> reasoning below has not been checked against the sky; CALIBRATE FOCUS
+> measures it (see above).
+>
 > **Why these numbers.** Tuned for the ZWO EAF on a Celestron 8SE at f/10.
 > The 8SE has ~2000 steps/mm of focus travel at this f-ratio, and at typical
 > planetary seeing the focus zone is ±500–1000 steps. A ±3000-step sweep
@@ -259,8 +343,11 @@ The scan runs on a dedicated thread; **samples come from the main thread**
 via `SubmitSharpness()`. Progress and state are atomics, so the UI polls
 `State()` / `StatusText()` without locking.
 
-The completion callback fires **on the scan thread** — it must not call
-Win32 UI functions. `main.cpp` uses `PostMessage` or atomics from it.
+The completion callback fires **on the scan thread**. Since phase 161.1 it
+only hands the result to `AutofocusController::OnComplete`, which keeps it;
+`Deliver()`, called from the frame loop, runs the panel, session-log and
+Autorun hooks on the GUI thread, and `Busy()` stays true until it has. Before
+that the hooks set window text from the scan thread.
 
 ### Joinable, not detached
 
@@ -292,7 +379,11 @@ the log says so.
 ## Operating tips
 
 - **Start near focus.** The sweep covers ±3000 steps; if true focus is
-  outside that it will say `not bracketed` rather than guess.
+  outside that it will say `not bracketed` rather than guess. It also never
+  goes further than `FocuserMaxTravelSteps` from where it started.
+- **Calibrate once on a clear night** (`Ctrl`+click AUTO FOCUS after a
+  focus): the slack it measures belongs in `FocuserBacklashSteps`, and
+  `FocuserOvershootSteps` must be larger than it.
 - **Use a bright star or a planetary disc**, never a faint fuzzy object.
 - **Check the EAF is connected** — FOCUSER shows a position, not dashes.
 - **Press `A` again to abort** mid-run.

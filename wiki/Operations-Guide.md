@@ -131,6 +131,14 @@ When it is done it reports what it found:
   failing.** Read the suggestion and try again.
 - "Focus not bracketed" → true focus is outside the ±3000-step range it
   searched. Focus roughly by hand first, then re-run.
+- `AF done: pos=168214 ±9` → the ±9 is the fine pass's error bar in steps,
+  from resampling its frames; a lower bound, since neighbouring frames share
+  their seeing.
+
+On the first clear night, after an autofocus, hold `Ctrl` and click AUTO
+FOCUS to run **CALIBRATE FOCUS**. It takes a few minutes, ends where it
+began, and writes the knob's slack and the focus zone in steps to
+`focus_calibration.ini`. Put the slack in `FocuserBacklashSteps`.
 
 You can also focus by hand while watching the picture.
 

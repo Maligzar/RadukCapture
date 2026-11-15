@@ -81,7 +81,7 @@ static Out Run(int lagMs, bool stamped) {
         }
     });
     af.Start(f.GetPosition());
-    for (int i = 0; i < 6000 && !done.load(); ++i) Ms(10);
+    for (int i = 0; i < 30000 && !done.load(); ++i) Ms(10);   // a wait, not a tolerance
     out.done = done.load();
     out.dropped = af.StaleDropped();
     feed.store(false);

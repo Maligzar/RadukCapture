@@ -1062,6 +1062,11 @@ static int RunApp(bool useEmulator) {
         ap.finalDir = finalDir;
         ap.fineStage = rig.autofocusFineStage;
         ap.exposureWindowMs = raduk::core::AF_EXPOSURE_WINDOW_MS;   // phase 161
+        // Phase 161.5b: the fine pass's channel, from rig.ini and the camera.
+        core.SetAutofocusChannel(rig.autofocusChannel == "green",
+                                 cam.IsOpen() ? cam.Describe().bayer : raduk::core::BayerPattern::None);
+        Log("[FOCUS] fine pass scores %s (AutofocusChannel)\n",
+            core.AutofocusChannel() == raduk::core::EdgeChannel::Luminance ? "luminance, all four sites" : "the green sites");
         autofocus.SetParams(ap);
         Log("[FOCUS] every move ends %s (FocuserFinalDirection); fine pass %s (AutofocusFineStage)\n",
             finalDir > 0 ? "outward, rising numbers" : "inward, falling numbers",

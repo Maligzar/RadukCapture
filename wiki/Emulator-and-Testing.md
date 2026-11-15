@@ -74,6 +74,16 @@ Motor movement at a realistic step rate, with absolute positioning and
 temperature. Coupled to the camera's blur model through
 `RADUK_EMU_TRUE_FOCUS`.
 
+Since phase 139 it can simulate the knob's slack (`RADUK_EMU_FOCUS_SLACK`):
+the mirror, which the camera focuses on, trails the step count by half the
+slack either way. Since phase 161.0 it moves by the same guard as the real
+EAF (`FocuserGuard.h`), and a test can make it fail a read, refuse a move,
+stall, lag before it reports moving, or stop short of its target. Its motor
+pace is 10 steps per `Sleep(1)` tick: about 10,000 steps a second under wine,
+about ten times slower on a Windows runner, where a tick is the 15.6 ms timer
+period. A test build can set `RADUK_EMU_STEPS_PER_TICK=1` to run at that pace
+anywhere.
+
 ---
 
 ## Environment switches
@@ -107,6 +117,7 @@ unaligned mount.
 | `RADUK_EMU_TRUE_FOCUS` | 168000 | Focuser position at which the image is perfectly sharp |
 | `RADUK_EMU_BLUR_PX_STEP` | 0.0083 | Blur added per step away from focus |
 | `RADUK_EMU_FREEZE_SURFACE` | off | Stops planet rotation, turbulence and moons, so **only focus varies** |
+| `RADUK_EMU_FOCUS_SLACK` | 0 | Steps of knob slack: the same step from opposite sides is two mirror positions (phase 139) |
 
 ### Image quality
 
@@ -237,7 +248,15 @@ and it gates merges — corrected 2026-10-18.
 
 [`tests\run-tests.ps1`](https://github.com/Maligzar/Raduk-Capture/blob/master/tests/run-tests.ps1)
 builds and runs every suite in `tests\` and exits non-zero if any fails.
-That is 26 suites: `histogram_accuracy`, `adc_alignment`,
+That is **124 suites** as of 3.3.15 (2026-11-15). The list below is the
+first 26, kept for the record; the runner's own list is the current one.
+Among the newer ones, the focus work alone has `focuser_safety` (a stop
+nothing can overtake, the travel guard, each injected fault),
+`ring_monotonic`, `af_exposure_window`, `af_sample_window`, `af_overshoot`,
+`focus_calibration`, `af_fine_pass`, `af_controller`, `af_direction_fit`,
+`af_readiness`, `autofocus_saturn`, `focus_metric` and
+`focus_metric_compare`; `app_headless` runs the whole core on the
+emulators with no window. The first 26 were: `histogram_accuracy`, `adc_alignment`,
 `sensor_analysis`, `write_buffer_sizing`, `sky_conditions`,
 `capture_thread_submit`, `ai_context_facts`, `object_knowledge`,
 `object_panel_text`, `slew_variable`, `mount_jog`, `planet_apparent_size`,
@@ -259,8 +278,9 @@ copies the ASan runtime DLL beside them.
 > `uint32_t` with no `<cstdint>`, which MSVC had been hiding behind a
 > transitive include.
 
-> **A gap worth knowing.** No suite compiles `main.cpp` or
-> `CaptureThread.cpp`, so a green run says nothing about either. The
+> **A gap worth knowing.** No suite compiles `main.cpp`, so a green run
+> says nothing about its wiring; CI's two builds do compile it.
+> `app_headless` covers what phase 153 has moved out of it. The
 > P5.2b migration touched ~55 call sites across both and was verified by
 > syntax-checking them directly in each build configuration instead. They run on the bench with no camera,
 mount or sky attached, which is what lets them gate anything.
@@ -270,8 +290,13 @@ NOT in the gate because each needs hardware, third-party software or a
 real recording — a gate that cannot run on a clean checkout is not a
 gate.
 
-**There is still no CI.** Nothing runs these on push; the gate is a
-local one, run by hand before a commit. That is the honest limit of it.
+**CI since phase 151.0 (2026-11-13).** `.github/workflows/build.yml` runs
+on every pull request on a Windows runner: the version check (every PR bumps
+PATCH), no vendor names outside the camera backend, no `printf` in core, the
+unverified register in step, both builds, and `run-tests.ps1`. A failed
+suite's summary shows the lines that say what failed as well as its last
+40. CI cannot run the scenarios (the exe stalls in early start-up on the
+runner), so `app_headless` is its check of the core.
 
 The suite does not cover the GUI, the device SDKs, or anything that
 needs sky. Those remain the emulator's job and the review documents in

@@ -49,7 +49,7 @@ graph, RGB align, pixel readout.
 injection, defocus and sensor noise; WebSocket telemetry and browser
 dashboard; session logging; profile management.
 
-**Added since v3.0 (phases 115 to 145, through v3.3).** Each phase's evidence,
+**Added since v3.0 (phases 115 to 161, through v3.3.15).** Each phase's evidence,
 and what it still owes, is in [`PHASE-STATUS.md`](https://github.com/Maligzar/Raduk-Capture/blob/master/docs/PHASE-STATUS.md).
 Most of these are proven on the bench and in the emulator, not yet under the
 sky.
@@ -72,7 +72,15 @@ sky.
 - **Exposure set by the planet**, and an automatic display stretch (140).
 - **Focus:** backlash handled in software, and a readiness indicator (139);
   two-stage autofocus with an edge-contrast fine pass, focus on the Moon's
-  surface, a configurable final direction, and a fade check (145).
+  surface, a configurable final direction, and a fade check (145); a focuser
+  that cannot be sent somewhere by accident, a stop nothing can overtake, an
+  overshoot apart from the backlash, CALIBRATE FOCUS, auto-exposure at every
+  stage, and a fine pass visited centre-out with an error bar (161).
+- **Structure:** the core apart from the window, run headless in tests
+  (153.0), and tested controllers for autofocus, recording and Autorun (153.1
+  to 153.3); the app's own pixel format and versioned profiles (149.0b); one
+  description of the imaging train (149.0); airplane mode (151.0); the
+  register of constants never checked against the sky (155).
 
 ---
 
@@ -131,6 +139,11 @@ plan in [`docs/`](https://github.com/Maligzar/Raduk-Capture/blob/master/docs/):
 | 154 | The hand-written network code: coverage-guided fuzzing, then a decision with evidence | The only network-facing C++ moves a telescope |
 | 155 | Unverified constants measured by the app, real recordings replayed in CI, and hygiene | Most constants were never checked against the sky |
 | 152 | The AI assistant revisited: the best model the hardware allows, StarMachine's as the fallback, a written check | Lowest priority, by the owner's word |
+| 156 | An unattended live-sky test run | The 3.4 milestone's acceptance |
+| 157 | Reliability qualification: fault injection, a soak, independent file readers | The 3.4 milestone's acceptance |
+| 158 | Focus through the night: a history, and a refocus when focus drifts | Release 3.5; builds on 161's calibration |
+| 159, 160 | QHY and Player One cameras | Release 3.6 |
+| 161 | Focus that is safe, calibrated and stated with an error bar | From the 2026-11-14 review. 161.0 to 161.3 merged (#160); 161.4a and 161.5b in #162; 161.4b waits on a calibration run on the sky |
 
 **Rules for every phase from 146 on** (from the
 [Phase 149 plan](https://github.com/Maligzar/Raduk-Capture/blob/master/docs/Phase149-Plan-Any-ZWO-Camera.md#rules-for-every-phase-from-146-on)):
@@ -367,7 +380,7 @@ Condensed from the help file's phase history. The full table is in
 | v3.0 | Matches the `v3.0` tag, a source release through phase 114: FITS output, ROI following, surface lock, the derotation limit, lunar and solar mosaics, push-to, the pixel readout, Autorun with seeing-aware runs, the camera controls review, the visual system and the two-row toolbar |
 | v3.1 | The catch-up for phases 115 to 143 merged after 3.0.0 without a number (the instrument look, field fixes, panel docking, recording hardening, the science phases). From 3.1.0 every pull request bumps the last part and the one completing a phase bumps the middle, checked by CI; the exact build is in the title bar and the help's Phase History. 3.1.1: the seeing forecast logged (138) |
 | v3.2 | Jupiter's events put to work (144); 3.2.1: the disc in the record and FITS (144.1), and the object panel no longer bleeds over its diagram on a star (B1) |
-| v3.3 | **The current version.** Two-stage autofocus with an edge-contrast fine pass, focus on the Moon's surface, a configurable final direction and a fade check (145); 3.3.1: the plans for phases 146 to 152 |
+| v3.3 | **The current version** (3.3.15 at the last update). Two-stage autofocus with an edge-contrast fine pass, focus on the Moon's surface, a configurable final direction and a fade check (145); 3.3.1: the plans for phases 146 to 152; 3.3.2 to 3.3.9: the drop ledger (146), the pixel format and imaging train (149), the unverified register (155), airplane mode (151); 3.3.10 to 3.3.13: AppCore and the autofocus, recording and Autorun controllers (153); 3.3.14: focuser safety, CALIBRATE FOCUS and AE between autofocus's stages (161); 3.3.15: the fine pass refitted, its region from focus, and a green option (161.4a, 161.5b) |
 
 ### Two version boundaries that invalidate old numbers
 

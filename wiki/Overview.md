@@ -123,7 +123,7 @@ whole safety argument, and it is why the class is shaped that way.
 | HCG threshold | Gain ≥ 182 — read noise drops ~3.5 e⁻ → 0.8 e⁻ |
 | Unity gain | ~100 (noisy; avoided for planets) |
 | Full well | 11,270 e⁻ (keep histogram 50–70%) |
-| Focuser | ZWO EAF, USB 2.0, 0–600,000 steps, absolute positioning, temperature sensor, backlash compensation |
+| Focuser | ZWO EAF, USB 2.0, 0–600,000 steps, absolute positioning, temperature sensor. Its own backlash compensation is set to 0 while the app runs; the app handles backlash itself (phases 139, 161) |
 | Real focus position | ~168,187 steps on this rig |
 | Mount | Celestron NexStar 8SE, alt-az, StarSense AutoAlign |
 | Optics | 2032 mm f/10 (C8) |

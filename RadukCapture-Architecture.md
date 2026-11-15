@@ -1,8 +1,9 @@
 # RadukCapture: Architecture and Roadmap
 
 Planetary capture software for the ZWO ASI678MC, ZWO EAF and Celestron 8SE.
-Version 3.1 (`src/Version.h`, which also says how the number moves). Rewritten 2026-11-01, through phase 131;
-updated 2026-11-11 through phase 133, with 132.10a written and 134 planned.
+Version 3.3.15 (`src/Version.h`, which also says how the number moves). Rewritten 2026-11-01, through phase 131;
+updated 2026-11-11 through phase 133; updated 2026-11-15 through phase 153.3
+and phase 161's bench stages (161.0a to 161.3, 161.4a, 161.5b).
 
 This file describes how the application is built, what exists, and what is
 left to do. It was rewritten because its old build plan had stopped at about
@@ -117,7 +118,7 @@ The capture thread never waits on a mutex, a disk or a serial port.
 | WebSocket | `WebSocketServer`, port 8765 | Telemetry and remote commands |
 | Preview stream | `PreviewStreamer` | JPEG preview for subscribed dashboards |
 | Leoben | `LeobenClient` | Weather fetch |
-| On demand | `AutofocusRoutine`, `ASTAPSolver`, `AutoStakkertRunner`, `AIAssistant`, status drive scanner, GoTo survey | Long jobs off the GUI thread |
+| On demand | `AutofocusRoutine`, `ASTAPSolver`, `AutoStakkertRunner`, `AIAssistant`, status drive scanner, GoTo survey | Long jobs off the GUI thread. Autofocus's result is left by its thread and delivered on the GUI thread (`AutofocusController::Deliver`, phase 161.1), so no window is touched from it |
 | Emulator only | `CameraEmulator`, `EAFEmulator`, `MountEmulator` | Frame generation and simulated motion |
 
 ### 3.2 Ring buffer
@@ -132,6 +133,14 @@ that it cannot tear a frame a reader has just claimed.
 
 The ring may lose frames, because the preview is allowed to. Recording does
 not go through it.
+
+It never goes back in time (phase 161.1). The reader takes the newest frame
+each pass, and the frames it skipped stay READY; the newest-first scan used to
+hand one of those back when a pass found nothing new, so the preview stepped
+back and autofocus could score a frame from before the focuser settled. Each
+committed frame carries the ring's own sequence number (`ringSeq`, which a
+capture restart does not reset), and `GetLatestFrame` frees anything no newer
+than the last frame it returned.
 
 ### 3.3 Memory and the write path
 
@@ -160,9 +169,20 @@ not go through it.
 | `IMount` | `ASCOMMount`, `NexStarMount` | `MountEmulator` | Run time, behind `MountProxy` |
 
 `ICamera` is brand-neutral, and the capture hot path names no vendor type.
-`FrameSlot::imgType` and `TargetProfile::imgType` keep the ZWO enum, because
-the second persists to saved profiles. Phase 149.0b plans a RadukCapture
-`PixelFormat` and versioned profiles that migrate on load.
+Frames and profiles carry the app's own `PixelFormat` (phase 149.0b), and
+profiles are versioned and migrate on load.
+
+**The focuser cannot be sent somewhere by accident (phase 161.0).** Both
+`EAFFocuser` and `EAFEmulator` move by one pure rule, `src/core/FocuserGuard.h`:
+no move from a position that could not be read (a failed read used to come
+back as 0), none outside the focuser's range, and none longer than rig.ini
+`FocuserMaxTravelSteps` (12,000) unless the caller overrides it; a refused
+move returns false and `LastRefusal()` says why. Each focuser holds one
+command lock round every move, stop, second leg and SDK call, and `Stop()`
+advances a stop generation under it: a sequence of moves (autofocus) carries
+the generation it started with, so once a stop has returned no move of that
+sequence can start. One-sided moves go past by `FocuserOvershootSteps`, which
+has only to exceed the knob's slack, apart from the measured backlash.
 
 The mount path tries ASCOM first, when CPWI is running, then NexStar serial
 direct. Simulators are refused unless `AscomProgId` in `rig.ini` names one.
@@ -214,7 +234,16 @@ ASCOM is live, not superseded.
   proven on emulator frames only.
 - **`LightLadder.h`:** one path for auto-exposure along exposure and gain.
   `CameraRails` limits are advisory to a person and hard for the controller.
-- **`AutofocusRoutine.h`:** V-curve sweep, with AE settled and held.
+- **`AutofocusRoutine.h`:** a coarse sweep out and back on 1000/HFD, then a
+  fine pass on the edge metric (`FocusMetric.h`). Auto-exposure settles before
+  the sweep, is held inside each stage, and gets a turn at the coarse focus
+  before the fine pass. The fine pass visits its points centre-out, each
+  approached the final way, fits every point near its peak, and reports an
+  error bar (phase 161.4a). Every move is checked: accepted, finished and
+  where it was sent, or the motor is stopped and the sweep ends with the
+  reason. `StartCalibration` (CALIBRATE FOCUS, 161.3) measures what one step
+  does, and `FocusCalibration.h` turns that into the focus zone in steps.
+  The routine is reached through `AutofocusController` (phase 153.1).
 - **`DerotationLimit.h`:** run length from the Rayleigh limit and tonight's
   apparent size.
 - **`AutorunRunner.h`, `MosaicRunner.h`:** pure state machines. They return an
@@ -294,6 +323,12 @@ ASCOM is live, not superseded.
 | Advisory for people, hard for controllers | A person may have a reason. A controller has no judgement to respect |
 | Profiles do not own every setting | Startup restores the last camera state, and loading a profile applies that profile |
 | One status file | A phase once held four statuses across six files |
+| No focuser move from a number nobody read | A failed read once counted as step 0, and the next relative step or profile load drove the mirror toward the end of travel |
+| A stop generation, not only an abort flag | A flag checked a moment before a move lets that move go out after the stop; a generation checked under the command lock cannot |
+| Overshoot apart from backlash | One only has to exceed the slack, the other has to be right; one number doing both made an unmeasured backlash a mechanical fault |
+| Autofocus's result delivered on the GUI thread | The completion hooks set window text; run on the scan thread they raced the window's own updates |
+| Auto-exposure is part of autofocus | Settled before the sweep, held inside a stage, and given a turn at the coarse focus, because an exposure set on a defocused disc can clip the focused one |
+| Measure the focuser before tuning to it | The step scale the routine was tuned on was never measured; CALIBRATE FOCUS measures it and writes it down, never overwriting a past run |
 
 ---
 
@@ -344,8 +379,11 @@ copy (corrected 2026-11-13, phase 155).
 file come down to wiring there, which no test reaches. Phase 153 takes the
 wiring into an `AppCore` and tested controllers. 153.0 (2026-11-13) moved the
 devices and the frame pipeline into `src/app/AppCore.h`, and the autofocus
-feeds into `src/app/AutofocusFeed.h`. `tests/app_headless.cpp` builds the same
-core on the emulators and runs it without a window, in groups.
+feeds into `src/app/AutofocusFeed.h`. Then one controller per subsystem, each
+with its own test: `AutofocusController` (153.1), `RecordingController`
+(153.2) and `AutorunController` (153.3). `tests/app_headless.cpp` builds the
+same core on the emulators and runs it without a window, in groups. main.cpp
+is about 8,950 lines (9,089 before 153).
 
 Data outside `src`: `data/object_knowledge.db`, `data/pointing_model.csv`,
 `profiles/*.ini`, `rig.ini` beside the executable, `captures/`, `logs/`, and
@@ -367,7 +405,9 @@ loop, so that a later force-show cannot win.
 
 ### 6.2 Stop paths
 
-`Esc` stops the mount unconditionally. Every recording stop goes through one
+`Esc` stops the mount unconditionally. The focuser's STOP, the emergency stop
+and an autofocus abort all end a running sweep, and once any of them has
+returned no further move of that sweep can start (phase 161.0b). Every recording stop goes through one
 `endRecording`, so USB polling returns to normal on all of them. Stops in
 `CaptureManager` are checked when a frame arrives, so a dead camera cannot end
 a run. Autorun has its own limit for that reason.
@@ -516,7 +556,7 @@ number's evidence, and what it still owes, is its row in
 | Fine following | ROI following, surface lock, click to recentre | 47, 107, 109 |
 | GoTo and sky map | Catalogue, ephemeris, sky map, second map, session planner, survey | 6, 13, 14, 63, 90 |
 | Plate solving | ASTAP, solve and sync, scale check on every solve, pixel readout, push-to | 30, 47b, 54, 102, 110 |
-| Focus | V-curve autofocus, single-star HFD and FWHM, focus-step keys | 9, 31/32 part, 73, 85 |
+| Focus | Two-stage autofocus with AE at every stage, backlash and overshoot handled, focuser safety, CALIBRATE FOCUS, an error bar; single-star HFD and FWHM, focus-step keys | 9, 31/32 part, 73, 85, 139, 145, 161 |
 | Exposure | Auto-exposure, log slider, typed values, rails, light ladder, AE hold | 12, 98, 100, 112 |
 | Quality | Sharpness, seeing score, gate, clipping, quality graph, sensor analysis, histograms | 21, 25a, 36, 76, 79 |
 | Automation | Autorun, seeing hold, run ranking, derotation limit, WinJUPOS naming | 108, 113, 114 |
@@ -554,14 +594,18 @@ The largest debt in the project, and it costs little code. In order:
 2. **Clear-night item 1, `SHARP_CEIL`,** which biases the gate and autofocus.
 3. **Clear-night item 14, click to recentre.**
 4. **Clear-night item 15,** which settles the pixel readout's row order.
-5. **Clear-night item 18, the first lunar mosaic.**
-6. **Real-camera unknowns from recent work,** checklist 31 to 46: whether
+5. **Clear-night item 59, CALIBRATE FOCUS.** Run after an autofocus, on a
+   planet above 45 degrees: um per step, the knob's slack, and the focus zone
+   in steps. It settles whether the routine's old "2,000 steps per mm" is
+   seven to ten times off, as the arithmetic says, and unblocks phase 161.4b.
+6. **Clear-night item 18, the first lunar mosaic.**
+7. **Real-camera unknowns from recent work,** checklist 31 to 46: whether
    `ASISetStartPos` applies during capture and how many frames it takes,
    surface lock on a real Moon, whether the camera lists gamma, the light
    ladder's knees, whether `centroidValid` holds on a full-frame Moon, whether
    signal squared holds on real frames, and whether 80% is the right seeing
    bar.
-7. **The rest of the checklist,** including thresholds tuned on synthetic
+8. **The rest of the checklist,** including thresholds tuned on synthetic
    frames, and a recall to a real planet on the real mount.
 
 ### 13.2 Can be done indoors now
@@ -642,4 +686,4 @@ scenario is the way to retire a row below.
 
 ---
 
-*RadukCapture 3.1*
+*RadukCapture 3.3*

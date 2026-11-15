@@ -34,7 +34,10 @@
 #include <cstdint>
 #include <cmath>
 #include <mutex>
+#include <random>
 #include <vector>
+
+#include "FocusCalibration.h"   // FitParabola (phase 161.4)
 
 namespace raduk::core {
 
@@ -285,6 +288,168 @@ inline int ResolveOvershoot(int rigSteps, int backlash, const char** source) {
     if (rigSteps >= 0) { if (source) *source = "rig.ini FocuserOvershootSteps"; return rigSteps; }
     if (source) *source = "3 x the backlash figure, at least 1500, not measured";
     return (std::max)(3 * (std::max)(0, backlash), kMinDefaultOvershootSteps);
+}
+
+// ── Phase 161.4: the fine pass, refitted ────────────────────────
+//
+// Three changes to how the fine pass turns its points into a position,
+// from the review of 2026-11-14.
+//
+// 1. The order the points are VISITED. One way across, a slow change in
+//    the light or the seeing tilts the whole curve and moves its peak;
+//    145.5 measured that by reading the centre twice and "corrected" it
+//    with a straight line, on one noisy ratio. Visited centre-out, the
+//    same slow change falls about equally on both sides: it narrows the
+//    curve a little and leaves the peak alone. The side that goes first
+//    swaps with each ring (above, below; below, above; ...): with the
+//    same side always first, that side would always be the brighter by
+//    one visit. What is left is the pair beside the centre, one visit
+//    apart: a 20% fade across a seven-point pass moves the peak 2.8
+//    steps of a 100-step spacing, where one way across moved it 7.5.
+//    Every point is approached the final way, so the order costs only
+//    the reversals.
+inline std::vector<int> FineVisitOrder(int n) {
+    std::vector<int> order;
+    if (n <= 0) return order;
+    const int c = n / 2;
+    order.push_back(c);
+    for (int k = 1; (int)order.size() < n; ++k) {
+        const int first = (k % 2) ? c + k : c - k, second = (k % 2) ? c - k : c + k;
+        if (first >= 0 && first < n)   order.push_back(first);
+        if (second >= 0 && second < n) order.push_back(second);
+    }
+    return order;
+}
+
+//    The centre is still read twice, first and last. The ratio of the
+//    two says how much the whole picture changed while the pass ran.
+//      - Within 10%: nothing is done.
+//      - Up to a factor of three: the scores are detrended, taking the
+//        change as steady (exponential in time, so linear in the
+//        logarithm the fit works in). The order already takes most of
+//        a steady change out (the light halving through a nine-point
+//        pass moves the peak 3.6 steps of a 60-step spacing, uncorrected);
+//        detrending with the right ratio takes out the rest, and with a
+//        ratio misread by 15% leaves under 3 steps. A ratio misread by a
+//        third does more harm than good (6 steps), which is why nothing
+//        is done inside 10%, where the ratio is mostly seeing
+//        (tests/af_fine_pass.cpp). 161.4a first shipped with no
+//        correction and 145.5's give-up at 40%, a line drawn for a pass
+//        that went one way across: at a slow motor's pace a steady 6% a
+//        second took the centre's two readings past it and a sound pass
+//        was thrown away for the coarse result.
+//      - Beyond a factor of three: the pass is given up. That is not a
+//        fade, it is a different picture.
+enum class RepeatAction { None, Detrend, GiveUp };
+inline RepeatAction RepeatVerdict(float ratio) {
+    if (!(ratio > 0.0f)) return RepeatAction::GiveUp;
+    if (ratio >= 0.9f && ratio <= 1.0f / 0.9f) return RepeatAction::None;
+    // UNVERIFIED(item 58): a factor of three between the fine pass's two centre readings is the right place to give up
+    if (ratio >= 1.0f / 3.0f && ratio <= 3.0f) return RepeatAction::Detrend;
+    return RepeatAction::GiveUp;
+}
+// The factor that brings a score read at time t to the light at tFirst,
+// for a steady change that took the centre from 1 to `ratio` between
+// tFirst and tEnd.
+inline double DetrendFactor(float ratio, double t, double tFirst, double tEnd) {
+    if (!(ratio > 0.0f) || !(tEnd > tFirst)) return 1.0;
+    return std::exp(-std::log((double)ratio) * (t - tFirst) / (tEnd - tFirst));
+}
+
+// 2. The fit. A parabola through the best point and its two neighbours
+//    uses three of the points. When five or more lie within half the
+//    top's height, round the best, a parabola through the LOGARITHM of
+//    all of them (a Gaussian) uses them all: on a simulated pass with 8%
+//    noise a point it cut the scatter of the result from about 25 steps
+//    to 5. When the curve is wider than the span that fit is poorly
+//    conditioned (it was worse than three points), which is why it is
+//    taken only with five points inside half height and a vertex within
+//    one and a half spacings of the best point. Otherwise, three points.
+struct FinePeak {
+    bool   ok        = false;   // a position was fitted
+    bool   bracketed = false;   // the best point is not at an end
+    double pos       = 0.0;
+    int    used      = 0;       // points in the fit
+    int    bestIndex = 0;
+};
+
+// pos ascending.
+inline FinePeak FitFinePeak(const std::vector<int>& pos, const std::vector<float>& score) {
+    FinePeak r;
+    const int n = (int)(std::min)(pos.size(), score.size());
+    if (n < 3) return r;
+    int pk = 0;
+    for (int i = 1; i < n; ++i) if (score[i] > score[pk]) pk = i;
+    r.bestIndex = pk;
+    if (pk == 0 || pk == n - 1) return r;
+    r.bracketed = true;
+    const float top = score[pk];
+    if (top > 0.0f) {
+        int lo = pk, hi = pk;
+        while (lo > 0 && score[lo - 1] > 0.0f && score[lo - 1] >= 0.5f * top) --lo;
+        while (hi < n - 1 && score[hi + 1] > 0.0f && score[hi + 1] >= 0.5f * top) ++hi;
+        if (hi - lo + 1 >= 5 && lo < pk && pk < hi) {
+            std::vector<double> x, y;
+            for (int i = lo; i <= hi; ++i) { x.push_back((double)pos[i] - pos[pk]); y.push_back(std::log((double)score[i])); }
+            double A = 0, B = 0, C = 0;
+            if (FitParabola(x, y, A, B, C) && A < 0.0) {
+                const double v = -B / (2.0 * A);
+                const double spacing = (std::max)((double)(pos[pk] - pos[pk - 1]), (double)(pos[pk + 1] - pos[pk]));
+                if (std::fabs(v) <= 1.5 * spacing) {
+                    r.ok = true; r.pos = pos[pk] + v; r.used = hi - lo + 1;
+                    return r;
+                }
+            }
+        }
+    }
+    const CurvePeak c = PeakWindow3(pos, score);
+    if (c.ok) { r.ok = true; r.pos = c.pos; r.used = 3; }
+    return r;
+}
+
+// 3. An error bar. Each point's score is a percentile of its frames; the
+//    frames are resampled with replacement, the percentile and the fit
+//    redone, a few hundred times. Half the spread between the 16th and
+//    84th percentiles of the fitted positions is the figure. It is a
+//    LOWER bound: frames a few tens of milliseconds apart share their
+//    seeing, so they are not as independent as the resampling assumes,
+//    and nothing here knows about the mirror's own repeatability
+//    (CALIBRATE FOCUS measures that). A fixed seed, so a run reads the
+//    same twice.
+struct FineError {
+    bool   ok    = false;
+    double sigma = 0.0;   // steps
+    int    fits  = 0;
+};
+inline FineError BootstrapFinePeak(const std::vector<int>& pos,
+                                   const std::vector<std::vector<float>>& frames,
+                                   float percentile, int rounds = 200, unsigned seed = 16141) {
+    FineError e;
+    const size_t n = (std::min)(pos.size(), frames.size());
+    if (n < 3 || rounds < 20) return e;
+    for (size_t i = 0; i < n; ++i) if (frames[i].empty()) return e;
+    std::mt19937 rng(seed);
+    std::vector<double> got;
+    std::vector<float> sc(n), pick;
+    for (int r = 0; r < rounds; ++r) {
+        for (size_t i = 0; i < n; ++i) {
+            const size_t m = frames[i].size();
+            pick.resize(m);
+            std::uniform_int_distribution<size_t> d(0, m - 1);
+            for (size_t k = 0; k < m; ++k) pick[k] = frames[i][d(rng)];
+            sc[i] = ScorePercentile(pick, percentile);
+        }
+        const FinePeak p = FitFinePeak(pos, sc);
+        if (p.ok) got.push_back(p.pos);
+    }
+    e.fits = (int)got.size();
+    if (e.fits < rounds / 2) return e;   // most resamples did not even bracket: no figure
+    std::sort(got.begin(), got.end());
+    const double lo = got[(size_t)(0.16 * (got.size() - 1))];
+    const double hi = got[(size_t)(0.84 * (got.size() - 1))];
+    e.sigma = 0.5 * (hi - lo);
+    e.ok = true;
+    return e;
 }
 
 // Which backlash figure to use until the sky measures one. rigSteps < 0

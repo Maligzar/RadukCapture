@@ -88,6 +88,20 @@ public:
                             const raduk::core::AnalysisResult& last) {
         m_afFeed.FastScore(autofocus, View(frame), View(last), *m_clock, m_ui);
     }
+    // Phase 161.5b: rig.ini AutofocusChannel and the camera's Bayer
+    // pattern, as the edge metric's choice of sites. A mono camera, or
+    // anything but "green", is luminance.
+    void SetAutofocusChannel(bool green, raduk::core::BayerPattern bayer) {
+        using raduk::core::BayerPattern; using raduk::core::EdgeChannel;
+        EdgeChannel c = EdgeChannel::Luminance;
+        if (green) {
+            if (bayer == BayerPattern::RG || bayer == BayerPattern::BG) c = EdgeChannel::GreenOffDiagonal;
+            else if (bayer == BayerPattern::GR || bayer == BayerPattern::GB) c = EdgeChannel::GreenDiagonal;
+        }
+        m_afFeed.SetChannel(c);
+    }
+    raduk::core::EdgeChannel AutofocusChannel() const { return m_afFeed.Channel(); }
+
     // A fresh analysis, for the coarse sweep's score (1000/HFD).
     void FeedAutofocusAnalysis(const raduk::core::AnalysisResult& last, bool fresh) {
         AutofocusFeed::Sharpness(autofocus, View(last), fresh);

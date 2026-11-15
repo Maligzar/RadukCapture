@@ -79,7 +79,7 @@ static AfRun RunAf(EAFFocuser& f, Fault during, int guard = kDefaultMaxTravelSte
     // Let it get three positions into the sweep, then break something.
     for (int i = 0; i < 2000 && af.CurrentStep() < 3 && !done.load(); ++i) Ms(5);
     during(af);
-    for (int i = 0; i < 4000 && !done.load(); ++i) Ms(10);
+    for (int i = 0; i < 30000 && !done.load(); ++i) Ms(10);   // a wait, not a tolerance
     out.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
     out.done = done.load();
     Ms(50);

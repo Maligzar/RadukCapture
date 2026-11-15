@@ -481,6 +481,12 @@ struct RigConfig {
     // Phase 145.3: after the coarse HFD sweep, a fine pass on the edge
     // metric; 0 is the routine as it was before.
     bool autofocusFineStage = true;
+    // Phase 161.5b: what the fine pass's edge metric scores, "luminance"
+    // (all four sites of each Bayer cell, the default) or "green" (the
+    // two green sites). Green is worth trying on a target low in the sky,
+    // where dispersion draws the colours apart; see FocusMetric.h.
+    //   AutofocusChannel=luminance
+    std::string autofocusChannel = "luminance";
 
     // Phase 137. The Great Red Spot's System II longitude, measured on a
     // date, and its drift. Published figures disagree (Sky & Telescope
@@ -542,6 +548,7 @@ struct RigConfig {
         wf("FocuserOvershootSteps", focuserOvershootSteps);
         ws("FocuserFinalDirection", focuserFinalDirection);
         ws("AutofocusFineStage", autofocusFineStage ? "1" : "0");
+        ws("AutofocusChannel", autofocusChannel);
         wf("GrsLonSys2", grsLonSys2);
         ws("GrsEpoch", grsEpoch);
         wf("GrsDriftDegPerMonth", grsDriftDegPerMonth);
@@ -756,6 +763,7 @@ private:
         if (cfg.focuserOvershootSteps < -1 || cfg.focuserOvershootSteps > 20000) cfg.focuserOvershootSteps = -1;
         cfg.focuserFinalDirection = rs("FocuserFinalDirection", cfg.focuserFinalDirection) == "in" ? "in" : "out";
         cfg.autofocusFineStage    = rs("AutofocusFineStage", cfg.autofocusFineStage ? "1" : "0") == "1";
+        cfg.autofocusChannel      = rs("AutofocusChannel", cfg.autofocusChannel) == "green" ? "green" : "luminance";
         cfg.grsLonSys2            = rf("GrsLonSys2", cfg.grsLonSys2);
         cfg.grsEpoch              = rs("GrsEpoch", cfg.grsEpoch);
         cfg.grsDriftDegPerMonth   = rf("GrsDriftDegPerMonth", cfg.grsDriftDegPerMonth);

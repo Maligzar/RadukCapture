@@ -181,10 +181,21 @@ Created per scan, and **joinable rather than detached**.
 > finished thread before spawning a new one.
 
 The scan thread drives the focuser and sleeps; the *samples* come from the
-main thread via `SubmitSharpness()`. Communication is through atomics and
-one small mutex-guarded vector. The completion callback fires on the scan
-thread, so it must not call Win32 UI functions — `main.cpp` uses
-`PostMessage` or atomics from it.
+main thread via `SubmitSharpness()` and `SubmitFastScore()`, each carrying
+its frame's capture time, and a collection window takes only frames taken
+after it opened (phase 161.1). Communication is through atomics and two small
+mutex-guarded vectors. The completion callback fires on the scan thread and
+only leaves the result with `AutofocusController`; `Deliver()`, called from
+the frame loop, runs the window and session-log hooks on the GUI thread
+(phase 161.1; before that they ran on the scan thread and set window text
+from it). `Start()` sets the state before the thread exists, so `IsRunning()`
+has no gap.
+
+The focuser is shared with the GUI and the dashboard. Each focuser holds one
+command lock round every move, stop, second leg and SDK call, and the scan
+thread sends its moves with the stop generation it started with, so a stop
+from any thread cannot be overtaken by the next move of a sweep (phase
+161.0b).
 
 ---
 
@@ -197,7 +208,9 @@ thread, so it must not call Win32 UI functions — `main.cpp` uses
 | Two mutexes, in/out | `FrameAnalyzer` | Producer and consumer contending on one lock |
 | Atomics for all status | `CaptureStats`, `CaptureStatus`, `AFState` | Needing a lock to read a number for the HUD |
 | `std::atomic<bool>` abort flags | Autofocus, calibration | Un-cancellable long operations |
-| `PostMessage` from workers | Autofocus and WS command callbacks | Win32 calls off the GUI thread |
+| Command lock and stop generation | `EAFFocuser`, `EAFEmulator` | A move going out after a stop; two threads in the EAF SDK at once |
+| Result left, delivered on the loop | `AutofocusController::Deliver` | Window calls from the scan thread |
+| `PostMessage` from workers | WS command callbacks | Win32 calls off the GUI thread |
 | Mutex-serialised file writes | `SessionLog`, `PointingModel` | Interleaved log lines |
 
 ---
@@ -206,7 +219,8 @@ thread, so it must not call Win32 UI functions — `main.cpp` uses
 
 1. **Every `GetLatestFrame()` must be matched by a `ReleaseRead()`.** A
    leaked slot permanently reduces ring capacity and eventually starves the
-   capture thread into dropping frames.
+   capture thread into dropping frames. And it never returns a frame older
+   than the last one it returned (phase 161.1): nothing new means nullptr.
 2. **`SubmitCentroid()` is called once per *new* analysis result.** Every
    call refreshes the centroid-loss timeout, so re-submitting a stale
    result defeats the 2 s safety cutoff and inflates the stable/dwell

@@ -1346,7 +1346,7 @@ recording Jupiter.
 
 ## Ranked summary
 
-Updated 2026-10-25. Everything above the line is finished and pushed;
+Updated 2026-10-25; the Done table carried to 2026-11-15. Everything above the line is finished and pushed;
 the ranking below it is what to pick up next.
 
 ### Done
@@ -1413,6 +1413,10 @@ the ranking below it is what to pick up next.
 | The gate builds all its tests | `faa3585` (#66): four tests had never compiled under `run-tests.ps1` |
 | FITS output (phase 106, row 18) | Cube, FRAMES table, `SER`/`FITS` selector, `[STACK]`, `Shift+K`. AutoStakkert opens a cube by hand, not headless, so `[STACK]` shows its window. **Siril has not opened a file**: checklist 29 |
 | Fuzz the WebSocket parser, token on every connection (P5.6) | `137dc5c` — gated by `tests/ws_protocol.cpp`, `ws_fuzz.cpp`, `ws_server_loopback.cpp`; the real dashboard connected and jogged the mount 2026-10-25, **owes one remote stop seen to work** |
+| AppCore and the headless harness (153.0) | #157 (3.3.10) |
+| Autofocus, recording and Autorun controllers (153.1 to 153.3) | #158, #159, #161 (3.3.11 to 3.3.13) |
+| Focuser safety, stop wins, threads, overshoot (161.0a to 161.2) | #160 (3.3.14) |
+| CALIBRATE FOCUS, the routine (161.3), and AE between autofocus's stages | #160 (3.3.14); its run on the sky is clear-night item 59 |
 
 ---
 
@@ -1420,16 +1424,13 @@ the ranking below it is what to pick up next.
 <a name="open-pull-requests"></a>
 ### Open pull requests
 
-**Resolved before any new bench work starts.** Checked against `master`
-at `2fb9c5e` on 2026-11-11, and again at `aa44131` the same evening.
+Checked against `master` at `efa41ff` on 2026-11-15.
 
-| PR | What it is | State | Resolution |
-|---|---|---|---|
-| [#129](https://github.com/Maligzar/RadukCapture/pull/129) | Phase 134.3: F11 on a grouped panel fills the monitor with the group | **Merged 2026-11-11** | Resolved |
-| [#131](https://github.com/Maligzar/RadukCapture/pull/131) | Phase 134.4a: the dock window | **Merged 2026-11-11**, by the build session, which was working from the order before this review | Resolved. 134.4b and 134.5 wait at row 34's place in the order below |
-| [#130](https://github.com/Maligzar/RadukCapture/pull/130) | This review: phases 135 and 139 to 143, the data sources, this table | Draft, green | **Merge next.** Until it does, the roadmap on `master` is the pre-review one, and a session building from `master` follows the old order, as #131 did |
-| [#91](https://github.com/Maligzar/RadukCapture/pull/91) | Comparison against seeing-things/zwo, and a recording-hardening plan numbered 133 | **Closed 2026-11-11**, superseded | **Superseded.** Its plan is now [Phase 135](Phase135-Plan-Recording-Hardening.md), renumbered because 133 is the field-proof phase, and its comparison note moved to `research_notes/` unchanged except for the number. Every defect it describes is still on `master` |
-| [#95](https://github.com/Maligzar/RadukCapture/pull/95) | Dashboard: the user's time zone instead of Phoenix | **Closed 2026-11-11**, unmerged; the branch is kept to port from | **Half superseded; the rest is ported into 132.10b.** `master` took the browser time zone in #93. Not on `master`: an IANA zone override saved with the location, sunrise and sunset on the -0.833° horizon, astro dark reported as NONE when the Sun never reaches -18°, the twilight bar following local sunset through dawn, user-entered Bortle and SQM instead of site lines, and the saved location that never reloads (a `JSON.parse` on an already parsed object). Rebasing a 427-line diff onto the page 132.10b is about to restyle would be done twice; porting the behaviour while the restyle is open is done once |
+| PR | What it is | State |
+|---|---|---|
+| [#162](https://github.com/Maligzar/RadukCapture/pull/162) | Phase 161.4a and 161.5b: the fine pass refitted, its region from focus, `AutofocusChannel=green` (3.3.15) | Draft; CI green on 161.4a's final commit, running on 161.5b |
+
+Merged since the last check (2026-11-13 to 2026-11-14): #157 (153.0, AppCore and the headless harness), #158 (153.1, `AutofocusController`), #159 (153.2, `RecordingController`), #161 (153.3, `AutorunController`), #160 (phase 161's plan, 161.0a to 161.3, and AE between autofocus's stages). The table this replaces, of 2026-11-11 (#129 to #131, #91, #95), was all resolved that week.
 
 ### Next, in order
 
@@ -1568,6 +1569,12 @@ needs the internet** (airplane mode, rule 7, [Phase 151](Phase151-Plan-Airplane-
 The owner's direction: deep sky and stars too, in the ZWO family, and
 the app works with no connection at all.
 
+**Where the order stands, 2026-11-15.** Release 3.4's code is written up
+to row 24a; what is left there is 151.1, 155.3 to 155.5, 157 and 156, and the
+owner's indoor throughput runs (146.2). Release 3.5's bench work is mostly
+done for phase 161; what most of the rest waits on is a clear night
+(clear-night items 3 and 59 first).
+
 **Re-ordered 2026-11-13 after the owner's review, by leverage; grouped
 into release milestones the same day** (the strategic review, adopted by
 the owner: see [the mapping](#strategic-review-2026-11-13)). Items keep
@@ -1605,7 +1612,8 @@ paths pass fault injection, and one unattended sky run completes.
 22. **153.1 and 153.2 (row 53)**: the autofocus and recording controllers,
    ahead of AVI and TIFF, which add recording wiring. **153.1 written
    2026-11-14 (3.3.11)**: `AutofocusController`. **153.2 written 2026-11-14
-   (3.3.12)**: `RecordingController`.
+   (3.3.12)**: `RecordingController`. **153.3 merged 2026-11-14 (3.3.13, #161)**:
+   `AutorunController`. Next in row 53: 153.4 onward (Jupiter, tracking).
 23. **Phase 157 (row 57), reliability qualification**: fault injection, a
    soak, SER and FITS read back by independent readers in CI, and the
    qualification report. 157.0 can start once 153.0's harness exists.
@@ -1618,7 +1626,8 @@ paths pass fault injection, and one unattended sky run completes.
    a failed position read can no longer start a move, every move is
    checked and stoppable, and the overshoot stops depending on the
    backlash figure. Bench only, and ahead of any sweep on the sky.
-   Planned 2026-11-14 from the first-principles review. **161.0a written
+   Planned 2026-11-14 from the first-principles review. **All four merged
+   2026-11-14 as #160 (3.3.14).** **161.0a written
    2026-11-14 (3.3.14)**: `FocuserGuard.h`, gated by `focuser_safety`. **161.0b
    written 2026-11-14 (3.3.14)**: the command lock and the stop generation.
    **161.1 written 2026-11-14 (3.3.14)**: completion on the loop's thread,
@@ -1640,7 +1649,13 @@ checked against the eye (clear-night items 1, 37, 55, 57 and 58).
     (um per step, slack, repeatability, settle), the sweep in units of
     the critical focus zone, and a result with an error bar. 158 builds
     on its figures. **161.3's routine written 2026-11-14 (3.3.14)**:
-    CALIBRATE FOCUS; its run on the sky is clear-night item 59.
+    CALIBRATE FOCUS; its run on the sky is clear-night item 59. **161.4a
+    written 2026-11-14 (3.3.15)**: the fine pass visited centre-out, fitted
+    over all its points, with an error bar. **161.5b written 2026-11-15
+    (3.3.15)**: the region from focus, `AutofocusChannel=green`. 161.3
+    merged as #160; 161.4a and 161.5b are in #162. Left: 161.4b (needs a
+    CALIBRATE FOCUS run on the sky, item 59), 161.5a (the noise gate, needs
+    real frames), 161.6 (the operator's view).
     Model: **Fable** for 161.3, 161.4 and 161.5a (the noise gate);
     **Opus** for 161.5b (the region, the green option) and 161.6.
 26. **Phases 147 and 148 (rows 47, 48)**: AVI, then TIFF.

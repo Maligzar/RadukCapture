@@ -72,6 +72,7 @@ $Tests = @(
     @{ Name = "af_sample_window";  Sources = @() }
     @{ Name = "af_overshoot";      Sources = @() }
     @{ Name = "focus_calibration"; Sources = @() }
+    @{ Name = "af_fine_pass";      Sources = @() }
     @{ Name = "ring_monotonic";    Sources = @() }
     @{ Name = "af_readiness";      Sources = @() }
     @{ Name = "jupiter_events";    Sources = @() }
@@ -246,7 +247,11 @@ foreach ($t in $Tests) {
     & $exe 2>&1 | ForEach-Object { Write-Host $_; $runOut += "$_" }
     if ($LASTEXITCODE -ne 0) {
         Write-Host "[FAIL] $name"
-        $failedTails += ,@($name, @($runOut | Select-Object -Last 40))
+        # Phase 161.4a: the lines that SAY what failed, as well as the last
+        # ones. A long suite's failing check can be thousands of lines above
+        # its end, and the tail alone showed only the case after it.
+        $said = @($runOut | Where-Object { $_ -match '\bFAIL(ED)?\b' } | Select-Object -First 20)
+        $failedTails += ,@($name, @($said + @('...') + @($runOut | Select-Object -Last 40)))
         $failed++
     } else {
         Write-Host "[OK]   $name"
@@ -264,7 +269,7 @@ if ($failed -eq 0) {
     Write-Host "============================================================"
     foreach ($ft in $failedTails) {
         Write-Host ""
-        Write-Host "--- $($ft[0]): its last lines ---"
+        Write-Host "--- $($ft[0]): what failed, then its last lines ---"
         $ft[1] | ForEach-Object { Write-Host "    $_" }
     }
     exit 1

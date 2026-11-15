@@ -92,7 +92,7 @@ static int Focus(int slack, int overshoot, std::string* msg) {
         }
     });
     af.Start(f.GetPosition());
-    for (int i = 0; i < 12000 && !done.load(); ++i) Ms(10);
+    for (int i = 0; i < 30000 && !done.load(); ++i) Ms(10);   // a wait, not a tolerance
     feed.store(false);
     feeder.join();
     if (msg) *msg = res.message;

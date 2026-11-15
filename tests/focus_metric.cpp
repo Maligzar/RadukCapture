@@ -197,6 +197,64 @@ int main() {
         CHECK(ch < 3.0f, "RGGB and GRBG differ by %.1f%%", ch);
     }
 
+    // ── 4. Phase 161.5b: the green sites alone ──────────────────
+    // A disc as a colour sensor low in the sky sees it: the red image
+    // displaced one way along y and the blue the other (dispersion),
+    // green where it is. `shift` in pixels; `gOff`: the greens on the
+    // off-diagonal (RGGB) or the main diagonal (GRBG).
+    std::printf("4. edge metric on the green sites (161.5b)\n");
+    {
+        auto bayer = [](double shift, bool gOff, double blur) {
+            std::vector<uint8_t> b((size_t)W * H);
+            auto disc = [&](double x, double y, double dy) {
+                const double d = std::hypot(x - 640.0, y - 480.0 - dy), r = 110.0, e = 1.5 + blur;
+                const double t = (r + e - d) / (2.0 * e);
+                return 12.0 + 180.0 * (t < 0 ? 0 : t > 1 ? 1 : t);
+            };
+            for (int y = 0; y < H; ++y)
+                for (int x = 0; x < W; ++x) {
+                    const bool ex = !(x & 1), ey = !(y & 1);
+                    const bool green = gOff ? (ex != ey) : (ex == ey);
+                    // The two non-green sites: red first in the cell, blue second.
+                    const bool red = !green && (gOff ? (ex && ey) : (!ex && ey));
+                    const double dy = green ? 0.0 : (red ? shift : -shift);
+                    b[(size_t)y * W + x] = (uint8_t)(disc(x, y, dy) + ((x * 5 + y * 11) % 3));
+                }
+            return b;
+        };
+        auto score = [&](const std::vector<uint8_t>& f, EdgeChannel ch) {
+            return MeasureEdgeFocus(f.data(), W, H, 8, 640, 480, 180, 12.0f, sc, kEdgeGateK, ch).score;
+        };
+        const auto neutral = bayer(0.0, true, 0.0);
+        const float lum0 = score(neutral, EdgeChannel::Luminance), grn0 = score(neutral, EdgeChannel::GreenOffDiagonal);
+        std::printf("   no dispersion: luminance %.4f, green %.4f\n", lum0, grn0);
+        CHECK(std::fabs(grn0 - lum0) / lum0 < 0.25f, "with no dispersion the two differ by %.0f%%",
+              100.0f * std::fabs(grn0 - lum0) / lum0);
+
+        const auto spread = bayer(6.0, true, 0.0);           // red and blue 6 px either side
+        const float lum6 = score(spread, EdgeChannel::Luminance), grn6 = score(spread, EdgeChannel::GreenOffDiagonal);
+        std::printf("   red and blue 6 px apart each way: luminance %.4f (x%.2f), green %.4f (x%.2f)\n",
+                    lum6, lum6 / lum0, grn6, grn6 / grn0);
+        CHECK(lum6 < 0.8f * lum0, "dispersion did not lower the luminance score (x%.2f)", lum6 / lum0);
+        CHECK(std::fabs(grn6 - grn0) / grn0 < 0.05f, "dispersion moved the green score %.1f%%",
+              100.0f * std::fabs(grn6 - grn0) / grn0);
+
+        // What matters for focus: how much a little blur costs each score.
+        const auto spreadSoft = bayer(6.0, true, 3.0);
+        const float lumS = score(spreadSoft, EdgeChannel::Luminance), grnS = score(spreadSoft, EdgeChannel::GreenOffDiagonal);
+        std::printf("   3 px softer, under that dispersion: luminance x%.2f, green x%.2f\n", lumS / lum6, grnS / grn6);
+        CHECK(grnS / grn6 < lumS / lum6, "under dispersion green does not answer to blur more sharply (%.2f against %.2f)",
+              grnS / grn6, lumS / lum6);
+
+        const auto grbg = bayer(6.0, false, 0.0);
+        const float grnD = score(grbg, EdgeChannel::GreenDiagonal);
+        CHECK(std::fabs(grnD - grn6) / grn6 < 0.03f, "GRBG's greens on the diagonal differ from RGGB's by %.1f%%",
+              100.0f * std::fabs(grnD - grn6) / grn6);
+        const float wrong = score(grbg, EdgeChannel::GreenOffDiagonal);
+        CHECK(std::fabs(wrong - grnD) / grnD > 0.10f, "the wrong diagonal on GRBG reads the same as the right one (%.4f, %.4f)",
+              wrong, grnD);
+    }
+
     if (g_fail) { std::printf("focus_metric: %d FAILED\n", g_fail); return 1; }
     std::printf("focus_metric: all passed\n");
     return 0;

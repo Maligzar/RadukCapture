@@ -104,6 +104,26 @@ inline FocusMeasure MeasurePlanetFocus(const uint8_t* buf, uint32_t w, uint32_t 
 
 struct EdgeScratch { std::vector<float> lum, sm, tmp; };
 
+// Phase 161.5b: which sites of each 2x2 cell are scored.
+//
+// Luminance (the default) sums all four, so the score does not depend on
+// the Bayer pattern. Green scores the two green sites alone, doubled to
+// keep the same scale. On a colour sensor with the target low in the sky,
+// atmospheric dispersion draws the red and blue images apart along the
+// vertical, by more than the seeing disc below about 30 degrees with no
+// corrector; a Schmidt corrector and any Barlow add a little chromatic
+// focus spread of their own. Summed, the three images' limbs do not
+// coincide and no focuser position sharpens them all, so the luminance
+// peak is lower and broader than any one colour's. Green is where the
+// eye and most planetary detail live, and its two sites have the best
+// signal. Whether it wins on the sky is not shown: rig.ini
+// AutofocusChannel=luminance|green, luminance until a night compares
+// them (clear-night item 59).
+//
+// The two green sites lie on one diagonal of the cell: the off-diagonal
+// for RGGB and BGGR, the main diagonal for GRBG and GBRG.
+enum class EdgeChannel { Luminance, GreenOffDiagonal, GreenDiagonal };
+
 struct EdgeFocus {
     bool  valid   = false;
     float score   = 0.0f;   // gated gradient energy / (points x mean^2)
@@ -136,7 +156,8 @@ inline double EdgeKernelNorm() {
 // pixel on the 8-bit scale (0 when unknown, as on the Moon).
 inline EdgeFocus MeasureEdgeFocus(const uint8_t* buf, uint32_t w, uint32_t h, uint8_t bitDepth,
                                   float cx, float cy, int halfPx, float bgPerPx,
-                                  EdgeScratch& sc, float gateK = kEdgeGateK) {
+                                  EdgeScratch& sc, float gateK = kEdgeGateK,
+                                  EdgeChannel channel = EdgeChannel::Luminance) {
     EdgeFocus out;
     if (!buf || w < 16 || h < 16 || halfPx < 8) return out;
     halfPx = (std::min)(halfPx, 400);
@@ -159,7 +180,12 @@ inline EdgeFocus MeasureEdgeFocus(const uint8_t* buf, uint32_t w, uint32_t h, ui
     for (int j = 0; j < sh; ++j)
         for (int i = 0; i < sw; ++i) {
             const int x = x0 + 2 * i, y = y0 + 2 * j;
-            const float v = px(x, y) + px(x + 1, y) + px(x, y + 1) + px(x + 1, y + 1);
+            float v;
+            switch (channel) {
+                case EdgeChannel::GreenOffDiagonal: v = 2.0f * (px(x + 1, y) + px(x, y + 1)); break;
+                case EdgeChannel::GreenDiagonal:    v = 2.0f * (px(x, y) + px(x + 1, y + 1)); break;
+                default: v = px(x, y) + px(x + 1, y) + px(x, y + 1) + px(x + 1, y + 1); break;
+            }
             sc.lum[(size_t)j * sw + i] = v;
             sum += v;
         }

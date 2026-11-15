@@ -64,18 +64,38 @@ public:
     template <class Routine>
     void FastScore(Routine& af, const FrameView& f, const AnalysisView& a,
                    const IClock& clock, IUiSink* ui) {
-        if (!af.IsRunning()) m_edgeHalf = -1;
+        if (!af.IsRunning()) { m_edgeHalf = -1; m_saidWaiting = false; }
         if (!(f.data && af.WantsFastScores() && f.bayerRaw)) return;
         const double now = clock.Now();
         if (now - m_lastFast < kFastIntervalSec) return;
         m_lastFast = now;
         const bool filled = af.FineOnly() || (a.valid && a.surfaceTracked);
         if (m_edgeHalf <= 0) {
-            m_edgeHalf = EdgeRegionHalf(filled, a.focusHfdPx);
+            // Phase 161.5b: sized from the target IN FOCUS. The routine
+            // knows that size from the coarse sweep's best point; the live
+            // analysis at this moment is of the fine pass's first point,
+            // which is out of focus, or of nothing at all. With no size
+            // the region used to fall to its 48 px floor, which on Jupiter
+            // (220 px across) sits inside the disc with no limb in it, and
+            // the pass ran on that without a word. Now it waits: no score
+            // is sent until a size is known, and a pass that never gets
+            // one ends as "too few frames" and keeps the coarse result.
+            float hfd = af.FineRegionHfdPx();
+            if (!(hfd > 0.0f)) hfd = a.valid ? a.focusHfdPx : 0.0f;
+            if (!filled && !(hfd > 0.0f)) {
+                if (ui && !m_saidWaiting) {
+                    m_saidWaiting = true;
+                    ui->Line("[AF] fine pass region: waiting for the target's size (no half-flux diameter yet)\n");
+                }
+                return;
+            }
+            m_saidWaiting = false;
+            m_edgeHalf = EdgeRegionHalf(filled, hfd);
             if (ui) {
                 char b[128];
-                std::snprintf(b, sizeof(b), "[AF] fine pass region: %d px each side of the target%s\n",
-                              m_edgeHalf, filled ? " (the surface)" : "");
+                std::snprintf(b, sizeof(b), "[AF] fine pass region: %d px each side of the target%s%s\n",
+                              m_edgeHalf, filled ? " (the surface)" : "",
+                              m_channel == raduk::core::EdgeChannel::Luminance ? "" : ", green sites only");
                 ui->Line(b);
             }
         }
@@ -83,7 +103,8 @@ public:
         if (a.valid && a.centroidValid) { ecx = a.centroidX; ecy = a.centroidY; }
         const float bg = filled ? 0.0f : a.centroidBgDN;
         const raduk::core::EdgeFocus ef = raduk::core::MeasureEdgeFocus(
-            f.data, f.width, f.height, f.bitDepth, ecx, ecy, m_edgeHalf, bg, m_scratch);
+            f.data, f.width, f.height, f.bitDepth, ecx, ecy, m_edgeHalf, bg, m_scratch,
+            raduk::core::kEdgeGateK, m_channel);
         if (ef.valid) af.SubmitFastScore(ef.score, f.timeUs);
     }
 
@@ -95,8 +116,14 @@ public:
 
     int EdgeHalf() const { return m_edgeHalf; }
 
+    // Phase 161.5b: which sites the edge metric scores (FocusMetric.h).
+    void SetChannel(raduk::core::EdgeChannel c) { m_channel = c; }
+    raduk::core::EdgeChannel Channel() const { return m_channel; }
+
 private:
     int    m_edgeHalf = -1;
+    bool   m_saidWaiting = false;
+    raduk::core::EdgeChannel m_channel = raduk::core::EdgeChannel::Luminance;
     double m_lastFast = -1e18;
     raduk::core::EdgeScratch m_scratch;
 };

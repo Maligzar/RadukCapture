@@ -33,6 +33,8 @@ struct FakeRoutine {
     bool IsRunning() const { return running; }
     bool WantsFastScores() const { return wantsFast; }
     bool FineOnly() const { return fineOnly; }
+    float regionHfd = 0.0f;
+    float FineRegionHfdPx() const { return regionHfd; }   // phase 161.5b
     void SubmitFastScore(float, uint64_t t = 0) { ++fast; lastFastTime = t; }
     uint64_t lastFastTime = 0, lastSharpTime = 0;
     void SubmitSharpness(float s, bool v, int p, uint64_t t = 0) { ++sharp; lastSharp = s; lastValid = v; lastPeak = p; lastSharpTime = t; }
@@ -123,6 +125,44 @@ int main() {
         const auto e = ui.Entries();
         Check(e.size() == 2 && e[0].kind == "status" && e[0].area == "autofocus" && e[1].area == "warn",
               "the recording sink keeps what would have been shown");
+    }
+
+    // Phase 161.5b: the fine pass's region is sized from the target in
+    // focus, and never falls to its floor for want of a size.
+    {
+        FakeRoutine af; AutofocusFeed feed; ManualClock clk; RecordingUiSink ui;
+        AnalysisView blurred = a; blurred.focusHfdPx = 140.0f;   // the live frame: out of focus
+        af.regionHfd = 85.0f;                                    // the coarse sweep's best point
+        feed.FastScore(af, f, blurred, clk, &ui);
+        Check(feed.EdgeHalf() == AutofocusFeed::EdgeRegionHalf(false, 85.0f) && af.fast == 1,
+              "the region comes from the routine's in-focus size, not the live frame's",
+              std::to_string(feed.EdgeHalf()) + " px");
+    }
+    {
+        FakeRoutine af; AutofocusFeed feed; ManualClock clk; RecordingUiSink ui;
+        AnalysisView none = a; none.focusHfdPx = 0.0f;           // nothing measured
+        feed.FastScore(af, f, none, clk, &ui);
+        clk.Advance(0.05); feed.FastScore(af, f, none, clk, &ui);
+        Check(af.fast == 0 && feed.EdgeHalf() == -1, "no size known: no score is sent and no region is fixed");
+        Check(ui.Count() == 1 && ui.Saw("waiting for the target's size"), "and it says so, once",
+              std::to_string(ui.Count()) + " lines");
+        clk.Advance(0.05); feed.FastScore(af, f, a, clk, &ui);
+        Check(af.fast == 1 && feed.EdgeHalf() == AutofocusFeed::EdgeRegionHalf(false, 85.0f),
+              "when a size arrives the region is fixed from it and scoring begins");
+        AnalysisView invalid = a; invalid.valid = false;
+        FakeRoutine af2; AutofocusFeed feed2;
+        feed2.FastScore(af2, f, invalid, clk, nullptr);
+        Check(af2.fast == 0, "an analysis that is not valid gives no size either");
+        af2.fineOnly = true; clk.Advance(0.05);
+        feed2.FastScore(af2, f, invalid, clk, nullptr);
+        Check(af2.fast == 1 && feed2.EdgeHalf() == 128, "a target that fills the frame needs none: the surface");
+    }
+    {
+        FakeRoutine af; AutofocusFeed feed; ManualClock clk; RecordingUiSink ui;
+        Check(feed.Channel() == raduk::core::EdgeChannel::Luminance, "the channel is luminance unless set");
+        feed.SetChannel(raduk::core::EdgeChannel::GreenOffDiagonal);
+        feed.FastScore(af, f, a, clk, &ui);
+        Check(af.fast == 1 && ui.Saw("green sites only"), "set to green, the region's log line says so");
     }
 
     if (g_fail) { printf("app_feed: %d FAILED\n", g_fail); return 1; }

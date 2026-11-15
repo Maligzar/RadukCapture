@@ -215,9 +215,21 @@ a SER file cannot change format part-way through. Set the format first.
 - A `sharp=0.0%` result **was a bug before v1.2.0**, not a diagnosis. If you
   see it now, the target really is too faint
 
-A move that makes no progress for 5 s is reported as stalled. Long moves are
-fine — the sweep's first hop is 3000 steps and is allowed to take as long as
-it needs.
+A move that makes no progress for 5 s is reported as stalled, and the motor
+is stopped. Long moves are fine — the sweep's first hop is 3000 steps and is
+allowed to take as long as it needs.
+
+**Messages since phase 161** (the status line and `raduk_log.txt`):
+
+| Says | Means | Do |
+|---|---|---|
+| `the focuser's position could not be read` | The EAF did not answer a position read, so nothing moved | Check the USB cable and hub; reconnect with `[HW]` |
+| `... more than FocuserMaxTravelSteps` | One command would have moved further than the travel guard | Press GO TO again within 5 s to move anyway, or raise `FocuserMaxTravelSteps` |
+| `the focuser stopped at N, not M` | The EAF reported stopped short of where it was sent (slipping coupling, end of travel) | Check the coupling and that the target is inside the focuser's range |
+| `the focuser refused a move` | The EAF itself rejected the command | Usually the position is past its maximum step; check `MaxStep` in the log at connect |
+| `Aborted by user` | The abort, the panel's STOP or the emergency stop ended the sweep | Nothing; the motor is stopped |
+| `fine pass region: waiting for the target's size` | The fine pass has no half-flux diameter to size its region from | The target was lost at the coarse focus; centre it and run again |
+| `Fine pass: ... a different picture, giving the fine pass up` | The centre read more than three times apart first and last | Cloud or dew; the coarse result stands |
 
 See [Autofocus](Autofocus).
 

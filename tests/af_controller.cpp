@@ -81,7 +81,8 @@ struct FakeFocuser : raduk::core::IFocuser {
     int  GetBacklash() const override { return 0; }
     int FocuserId() const override { return 0; }
 };
-struct Result { bool success; int bestPosition; float bestSharpness; float improvement; std::string message; };
+struct Result { bool success; int bestPosition; float bestSharpness; float improvement; std::string message;
+                float errorSteps = -1.0f; };   // phase 161.4
 
 struct Rig {
     FakeRoutine af; FakeAe ae; FakeFocuser f; ManualClock clk; RecordingUiSink ui;

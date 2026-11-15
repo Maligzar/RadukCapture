@@ -18,8 +18,8 @@ online is an optional extra with a local cache.
 Planetary imaging comes first. Deep-sky objects and stars, with the ASI678MC
 and the ZWO cameras that follow it, are planned (see [Status](#status)).
 
-Version 3.3, source release (the title bar shows the exact build; the number moves with every merge, see `src/Version.h`). Developed through phase 145, and first used
-under the sky on 2026-11-07.
+Version 3.3, source release (the title bar shows the exact build; the number moves with every merge, see `src/Version.h`). Developed through phase 153.3 and the bench
+stages of phase 161, and first used under the sky on 2026-11-07.
 
 ## Who this is for
 
@@ -125,12 +125,22 @@ under the sky on 2026-11-07.
 - **Two-stage autofocus** for the ZWO EAF: a coarse V-curve on the planet's
   half-flux diameter, then a fine pass on edge contrast (Tenengrad, noise-gated,
   20 frames a point at the 75th percentile) that sharpens a large disc and
-  focuses a frame-filling Moon on its surface; a fade during the pass is
-  corrected, and an honest report says when focus got worse
+  focuses a frame-filling Moon on its surface. The fine pass visits its points
+  from the centre outward so a fade cannot tilt it, fits every point near the
+  peak, and gives its result with an error bar (`pos=168214 ±9`).
+  Auto-exposure settles before the sweep and again at the coarse focus, and
+  an honest report says when focus got worse
 - **Backlash handled in software**: every focuser move ends one way, set so
-  the last travel pushes the SCT's mirror against gravity, the backlash is
-  measured on every sweep, and AUTO FOCUS says NOT NOW, and why, when focus
-  cannot work
+  the last travel pushes the SCT's mirror against gravity, going past by an
+  overshoot that only has to exceed the slack; the backlash is measured on
+  every sweep, and AUTO FOCUS says NOT NOW, and why, when focus cannot work
+- **A focuser that cannot be sent somewhere by accident**: no move from a
+  position that could not be read, none longer than a travel guard without a
+  second press, every move checked for arrival, and a stop that nothing can
+  overtake
+- **CALIBRATE FOCUS** (`Ctrl`+click AUTO FOCUS): measures the knob's slack,
+  how well a position repeats, and the focal-plane travel of one step, so the
+  focus zone in steps, and keeps every run in `focus_calibration.ini`
 - **Exposure set by the planet**: auto-exposure meters the target, not the
   frame, within a per-planet exposure band, and an automatic display stretch
   makes short exposures easy to see without touching the data
@@ -223,17 +233,25 @@ asserts status. The order of what remains is in
 Built since the first night, and waiting on the sky: two-stage autofocus with
 the backlash handled (phases 139 and 145), exposure set by the planet (140),
 recording hardening (135), Jupiter's events and the science records (136 to
-144), and docking panels (134). In progress: phase 132.10c, the dashboard's
-panels. Phase 133's remaining stages, the field proof of the first night's
-fixes, need a clear night.
+144), docking panels (134), focuser safety and CALIBRATE FOCUS (161), and the
+wiring taken out of the main program into tested controllers (153.0 to
+153.3). Phase 133's remaining stages, the field proof of the first night's
+fixes, and the first CALIBRATE FOCUS run (clear-night item 59) need a clear
+night.
 
-**Planned next** (each with a plan in [docs/](docs/)):
-1. Phase 146: the real camera's throughput, measured over real USB.
-2. Phase 149: ready for any ZWO camera (cooling, long single exposures, a second camera, the filter wheel).
-3. Phase 151: airplane mode proven, with a prefetch for nights away from a connection.
-4. Phases 147 and 148: uncompressed AVI, and TIFF.
-5. Phase 150: deep-sky imaging.
-6. Phase 152, last: the AI assistant revisited, with the best model the hardware allows and StarMachine's as the fallback.
+**Planned next**, grouped by release (each with a plan in [docs/](docs/); the
+order is in [docs/ROADMAP-Next.md](docs/ROADMAP-Next.md)):
+1. **3.4, reliability:** the real camera's throughput over real USB (146),
+   airplane mode's cache ages (151.1), plate scale from solves and real
+   recordings replayed in CI (155), fault injection and a soak (157), and an
+   unattended sky run (156).
+2. **3.5, planetary:** focus through the night (158), the rest of phase 161
+   once the focuser is calibrated on the sky, AVI and TIFF (147, 148), and the
+   ZWO filter wheel (149.5, 149.6).
+3. **3.6, hardware:** any ZWO camera by capability, then QHY and Player One
+   (149, 159, 160).
+4. **3.7, science**, then **4.0**, with the AI assistant revisited last (152).
+5. After 4.0: deep-sky imaging (150).
 
 Not built: AVI and TIFF output, deep-sky sequences, multi-star FWHM, a Bahtinov
 focus aid, deep-sky annotation and stellar photometry. Polar alignment is
