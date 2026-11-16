@@ -91,6 +91,7 @@ $Tests = @(
     @{ Name = "plate_scale_check"; Sources = @() }
     @{ Name = "emulator_target_size"; Sources = @() }
     @{ Name = "emulator_star_psf"; Sources = @() }
+    @{ Name = "emulator_targets";  Sources = @() }
     @{ Name = "lunar_surface";    Sources = @() }
     @{ Name = "star_metrics";     Sources = @() }
     @{ Name = "night_hierarchy";  Sources = @() }

@@ -151,9 +151,14 @@ static const PlanetElements kPlanets[] = {
 // was already being computed here -- it is the denominator of the dec
 // line below -- and then discarded, which is why nothing in the app
 // could say how big a planet looks tonight.
+// helioAU and sunAU, when asked for, receive the Sun-planet and
+// Earth-Sun distances: with distanceAU they are the triangle a phase
+// angle comes from (PlanetPhaseAt).
 inline bool PlanetRADec(const PlanetElements& p, double jd,
                          double& ra_h, double& dec_deg,
-                         double* distanceAU = nullptr) {
+                         double* distanceAU = nullptr,
+                         double* helioAU = nullptr,
+                         double* sunAU = nullptr) {
     double T = JD_to_T(jd);
 
     // Orbital elements at epoch
@@ -211,6 +216,8 @@ inline bool PlanetRADec(const PlanetElements& p, double jd,
     // Convert to equatorial
     const double geoDist = sqrt(gx*gx + gy*gy + gz*gz);
     if (distanceAU) *distanceAU = geoDist;
+    if (helioAU)    *helioAU    = sqrt(x*x + y*y + z*z);
+    if (sunAU)      *sunAU      = re;
 
     double ra  = atan2(gy * cos(eps) - gz * sin(eps), gx);
     double dec = asin((gy * sin(eps) + gz * cos(eps)) / geoDist);
@@ -346,6 +353,47 @@ inline PlanetApparentSize PlanetApparentSizeAt(const std::string& name,
 }
 
 // ── Sun position (Meeus Ch.25, low-precision ~0.01°) ──────────────
+inline void SunRADec(double jd, double& ra_h, double& dec_deg);
+
+// ── How a planet is lit tonight ──────────────────────────────────
+//
+// The phase angle (Sun-planet-Earth, 0 full) from the three distances,
+// and the position angle of the bright limb, north through east, which
+// is the direction from the planet to the Sun on the sky (Meeus 48.5).
+// The emulator draws Mercury, Venus and Mars with these, so Venus is a
+// crescent when it is one. Not valid for anything that is not in the
+// planet tables.
+struct PlanetPhase {
+    bool   valid = false;
+    double phaseAngleDeg = 0.0;     // 0 full .. 180 new
+    double illuminated   = 1.0;     // fraction of the disc lit, (1+cos i)/2
+    double brightLimbPADeg = 0.0;   // deg, north through east
+};
+
+inline PlanetPhase PlanetPhaseAt(const std::string& name, double jd) {
+    PlanetPhase out;
+    const PlanetElements* el = nullptr;
+    for (const auto& e : kPlanets)
+        if (name == e.name) { el = &e; break; }
+    if (!el) return out;
+    double ra = 0, dec = 0, delta = 0, r = 0, R = 0;
+    if (!PlanetRADec(*el, jd, ra, dec, &delta, &r, &R)) return out;
+    if (!(delta > 0.0) || !(r > 0.0)) return out;
+    double c = (r*r + delta*delta - R*R) / (2.0 * r * delta);
+    c = c > 1.0 ? 1.0 : (c < -1.0 ? -1.0 : c);
+    out.phaseAngleDeg = Deg(acos(c));
+    out.illuminated   = (1.0 + c) * 0.5;
+
+    double sra = 0, sdec = 0;
+    SunRADec(jd, sra, sdec);
+    const double a0 = Rad(sra * 15.0), d0 = Rad(sdec);
+    const double a  = Rad(ra * 15.0),  d  = Rad(dec);
+    out.brightLimbPADeg = NormDeg(Deg(atan2(cos(d0) * sin(a0 - a),
+                                            sin(d0) * cos(d) - cos(d0) * sin(d) * cos(a0 - a))));
+    out.valid = true;
+    return out;
+}
+
 inline void SunRADec(double jd, double& ra_h, double& dec_deg) {
     double T  = JD_to_T(jd);
     double L0 = NormDeg(280.46646 + 36000.76983 * T);

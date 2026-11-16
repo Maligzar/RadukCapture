@@ -1611,8 +1611,22 @@ paths pass fault injection, and one unattended sky run completes.
    qualification report. 157.0 can start once 153.0's harness exists.
    **157.0's first part written 2026-11-14 (3.3.15)**: the emulator's
    faults and their test, and a camera dying mid-run now ends the run.
-   **157.0b written (3.3.16)**: the GoTo panel's slew timeout. Next: 157.1,
-   the soak, and 157.2, independent file checks.
+   **157.0b written (3.3.16)**: the GoTo panel's slew timeout. **157.1 and
+   157.2 written 2026-11-15 (3.3.19)**: the soak script and the independent
+   SER/FITS checks on CI. The trial soaks found LOCK refused at Polaris and
+   no recentring after a GoTo's pointing error (both in the plan, owed).
+   **Next, first: 157.0c, set by the owner 2026-11-15 while watching the
+   soak.** Acquisition and calibration switch from the small ROI to a
+   large frame, lock and centre there, then return to the ROI. On
+   640x480 a recalibration left the star almost off screen with tracking
+   unable to centre it. Then a full 4-hour soak on the imaging PC, then
+   157.3, the report.
+   **Emulator targets, 2026-11-15 (3.3.19), asked for by the owner while
+   watching the soak:** an unnamed star draws as a white star, not Jupiter;
+   Mars has markings and a cap; Mercury, Venus and Mars show tonight's phase.
+   **Owed, phase 2 (the owner's words): each star coloured by its spectral
+   type** from the catalog, and Mars's real sub-Earth latitude and central
+   meridian.
    **Dash tests with Playwright written 2026-11-15 (3.3.17)**: `docs/TESTING.md`
    and `tests/web`. The owner's rules: every control at the telescope is
    reachable from Dash and tested through it; the suites run themselves

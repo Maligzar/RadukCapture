@@ -3,6 +3,12 @@
 # run, the end line and the ranked list. Then stopping one partway.
 name    Autorun: a sequence of runs
 timeout 480
+# 2026-11-15: Kochab was drawn as Jupiter until the emulator learned to
+# draw stars. This scenario is about its own mechanics, not about stars,
+# so it keeps the disc it was written against. On the star itself:
+# autofocus from 1500 steps out takes about 3 minutes, and image-only
+# following lost it (Phase 157's plan, found by the trial soaks).
+env     RADUK_EMU_TARGET=Jupiter
 
 rig     AutorunRuns=2
 rig     AutorunGapSec=4
