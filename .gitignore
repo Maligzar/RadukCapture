@@ -56,3 +56,9 @@ test_runs/
 
 # Phase 157.1: soak reports, one set per run on the imaging PC.
 reports/soak_*
+
+# Written by the app at runtime in its working folder.
+audit.csv
+jupiter_events.txt
+raduk_log.prev.txt
+satellites.tle
