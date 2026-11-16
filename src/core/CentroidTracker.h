@@ -280,7 +280,17 @@ public:
     // The capture format changed (size or position of the box). The
     // guider holds its rates and re-references instead of reading the
     // jump as a runaway. Any thread.
-    void NotifyFrameChanged() { m_frameChanged.store(true); }
+    // Phase 157.0c: the stable and dwell counts restart too. They count
+    // valid centroids, not still ones, so a count built on the old frame
+    // would let calibration start on a target that has just jumped.
+    void NotifyFrameChanged() {
+        {
+            std::lock_guard<std::mutex> lk(m_mutex);
+            m_stableCount = 0;
+            m_dwellCount  = 0;
+        }
+        m_frameChanged.store(true);
+    }
 
     // A guide "pulse" on this mount: the axis is driven at its own
     // tracking rate plus or minus GUIDE_OFFSET_AS for ms, then tracking

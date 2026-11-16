@@ -64,6 +64,9 @@ std::string APEXTelemetry::ToJSON() const {
 
     // Planet lock / centroid tracking
     j << "\"planet_lock\":"   << (planet_lock ? "true" : "false") << ",";
+    j << "\"roi_w\":"         << roi_w << ",";
+    j << "\"roi_h\":"         << roi_h << ",";
+    j << "\"acquire_wide\":"  << (acquire_wide ? "true" : "false") << ",";
     j << "\"night_vision\":"  << (night_vision ? "true" : "false") << ",";
     j << "\"drift_ra_as\":"   << drift_ra_as  << ",";
     j << "\"drift_dec_as\":"  << drift_dec_as << ",";
