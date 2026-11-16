@@ -705,6 +705,19 @@ static void EmuApplyApparentSize(raduk::core::ASICamera* cam) {
     // magnitude, 0 new through 0.5 full. Only asked for when the
     // target IS the Moon, because it is a Meeus series and the
     // emulator switches targets on every profile load.
+    // 2026-11-15: Mercury, Venus and Mars at tonight's phase, so Venus
+    // is a crescent when it is one. The others are drawn full.
+    if (resolved == std::string("Mercury") || resolved == std::string("Venus") ||
+        resolved == std::string("Mars")) {
+        const auto ph = raduk::sky::PlanetPhaseAt(resolved, jd);
+        if (ph.valid) {
+            cam->SetPlanetPhase((float)ph.phaseAngleDeg, (float)ph.brightLimbPADeg);
+            Log("[EMU] %s phase angle %.1f deg, %.0f%% lit, bright limb at PA %.0f deg\n",
+                resolved.c_str(), ph.phaseAngleDeg, ph.illuminated * 100.0, ph.brightLimbPADeg);
+        }
+    } else {
+        cam->SetPlanetPhase(0.0f, 90.0f);
+    }
     if (resolved == std::string("Moon")) {
         double mra = 0.0, mdec = 0.0, phase = 0.0;
         raduk::sky::MoonRADec(jd, mra, mdec, phase);
@@ -761,9 +774,9 @@ static void ApplyProfile(const TargetProfile& p,
     if (cam) {
         char ov[32];
         if (GetEnvironmentVariableA("RADUK_EMU_TARGET", ov, 32) > 0)
-            cam->SetTargetName(ov);
+            cam->SetTargetName(ov, TargetIsStar(ov));
         else
-            cam->SetTargetName(p.name);
+            cam->SetTargetName(p.name, TargetIsStar(p.name));
         EmuApplyApparentSize(cam);
     }
 #endif
@@ -1398,9 +1411,9 @@ static int RunApp(bool useEmulator) {
         // is already active (ProfileManager defaults to index 0).
         // RADUK_EMU_TARGET overrides it for bench work.
         if (GetEnvironmentVariableA("RADUK_EMU_TARGET", fb, 32))
-            cam.SetTargetName(fb);
+            cam.SetTargetName(fb, TargetIsStar(fb));
         else if (const auto* ap = profiles.Active())
-            cam.SetTargetName(ap->name);
+            cam.SetTargetName(ap->name, TargetIsStar(ap->name));
         EmuApplyApparentSize(&cam);
         cam.SetTrueFocusPosition(trueFocus);
         cam.SetBlurPxPerStep(blurPerStep);

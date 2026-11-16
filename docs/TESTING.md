@@ -40,6 +40,14 @@ In practice:
   - `fault_injection`: the app's answer to an emulator told to fail (`RADUK_EMU_FAULT`). Its groups are `eaf-stall`, `camera-gone`, `camera-blip` and `slew-stuck`.
 - **Adding a test.** Write it as `tests\<name>.cpp` and add a line to the `$Tests` list in `run-tests.ps1`. Pure headers are also built with g++ and the sanitizers, off Windows.
 
+### Independent file checks (157.2)
+`tests\run-file-checks.ps1`, on CI after the bench tests. `tests\write_recordings.cpp` writes SER and FITS files through the app's own writers: mono and RGGB, 8 and 16 bits, odd sizes, pixels from a formula, stamps on a fixed interval, and one SER from a process ended mid-run. `tools\check_recordings.py --manifest` reads them with no code from `src`: a SER reader written from the SER v3 specification, and astropy for FITS. It checks every pixel, the header, the frame count against the file size, the trailer or the FRAMES table, and the FITS time cards. Needs `pip install astropy` (CI's network, never the app's). Results: `tests\_build\file_checks\results.json`.
+
+`check_recordings.py --scan <folder>` checks any recordings without a manifest (structure and stamps, no pixels). The soak uses it; it works on a night's captures too.
+
+### The soak (157.1)
+`tests\run-soak.ps1 [-Hours 4]`, on the imaging PC, by hand or nightly: too long for CI, and it drives the app's window. It generates a scenario of cycles (Kochab and Pherkad in turn: GoTo, LOCK, RUNS with autofocus and two runs; a lock refused is counted with its reason, not failed) and runs it in its own sandbox until the deadline, then closes the app. It samples handles, private bytes and threads every minute and fails on steady growth, on any recording the independent reader rejects (a stamp not after the one before), on any `unexplained` frames in a run's drop ledger, and on the cycle script failing early. Report: `reports\soak_<stamp>.txt`, samples beside it.
+
 ## 2. Dash tests: Playwright
 **Dash** (`RadukCaptureDashboard.html`) controls RadukCapture from a browser, over its WebSocket on port 8765. It is what you use outside, from a phone or a tablet at the scope. Playwright drives Dash the way a person does: it clicks Dash's own controls and reads what Dash shows back. So one test checks two things:
 - the browser control works;

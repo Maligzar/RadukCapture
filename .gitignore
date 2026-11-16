@@ -53,3 +53,6 @@ data/specimen.html
 
 # Phase 125: scenario sandboxes, one folder per run.
 test_runs/
+
+# Phase 157.1: soak reports, one set per run on the imaging PC.
+reports/soak_*

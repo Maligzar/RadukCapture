@@ -8,6 +8,13 @@
 # altitude, which threw this star out of the frame; fixed in the emulator.
 name    Motion: track what is in the frame
 timeout 300
+# 2026-11-15: Kochab was drawn as Jupiter until the emulator learned to
+# draw stars. This scenario is about its own mechanics, not about stars,
+# so it keeps the disc it was written against. It fails on the disc
+# too, at this line's second TRACK WHAT IS IN FRAME: the first follow
+# loses the target in the image (worst error 0.57 deg), and the second
+# finds nothing bright enough to follow. Owed (Phase 157's plan).
+env     RADUK_EMU_TARGET=Jupiter
 
 profile star.ini focuser position=168000
 

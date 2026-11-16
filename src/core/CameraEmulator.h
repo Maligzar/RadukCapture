@@ -138,6 +138,18 @@ static const EmuTargetDef EMU_TARGETS[] = {
     { "Capella",   0.68f, 0.0000f, 1.00f,0.95f,0.78f, false, false,0.0f, 0.0f, EmuKind::Star, "G3III"  },
     { "Arcturus",  0.68f, 0.0000f, 1.00f,0.82f,0.58f, false, false,0.0f, 0.0f, EmuKind::Star, "K1.5III"},
     { "Betelgeuse",0.68f, 0.0000f, 1.00f,0.68f,0.45f, false, false,0.0f, 0.0f, EmuKind::Star, "M1-2Ia" },
+
+    // 2026-11-15, the owner, watching a soak: a GoTo to Kochab drew
+    // Jupiter. These come after the stars, so index 0 stays Jupiter.
+    // Radii at a representative distance; EmuApplyApparentSize puts
+    // tonight's in.
+    { "Mercury",   3.4f, 0.0000f, 0.74f,0.68f,0.60f, false, false,0.0f, 0.0f, EmuKind::Disc, nullptr },
+    { "Uranus",    1.85f,0.0229f, 0.70f,0.88f,0.90f, false, false,0.0f, 0.0f, EmuKind::Disc, nullptr },
+    { "Neptune",   1.15f,0.0171f, 0.48f,0.62f,0.96f, false, false,0.0f, 0.0f, EmuKind::Disc, nullptr },
+    // Any star the table does not name: a point source, drawn white.
+    // Chosen by SetTargetName's isStar, or by the Star profile's name.
+    // Phase 2 (owed): its colour from the catalog's spectral type.
+    { "Star",      0.68f, 0.0000f, 1.00f,1.00f,1.00f, false, false,0.0f, 0.0f, EmuKind::Star, nullptr  },
 };
 static const int NUM_EMU_TARGETS =
     (int)(sizeof(EMU_TARGETS)/sizeof(EMU_TARGETS[0]));
@@ -164,6 +176,67 @@ static const JupMoon JUP_MOONS[] = {
     { 26.4f, 16.689f, 0.79f, 0.68f, 0.62f, 0.50f }, // Callisto — dark brown
 };
 static const int NUM_JUP_MOONS = 4;
+
+// ── Mars, 2026-11-15 ─────────────────────────────────────────
+//
+// The owner asked for Mars to look like Mars, not a tinted Jupiter. A
+// handful of the classical albedo features, as soft dark patches on a
+// rotating globe, and the two polar caps. Areographic west longitude,
+// degrees; "dark" is how much a patch takes off at its centre (Hellas,
+// negative, is a bright basin). Placed from the classical maps, not
+// surveyed: the point is detail the focus metric and the eye can use,
+// at roughly the right places as Mars turns.
+struct MarsPatch { float lonW, lat, radiusDeg, dark; };
+static const MarsPatch MARS_PATCHES[] = {
+    { 290.0f,  10.0f, 14.0f,  0.55f }, // Syrtis Major
+    {   0.0f,  -5.0f, 12.0f,  0.45f }, // Sinus Meridiani
+    {  30.0f,  45.0f, 14.0f,  0.45f }, // Mare Acidalium
+    {  40.0f, -25.0f, 16.0f,  0.40f }, // Mare Erythraeum
+    {  85.0f, -27.0f,  6.0f,  0.30f }, // Solis Lacus
+    { 215.0f, -20.0f, 15.0f,  0.35f }, // Mare Cimmerium
+    { 255.0f, -20.0f, 12.0f,  0.35f }, // Mare Tyrrhenum
+    { 250.0f,  45.0f, 14.0f,  0.30f }, // Utopia
+    { 290.0f, -42.0f, 10.0f, -0.20f }, // Hellas, bright
+};
+static const float MARS_SIDEREAL_DAY_S = 88642.66f;
+
+// One pixel of the Mars disc. (x, y) on the unit disc, y down, z
+// toward the viewer; cmDeg the central meridian. Scales the colour in
+// place, and whitens it inside the caps.
+inline void MarsSurface(float x, float y, float z, float cmDeg,
+                        float& r, float& g, float& b) {
+    const float RAD = 0.01745329f;
+    // The sub-Earth latitude, fixed: the south pole tipped 15 degrees
+    // toward us, so the south cap is in view as it often is. Tonight's
+    // real tilt is owed (it needs Mars's pole in the ephemeris).
+    const float De = -15.0f * RAD, cD = cosf(De), sD = sinf(De);
+    float sl = -y * cD + z * sD;                           // north up
+    sl = sl < -1.f ? -1.f : (sl > 1.f ? 1.f : sl);
+    const float lat = asinf(sl) / RAD;
+    const float lonW = cmDeg + atan2f(x, z * cD + y * sD) / RAD;
+    const float cl = cosf(lat * RAD);
+    float dark = 0.0f;
+    for (const MarsPatch& m : MARS_PATCHES) {
+        float dl = fmodf(lonW - m.lonW + 540.0f, 360.0f) - 180.0f;
+        dl *= cl;
+        const float dp = lat - m.lat;
+        const float d2 = (dl * dl + dp * dp) / (m.radiusDeg * m.radiusDeg);
+        if (d2 < 9.0f) dark += m.dark * expf(-d2);
+    }
+    float f = 1.0f - dark;
+    f = f < 0.45f ? 0.45f : (f > 1.10f ? 1.10f : f);
+    r *= f; g *= f; b *= f;
+    // The caps: the south one larger, as it usually is when Mars is
+    // well placed from the north. A 3-degree edge, not a hard line.
+    const float capN = (lat - 78.0f) / 3.0f, capS = (-74.0f - lat) / 3.0f;
+    const float c = (std::min)(1.0f, (std::max)(0.0f, (std::max)(capN, capS)));
+    if (c > 0.0f) {
+        const float top = (std::max)(r, (std::max)(g, b)) / f;
+        r += (top * 0.98f - r) * c;
+        g += (top * 0.96f - g) * c;
+        b += (top * 0.94f - b) * c;
+    }
+}
 
 class ASICamera : public ICamera {
 public:
@@ -506,6 +579,10 @@ public:
         // 1.22 * lambda/D in radians, times 206265 arcsec/radian.
         return 1.22f * (WAVELENGTH_NM * 1e-6f) / APERTURE_MM * 206265.0f;
     }
+    // The 8SE's secondary shadow, as a fraction of the aperture: what
+    // makes a defocused star a doughnut rather than a disc.
+    static constexpr float SCT_OBSTRUCTION = 0.34f;
+
     static constexpr float AiryRadiusPx() {
         return AiryRadiusArcsec() / EMU_PLATE_SCALE_AS_PX;
     }
@@ -632,10 +709,12 @@ public:
 
     // Render the named target instead of always Jupiter. Matched on a
     // leading substring so profile names like "Jupiter" and target
-    // names like "Jupiter (Io transit)" both resolve; anything
+    // names like "Jupiter (Io transit)" both resolve. Anything
     // unrecognised stays on Jupiter, which is the useful default for a
-    // generic planetary test.
-    void SetTargetName(const std::string& name) {
+    // generic planetary test -- unless the caller says it is a star
+    // (isStar, from the sky catalog), which is drawn as the generic
+    // white star. Before 2026-11-15 a GoTo to Kochab drew Jupiter.
+    void SetTargetName(const std::string& name, bool isStar = false) {
         for (int i = 0; i < NUM_EMU_TARGETS; i++) {
             const char* n = EMU_TARGETS[i].name;
             if (_strnicmp(name.c_str(), n, strlen(n)) == 0) {
@@ -651,6 +730,12 @@ public:
         }
         m_target = 0;
         m_radiusOverrideAs = 0.0f;
+        if (isStar) {
+            for (int i = 0; i < NUM_EMU_TARGETS; i++)
+                if (strcmp(EMU_TARGETS[i].name, "Star") == 0) m_target = i;
+            raduk::core::CoreLog("[CameraEmulator] Target: Star (for '%s', not in the "
+                                 "table: a white point source)\n", name.c_str());
+        }
     }
     const char* TargetName() const { return EMU_TARGETS[m_target].name; }
 
@@ -697,6 +782,18 @@ public:
     // field. A quarter puts the terminator through the middle of the
     // frame, which is what the emulator exists to show.
     void SetLunarPhase(float frac) { m_lunarPhase = frac; }
+
+    // ── 2026-11-15: how Mercury, Venus and Mars are lit ──────
+    //
+    // The phase angle (0 full, 180 new) and the bright limb's position
+    // angle, north through east, from PlanetPhaseAt in src/sky, pushed
+    // in for the same reason as the size. The frame is drawn north up,
+    // east left. Only the inner planets use it: Jupiter's phase angle
+    // never passes 12 degrees and the outer planets' less.
+    void SetPlanetPhase(float phaseAngleDeg, float brightLimbPADeg) {
+        m_phaseAngleDeg   = phaseAngleDeg;
+        m_brightLimbPADeg = brightLimbPADeg;
+    }
     float LunarPhase() const { return m_lunarPhase; }
 
     // What the renderer should actually use. One place, so the disc,
@@ -1210,6 +1307,20 @@ private:
             // a shape inside the frame, so it owns the whole pixel
             // loop instead of being painted into it.
             const bool     isLunar   = (TG.kind == EmuKind::Lunar);
+            // 2026-11-15: Mars has a surface, and the inner planets a
+            // phase. The Sun's direction in the frame's own axes (x
+            // right, y down, z toward us): north up, east left, so the
+            // bright limb at position angle PA lies toward (-sin, -cos).
+            const bool     isMars    = (strcmp(TG.name, "Mars") == 0);
+            const bool     phased    = TG.kind == EmuKind::Disc &&
+                                       (isMars || strcmp(TG.name, "Venus") == 0 ||
+                                        strcmp(TG.name, "Mercury") == 0);
+            const float    phA  = m_phaseAngleDeg * (PI / 180.0f);
+            const float    phPA = m_brightLimbPADeg * (PI / 180.0f);
+            const float    sunX = -sinf(phA) * sinf(phPA);
+            const float    sunY = -sinf(phA) * cosf(phPA);
+            const float    sunZ = cosf(phA);
+            const float    marsCM = fmodf(tSurf * 360.0f / MARS_SIDEREAL_DAY_S, 360.0f);
 
             // Main loop — LUT lookup + sqrtf only, no asinf/sinf/fmod per pixel
             //
@@ -1231,11 +1342,23 @@ private:
                         int li = (int)((sinLat+1.0f)*0.5f*(LUT_N-1)+0.5f);
                         if (li<0) li=0; if (li>=LUT_N) li=LUT_N-1;
                         const LUTEntry& e = latLUT[li];
-                        float ld = 0.30f + 0.70f*sqrtf(1.0f-r2);
+                        const float z = sqrtf(1.0f-r2);
+                        float ld = 0.30f + 0.70f*z;
+                        float cr = e.r, cg = e.g, cb = e.b;
+                        if (isMars) MarsSurface(dx, dy, z, marsCM, cr, cg, cb);
+                        if (phased) {
+                            // Lit by the Sun, not by the viewer: dark past
+                            // the terminator, softened over its last few
+                            // per cent so the edge is not a stair.
+                            const float mu0 = dx*sunX + dy*sunY + z*sunZ;
+                            ld = mu0 <= 0.0f ? 0.0f
+                               : (0.20f + 0.80f*sqrtf(mu0)) *
+                                 (mu0 < 0.04f ? mu0 / 0.04f : 1.0f);
+                        }
                         float br = ld*brightness;
-                        rv = (uint8_t)(e.r*br>255?255:e.r*br);
-                        gv = (uint8_t)(e.g*br>255?255:e.g*br);
-                        bv = (uint8_t)(e.b*br>255?255:e.b*br);
+                        rv = (uint8_t)(cr*br>255?255:cr*br);
+                        gv = (uint8_t)(cg*br>255?255:cg*br);
+                        bv = (uint8_t)(cb*br>255?255:cb*br);
                     } else if (hasRings &&
                                RingSample(px, py, PCX, PCY, JR, TG,
                                           brightness, rv, gv, bv)) {
@@ -1522,6 +1645,7 @@ private:
             // focus, so sharpness actually varies with EAF position and an
             // autofocus V-curve has something real to fit.
             int focusPos = 0;
+            float defocusDiaPx = 0.0f;   // for the star's doughnut, below
             if (m_focusProvider && m_focusProvider(focusPos)) {
                 float diaPx = fabsf((float)(focusPos - m_trueFocus))
                             * m_blurPxPerStep;
@@ -1545,6 +1669,7 @@ private:
                     // Independent blurs add in quadrature, not linearly.
                     diaPx = sqrtf(diaPx * diaPx + seeingPx * seeingPx);
                 }
+                defocusDiaPx = diaPx;
                 // diaPx is the blur DIAMETER in sensor pixels. Three box
                 // passes of radius r superpixels add variance, giving an
                 // equivalent Gaussian sigma of sqrt((2r+1)^2-1)/2
@@ -1580,6 +1705,52 @@ private:
                         raduk::core::CoreLog("[EMU] defocus: pos=%d true=%d  dia=%.1fpx "
                                "(rf=%.2f superpx)\n",
                                focusPos, m_trueFocus, diaPx, rf);
+                }
+            }
+
+            // ── A defocused star stays visible (2026-11-15) ──────
+            //
+            // The blur above spreads energy evenly, and the star was
+            // painted with its peak capped at 255 DN, so 1500 steps out
+            // (34 px) it fell under one DN and the app saw an empty
+            // frame. A real bright star is far over 255 at focus, and out
+            // of focus it is the doughnut an SCT makes: the secondary's
+            // shadow in the middle. So past a few Airy radii it is drawn
+            // here as that annulus, after the blur, at the brightness its
+            // energy gives but never under the same 40 DN floor the
+            // in-focus star has. max(), not add: near focus the blurred
+            // core is brighter and wins, so the V-curve stays continuous.
+            if (isStar && defocusDiaPx > 0.0f) {
+                const float airyPx = (std::max)(1.0f, AiryRadiusPx());
+                const float Ro = defocusDiaPx * 0.5f;
+                if (Ro > 3.0f * airyPx) {
+                    const float Ri = Ro * SCT_OBSTRUCTION;
+                    float peak = (m_peakTargetDn > 0) ? (float)m_peakTargetDn
+                                                      : 220.0f * brightness;
+                    if (peak > 255.0f) peak = 255.0f;
+                    float level = peak * (airyPx * airyPx) / (Ro * Ro - Ri * Ri);
+                    if (level < 40.0f) level = 40.0f;
+                    if (level > peak)  level = peak;
+                    const int x0 = (std::max)(0, (int)floorf(PCX - Ro - 1));
+                    const int x1 = (std::min)(W - 1, (int)ceilf(PCX + Ro + 1));
+                    const int y0 = (std::max)(0, (int)floorf(PCY - Ro - 1));
+                    const int y1 = (std::min)(H - 1, (int)ceilf(PCY + Ro + 1));
+                    for (int py = y0; py <= y1; py++) {
+                        const float sdy = py - PCY;
+                        for (int px = x0; px <= x1; px++) {
+                            const float sdx = px - PCX;
+                            const float r = sqrtf(sdx * sdx + sdy * sdy);
+                            // One-pixel ramps at both edges, not a stair.
+                            float w = (std::min)(Ro + 0.5f - r, r - (Ri - 0.5f));
+                            if (w <= 0.0f) continue;
+                            if (w > 1.0f) w = 1.0f;
+                            const bool eR = (py % 2 == 0), eC = (px % 2 == 0);
+                            const float chan = (eR && eC) ? TG.r : (!eR && !eC) ? TG.b : TG.g;
+                            const int v = (int)(level * chan * w) + (int)bgVal;
+                            uint8_t& dst = backBuf[py * W + px];
+                            if (v > dst) dst = (uint8_t)(v > 255 ? 255 : v);
+                        }
+                    }
                 }
             }
 
@@ -1751,6 +1922,8 @@ private:
     float                       m_radiusOverrideAs = 0.0f;
     // Phase 94.3: lunar phase fraction, 0.25 = first quarter.
     float                       m_lunarPhase       = 0.25f;
+    float                       m_phaseAngleDeg    = 0.0f;    // 0 = full
+    float                       m_brightLimbPADeg  = 90.0f;
     std::vector<int>            m_blurScratch;   // generator thread only
     std::vector<int>            m_blurRing;      // P4.4a column-tile window
     std::vector<int>            m_blurSum;       // P4.4a column-tile sums
