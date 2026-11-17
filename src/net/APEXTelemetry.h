@@ -110,6 +110,21 @@ struct APEXTelemetry {
     // the toggle live. Additive: an older dashboard ignores it.
     bool        night_vision    = false;
 
+    // ── Phase 162: the Moon map. `moonmap_cells` is one letter a section
+    // in capture order: C captured, L wanted and in sunlight, T wanted on
+    // the terminator, D wanted and dark. Empty with no project.
+    std::string moonmap_name;
+    int         moonmap_side     = 0;
+    int         moonmap_captured = 0;
+    int         moonmap_total    = 0;
+    int         moonmap_lit      = 0;       // wanted and in sunlight now
+    bool        moonmap_ready    = false;   // every section captured
+    bool        moonmap_running  = false;
+    std::string moonmap_section;            // the one a run is on
+    std::string moonmap_phase;
+    std::string moonmap_selected;
+    std::string moonmap_cells;
+
     // ── Session events (cleared after each broadcast) ─────────
     std::vector<SessionEvent> session_events;
 

@@ -206,6 +206,7 @@ See [Rendering and UI](Rendering-and-UI).
 | [`sky/LunarSolarSize.h`](https://github.com/Maligzar/Raduk-Capture/blob/master/src/sky/LunarSolarSize.h) | 220 | Moon and Sun distance and apparent diameter |
 | [`sky/MosaicPlan.h`](https://github.com/Maligzar/Raduk-Capture/blob/master/src/sky/MosaicPlan.h) | 391 | Grid, serpentine order, tangent-plane offsets, the framing report |
 | [`sky/MosaicRunner.h`](https://github.com/Maligzar/Raduk-Capture/blob/master/src/sky/MosaicRunner.h) | 334 | Phase 97.5. Pure state machine that takes the target's live position on every tick |
+| [`sky/MoonMap.h`](https://github.com/Maligzar/Raduk-Capture/blob/master/src/sky/MoonMap.h) | 258 | Phase 162. The Moon by quadrant and section: the grid fixed to the surface, section names, sizing for the frame, sunlight tonight. With `core/MoonMapProject.h` (what a project holds), `core/MoonMapRunner.h` (slew, lock, focus, record, credit), `app/MoonMapController.h` and `gui/MoonMapWindow.h` |
 | [`sky/PixelWCS.h`](https://github.com/Maligzar/Raduk-Capture/blob/master/src/sky/PixelWCS.h) | 470 | Phase 47b. TAN deprojection, the direction rose, solve staleness |
 | [`sky/SolveResult.h`](https://github.com/Maligzar/Raduk-Capture/blob/master/src/sky/SolveResult.h) | 123 | Phase 47b. One solve's result and how long it may be trusted |
 | [`sky/PlateScaleCheck.h`](https://github.com/Maligzar/Raduk-Capture/blob/master/src/sky/PlateScaleCheck.h) | 83 | Phase 110. Measured against configured scale, on all four solve paths |

@@ -86,6 +86,9 @@ under the sky on 2026-11-07.
   topocentric parallax
 - **Lunar and solar mosaics** planned and executed, re-aiming every panel at
   the target's live position so the mosaic closes
+- **The Moon map**: the whole Moon by quadrant and section, filled in over as
+  many nights as it takes, green when every section is captured and ready
+  for a stitching program
 - **Mount safety**: runaway watchdog, cord-wrap veto, keep-out sector and an
   unconditional stop
 

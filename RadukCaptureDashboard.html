@@ -1182,6 +1182,29 @@ body { background:var(--d-void); color:var(--d-text); font-family:'Barlow Conden
         </div>
       </div>
 
+      <!-- Phase 162: the Moon map. The same commands as the app's Moon map
+           window (Y): green is captured, amber is wanted and in sunlight,
+           faint amber is on the terminator, dark is not lit tonight. -->
+      <div class="rc-ctrl-section" style="padding-bottom:6px">
+        <div class="rc-ctrl-section-title">MOON MAP</div>
+        <div class="rc-row"><span class="rk">PROJECT</span><span class="rv" id="rcMoonName">--</span></div>
+        <div class="rc-row"><span class="rk">SECTIONS</span><span class="rv" id="rcMoonCount">--</span></div>
+        <div class="rc-row"><span class="rk">STATE</span><span class="rv-dim" id="rcMoonState">--</span></div>
+        <div class="rc-row"><span class="rk">PICKED</span><span class="rv" id="rcMoonPicked">--</span></div>
+        <div id="rcMoonGrid" data-ready="0" style="display:grid;gap:1px;width:min(100%,260px);aspect-ratio:1;margin:6px auto;border-radius:50%;overflow:hidden"></div>
+        <div class="rc-btn-row" style="padding:0 0 4px">
+          <button class="rc-ctrl-btn green" id="rcMoonStart" onclick="rcSendCmd('moonmap','START')" title="Capture every wanted section in sunlight, or stop" style="flex:2">▶ START</button>
+          <button class="rc-ctrl-btn cyan"  id="rcMoonGoto"  onclick="rcSendCmd('moonmap','GOTO')"  title="Slew to the picked section; RECORD then files the run under it">GOTO</button>
+          <button class="rc-ctrl-btn cyan"  id="rcMoonMark"  onclick="rcSendCmd('moonmap','MARK')"  title="Mark the picked section captured">MARK</button>
+          <button class="rc-ctrl-btn red"   id="rcMoonClear" onclick="rcSendCmd('moonmap','CLEAR')" title="Forget the picked section's captures">CLEAR</button>
+        </div>
+        <div class="rc-btn-row" style="padding:0">
+          <button class="rc-ctrl-btn amber" id="rcMoonNew"  onclick="rcSendCmd('moonmap','NEW')"  title="Start a new project, sized for the Moon profile's frame">NEW</button>
+          <button class="rc-ctrl-btn cyan"  id="rcMoonPrev" onclick="rcSendCmd('moonmap','PREV')" title="The earlier project">« PREV</button>
+          <button class="rc-ctrl-btn cyan"  id="rcMoonNext" onclick="rcSendCmd('moonmap','NEXT')" title="The later project">NEXT »</button>
+        </div>
+      </div>
+
       <!-- Mount jog -->
       <div class="rc-ctrl-section" style="padding-bottom:6px">
         <div class="rc-ctrl-section-title">MOUNT JOG</div>
@@ -2443,6 +2466,7 @@ function rcHandleData(data) {
     // Seeing
     if (data.seeing_score != null) rcUpdateSeeing(data.seeing_score, data.seeing_rms);
     rcSyncControlSliders(data);
+    rcUpdateMoonMap(data);   // phase 162
     // Session events
     if (data.session_events && Array.isArray(data.session_events)) {
       data.session_events.forEach(ev => rcLogSession(ev.msg, ev.type || 'info'));
@@ -2476,6 +2500,75 @@ function rcHandleData(data) {
 function rcSetVal(id, val, color) {
   const el = document.getElementById(id);
   if (el) { el.textContent = val; if (color) el.style.color = color; }
+}
+
+// ── Phase 162: the Moon map ─────────────────────────────────
+// The sections of an n-a-side grid, in the app's capture order. The same
+// walk as BuildMoonSections in src/sky/MoonMap.h: rows from the north,
+// each the other way from the one above, squares under 5% Moon left out.
+// `moonmap_cells` carries one letter a section in this order.
+function rcMoonSections(n) {
+  const out = [], full = 2 * n, step = 1 / n, SUB = 16;
+  for (let gr = 0; gr < full; gr++) for (let k = 0; k < full; k++) {
+    const gc = (gr % 2 === 0) ? k : full - 1 - k;
+    const x0 = -1 + gc * step, y0 = 1 - gr * step - step;
+    let inside = 0;
+    for (let j = 0; j < SUB; j++) for (let i = 0; i < SUB; i++) {
+      const x = x0 + (i + 0.5) * step / SUB, y = y0 + (j + 0.5) * step / SUB;
+      if (x * x + y * y <= 1) inside++;
+    }
+    if (inside / (SUB * SUB) < 0.05) continue;
+    const east = gc >= n, north = gr < n;
+    const col = east ? gc - n : n - 1 - gc, row = north ? n - 1 - gr : gr - n;
+    out.push({ id: (north ? 'N' : 'S') + (east ? 'E' : 'W') + '-' + String.fromCharCode(65 + row) + (col + 1), gr, gc });
+  }
+  return out;
+}
+
+let rcMoonKey = '';
+function rcUpdateMoonMap(data) {
+  const grid = document.getElementById('rcMoonGrid');
+  if (!grid || data.moonmap_side === undefined) return;   // an older app
+  const n = data.moonmap_side || 0, cells = data.moonmap_cells || '';
+  rcSetVal('rcMoonName', data.moonmap_name || 'NO PROJECT');
+  rcSetVal('rcMoonCount', n ? `${data.moonmap_captured} / ${data.moonmap_total}` : '--');
+  rcSetVal('rcMoonPicked', data.moonmap_selected || '--');
+  const st = document.getElementById('rcMoonState');
+  if (st) {
+    let text = 'PRESS NEW', cls = 'rv-dim';
+    if (n && data.moonmap_running) { text = `RUN ${data.moonmap_section} ${data.moonmap_phase}`.toUpperCase(); cls = 'rv'; }
+    else if (n && data.moonmap_ready) { text = 'READY FOR MOSAIC'; cls = 'rv-green'; }
+    else if (n) { text = `${data.moonmap_lit} IN SUNLIGHT`; cls = data.moonmap_lit ? 'rv-amber' : 'rv-dim'; }
+    st.textContent = text; st.className = cls;
+  }
+  const btn = document.getElementById('rcMoonStart');
+  if (btn) btn.textContent = data.moonmap_running ? '■ STOP' : '▶ START';
+  grid.dataset.ready = data.moonmap_ready ? '1' : '0';
+
+  const key = [n, cells, data.moonmap_selected, data.moonmap_section].join('|');
+  if (key === rcMoonKey) return;
+  rcMoonKey = key;
+  grid.style.gridTemplateColumns = `repeat(${2 * n || 1}, 1fr)`;
+  const secs = n ? rcMoonSections(n) : [];
+  let html = '';
+  if (secs.length && secs.length === cells.length) {
+    const at = {};
+    secs.forEach((s, i) => { at[s.gr + ',' + s.gc] = { id: s.id, ch: cells[i] }; });
+    // Captured, wanted and lit, on the terminator, dark: by colour, and
+    // by brightness for night vision, where colour is gone.
+    const look = { C: ['var(--d-green)', 1], L: ['var(--d-amber)', .8], T: ['var(--d-amber)', .28], D: ['var(--d-text-dim)', .16] };
+    for (let gr = 0; gr < 2 * n; gr++) for (let gc = 0; gc < 2 * n; gc++) {
+      const c = at[gr + ',' + gc];
+      if (!c) { html += '<div></div>'; continue; }
+      const [bg, op] = look[c.ch] || look.D;
+      const ring = c.id === data.moonmap_section ? 'inset 0 0 0 2px var(--d-accent)'
+                 : c.id === data.moonmap_selected ? 'inset 0 0 0 2px var(--d-text)' : 'none';
+      html += `<div id="rcMoon_${c.id}" data-state="${c.ch}" title="${c.id}" ` +
+              `onclick="rcSendCmd('moonmap','SELECT ${c.id}')" ` +
+              `style="cursor:pointer;background:${bg};opacity:${op};box-shadow:${ring}"></div>`;
+    }
+  }
+  grid.innerHTML = html;
 }
 
 // ── Capture display ─────────────────────────────────────────

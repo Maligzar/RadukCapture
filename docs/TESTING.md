@@ -61,7 +61,7 @@ Every control a person needs at the telescope is reachable from Dash. A new feat
 - the control has a stable `id`;
 - a Playwright test drives it.
 
-Today Dash sends `start_capture`, `stop_capture`, `set_gain`, `set_exposure`, `set_gamma`, `autofocus`, `autofocus_abort`, `calibrate_focus`, `move_eaf`, `move_eaf_rel`, `centroid_start`, `centroid_lock`, `centroid_roi`, `centroid_reset`, `cables_dressed`, `mount_stop`, `jog`, `load_profile` and `goto_target` (main.cpp's WebSocket command handler). Controls with no Dash equivalent yet are listed in "Owed" below, as they are found.
+Today Dash sends `start_capture`, `stop_capture`, `set_gain`, `set_exposure`, `set_gamma`, `autofocus`, `autofocus_abort`, `calibrate_focus`, `move_eaf`, `move_eaf_rel`, `centroid_start`, `centroid_lock`, `centroid_roi`, `centroid_reset`, `cables_dressed`, `mount_stop`, `jog`, `load_profile`, `goto_target` and `moonmap` (main.cpp's WebSocket command handler). Controls with no Dash equivalent yet are listed in "Owed" below, as they are found.
 
 ### Setting it up on the imaging PC
 Node and Playwright are installed on StarMachine. Once, in the repository:
@@ -101,6 +101,7 @@ Results go to `tests\web\results\dash-results.json`. Phase 156's bundle picks th
 | `offline.spec.js` | nothing running | Dash loads with no internet, no script errors, and no request leaves the PC |
 | `live.spec.js` (`@live`) | the app running | Dash connects with the token, live telemetry arrives, and START/STOP CAPTURE works from the browser |
 | `acquire-wide.spec.js` (`@live`) | the app running | Dash loads the Star profile (640x480), CENTROID widens the frame and the ROI row reads `WIDE`, RESET puts 640x480 back (157.0c) |
+| `moon-map.spec.js` (`@live`) | the app running | Dash's MOON MAP: NEW shows a grid with one square a section, a click picks one, MARK turns it green and counts it, CLEAR undoes that, and the empty project is discarded (162). The run itself is `tests\scenarios\moon-map.scn` |
 
 ### Found by it already
 **Dash fetches a weather forecast from `api.open-meteo.com`.** It does this even with no site set, asking for latitude 0, longitude 0. That breaks rule 7, airplane mode. The Phase 151 audit missed it, because it checked Dash's files and not its requests. `offline.spec.js` fails on it until it is fixed: owed as 151.4, gate the fetch on `Offline` and a known site, or take the weather from Leoben.

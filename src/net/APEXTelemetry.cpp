@@ -71,6 +71,19 @@ std::string APEXTelemetry::ToJSON() const {
     j << "\"drift_ra_as\":"   << drift_ra_as  << ",";
     j << "\"drift_dec_as\":"  << drift_dec_as << ",";
 
+    // Phase 162: the Moon map
+    j << "\"moonmap_name\":"     << jsonStr(moonmap_name) << ",";
+    j << "\"moonmap_side\":"     << moonmap_side << ",";
+    j << "\"moonmap_captured\":" << moonmap_captured << ",";
+    j << "\"moonmap_total\":"    << moonmap_total << ",";
+    j << "\"moonmap_lit\":"      << moonmap_lit << ",";
+    j << "\"moonmap_ready\":"    << (moonmap_ready ? "true" : "false") << ",";
+    j << "\"moonmap_running\":"  << (moonmap_running ? "true" : "false") << ",";
+    j << "\"moonmap_section\":"  << jsonStr(moonmap_section) << ",";
+    j << "\"moonmap_phase\":"    << jsonStr(moonmap_phase) << ",";
+    j << "\"moonmap_selected\":" << jsonStr(moonmap_selected) << ",";
+    j << "\"moonmap_cells\":"    << jsonStr(moonmap_cells) << ",";
+
     // Histogram — 256-element array, downsampled to 64 buckets for bandwidth
     // Each bucket sums 4 adjacent bins. Client expects 256 values — pad back out.
     j << "\"histogram\":[";

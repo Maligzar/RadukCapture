@@ -119,6 +119,8 @@ $Tests = @(
     @{ Name = "focus_metric_compare"; Sources = @() }
     @{ Name = "neo_list";         Sources = @() }
     @{ Name = "mosaic_run";      Sources = @() }
+    @{ Name = "moon_map";        Sources = @() }
+    @{ Name = "moon_map_run";    Sources = @() }
     @{ Name = "camera_panel";    Sources = @() }
     @{ Name = "camera_controls"; Sources = @() }
     @{ Name = "exposure_rails"; Sources = @() }

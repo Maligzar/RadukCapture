@@ -107,6 +107,7 @@
 #include "gui/SharpnessWindow.h"
 #include "gui/PlayerWindow.h"     // [PLAY]: look through a SER recording
 #include "gui/TemperatureWindow.h"
+#include "gui/MoonMapWindow.h"    // phase 162: the Moon by quadrant and section
 #include "gui/StatusWindow.h"
 #include "gui/ConfirmToast.h"
 #include "gui/ADCAlignWindow.h"
@@ -959,6 +960,23 @@ static int RunApp(bool useEmulator) {
     };
     static MainUiSink mainUi;
     core.SetUi(&mainUi);
+
+    // Phase 162: the Moon map. Declared this early because RECORD and the
+    // GoTo panel's callbacks have to know about it, as RECORD knows about
+    // a sequence; its hooks are set where the lock, autofocus and RECORD
+    // it drives all exist.
+    raduk::app::MoonMapController moonMap(mainUi);
+    // A recording made for a section is filed under the section: by a
+    // run, or by a person who went to one with the map's GOTO.
+    struct MoonRec {
+        bool        on = false;       // the next recording is a section's
+        std::string prefix, dir;
+        std::string armed;            // GOTO went here; RECORD files it
+        std::string manual;           // the section a hand recording is of
+        bool        donePending = false, doneNormal = false;
+        std::string donePath;
+    } moonRec;
+
     auto& cam = core.cam;
     if (!cam.Open(0)) {
         if (!useEmulator)
@@ -1827,6 +1845,9 @@ static int RunApp(bool useEmulator) {
     // mis-click sent the mount somewhere nobody had asked for.
     gotoPanel.SetTargetChangedCallback([&](const std::string& name) {
         controls.SetGoToTarget(name);
+        // Phase 162: any slew leaves the section the map's GOTO went to.
+        // The map's own slew sets it again once this has returned.
+        moonRec.armed.clear();
     });
 
     // Both maps, same handler. Either can start a slew, and both ask
@@ -2251,6 +2272,12 @@ static int RunApp(bool useEmulator) {
     objectPanel.Create(window.Handle(), 240, 240, 1100, 700);
     // The sink is wired further down, where `preview` exists.
 
+    // ── Phase 162: the Moon map ───────────────────────────────
+    // Hidden until Y. Its model and its commands are wired with the
+    // controller's hooks, further down.
+    raduk::gui::MoonMapWindow moonMapWindow;
+    moonMapWindow.Create(window.Handle(), 260, 120, 880, 980);
+
     Log("[INIT] Status window ready\n");
 
     // ── Phase 42: place the windows ───────────────────────────
@@ -2311,6 +2338,7 @@ static int RunApp(bool useEmulator) {
         { "adcalign", adcAlignWindow.Handle() },
         { "share",  shareView.Handle()  },
         { "objectpanel", objectPanel.Handle() },
+        { "moonmap", moonMapWindow.Handle() },
     };
     bool s_restoredAnyPanel = false;
     // ── Phase 101: apply the saved open/closed state ──────────
@@ -2344,6 +2372,7 @@ static int RunApp(bool useEmulator) {
         { "adcalign",    [&](bool v){ v ? adcAlignWindow.Show() : adcAlignWindow.Hide(); } },
         { "share",       [&](bool v){ v ? shareView.Show()      : shareView.Hide(); } },
         { "objectpanel", [&](bool v){ v ? objectPanel.Show()    : objectPanel.Hide(); } },
+        { "moonmap",     [&](bool v){ v ? moonMapWindow.Show()  : moonMapWindow.Hide(); } },
     };
     //
     // A named lambda because it has to run twice. The first pass has to
@@ -2386,7 +2415,7 @@ static int RunApp(bool useEmulator) {
              { "skymap", skyMap.Handle() }, { "skymap2", skyMap2.Handle() }, { "goto", gotoPanel.Handle() },
              { "histogram", histWindow.Handle() }, { "sharpness", sharpWindow.Handle() },
              { "temperature", tempWindow.Handle() }, { "status", statusWindow.Handle() },
-             { "adcalign", adcAlignWindow.Handle() } })
+             { "adcalign", adcAlignWindow.Handle() }, { "moonmap", moonMapWindow.Handle() } })
         raduk::gui::panel_dock::Register(h, role);
     raduk::gui::panel_dock::SetEnabled(RigConfig::Get().panelSnap);
 
@@ -4368,12 +4397,32 @@ static int RunApp(bool useEmulator) {
             autorun.Abort("stopped with RECORD");
             return;
         }
+        // Phase 162: and a Moon map run, the same way.
+        if (moonMap.runner.Running() && !moonMap.Pressing()) {
+            moonMap.Stop("stopped with RECORD");
+            return;
+        }
         if (capturer.IsRecording()) {
             endRecording(true, "operator");
         } else {
             CaptureConfig cfg = capturer.Config();
             cfg.filePrefix    = controls.GetFilePrefix();
             cfg.outputDir     = controls.GetOutputDir();
+            // Phase 162: a section's recording is named for the section
+            // and kept in the project's own folder, so the stitcher is
+            // handed one folder. A hand recording after the map's GOTO
+            // counts the same as a run's.
+            moonRec.manual.clear();
+            if (!moonRec.on && !moonRec.armed.empty() && moonMap.HasProject() &&
+                moonMap.Active().Find(moonRec.armed)) {
+                moonRec.manual = moonRec.armed;
+                moonRec.prefix = raduk::app::MoonMapController::PrefixFor(moonRec.armed);
+                moonRec.dir    = moonMap.CaptureDir(cfg.outputDir);
+            }
+            if (moonRec.on || !moonRec.manual.empty()) {
+                cfg.filePrefix = moonRec.prefix;
+                cfg.outputDir  = moonRec.dir;
+            }
             cfg.frameType     = controls.GetFrameType();  // Phase 44
             cfg.format        = controls.GetCaptureFits()
                                     ? CaptureFormat::FITS : CaptureFormat::SER;
@@ -4432,10 +4481,19 @@ static int RunApp(bool useEmulator) {
         // AutoStakkert act on it here.
         const auto c = core.recCtl.Complete(path, normal,
                                             raduk::core::RigConfig::Get().autoStackOnStop,
-                                            autorun.Running(), raduk::core::IsFitsCapture(path));
+                                            autorun.Running() || moonMap.runner.Running(),
+                                            raduk::core::IsFitsCapture(path));
         // Phase 113: anything but a normal end stops a sequence, whoever
         // did it: Escape, a format change, the hardware going away.
         if (c.abortAutorun) autorun.Abort("a recording was stopped from outside");
+        if (c.abortAutorun) moonMap.Stop("a recording was stopped from outside");   // phase 162
+        // Phase 162: a hand recording of a section, credited from the
+        // readout tick, on the UI thread.
+        if (!moonRec.manual.empty()) {
+            moonRec.donePending = true;
+            moonRec.doneNormal  = normal;
+            moonRec.donePath    = path;
+        }
         core.arCtl.SetLastPath(path);
         if (c.fitsNotice)
             notifBar.NotifyInfo(L"Auto-stack is SER only - press [STACK] "
@@ -4969,6 +5027,7 @@ static int RunApp(bool useEmulator) {
         // otherwise be undone by this thread's next rate.
         gotoPanel.StopSatellite("emergency stop");
         autorun.Abort("emergency stop");
+        moonMap.Stop("emergency stop");   // phase 162
         if (capturer.IsRecording()) {
             capturer.StopRecording(false);  // emergency stop - do not auto-stack
             usbMgr.SetCapturing(false);
@@ -5812,7 +5871,7 @@ static int RunApp(bool useEmulator) {
             Log("[MOSAIC] stopped by the operator\n");
             return;
         }
-        if (autorun.Running()) {
+        if (autorun.Running() || moonMap.runner.Running()) {
             notifBar.NotifyWarn(L"A sequence of runs is going - stop it first");
             return;
         }
@@ -6399,7 +6458,7 @@ static int RunApp(bool useEmulator) {
             return;
         }
         if (capturer.IsRecording() || gotoPanel.MosaicRunning() ||
-            core.afCtl.Busy()) {
+            core.afCtl.Busy() || moonMap.runner.Running()) {
             notifBar.NotifyWarn(L"Finish what is running first");
             return;
         }
@@ -6506,6 +6565,222 @@ static int RunApp(bool useEmulator) {
         };
         core.arCtl.SetHooks(std::move(h));
     }
+
+    // ── Phase 162: the Moon map ───────────────────────────────
+    //
+    // Nothing here is a new way to do anything. The slew is the GoTo
+    // panel's, the lock is PLANET LOCK (which guides on the surface when
+    // the Moon fills the frame), the sweep is autofocus's and the run is
+    // RECORD. The controller puts them in order, section by section.
+    {
+        raduk::app::MoonMapHooks h;
+        h.view = [&]() {
+            raduk::sky::LunarView v = raduk::sky::LunarViewAt(
+                raduk::sky::CurrentJD(), raduk::gui::GoToPanel::SiteObserver());
+#ifdef RADUK_EMULATOR
+            // A scenario's Moon is lit by RADUK_EMU_LUNAR_PHASE and not by
+            // the date it runs on. With this set the map takes the Sun to
+            // be behind the observer: a full Moon on any night.
+            char e[8] = {};
+            if (GetEnvironmentVariableA("RADUK_EMU_MOONMAP_FULL", e, sizeof(e)) > 0 && e[0] == '1') {
+                v.sunDir = (v.centre * -1.0).Unit();
+                v.subSolarLonDeg = v.subEarthLonDeg;
+                v.subSolarLatDeg = v.subEarthLatDeg;
+                v.colongitudeDeg = raduk::sky::NormDeg360(90.0 - v.subSolarLonDeg);
+            }
+#endif
+            return v;
+        };
+        h.jdNow = []() { return raduk::sky::PreciseJdNow(); };
+        h.slew = [&](double ra, double dec, const std::string& section, std::string& why) {
+            // The correction thread steers this same mount.
+            tracker.Reset();
+            controls.SetPlanetLockState(false);
+            controls.SetSkyMapLocked(false);
+            if (!gotoPanel.RequestMoonSection(ra, dec, why)) return false;
+            slog.Mount("Moon map: slewing to %s", section.c_str());
+            moonRec.armed = section;   // after the slew: any slew clears it
+            return true;
+        };
+        h.mountSlewing = [&]() { return mount && mount->IsSlewing(); };
+        h.startLock = [&](std::string& why) {
+            using S = raduk::core::AcquisitionStage;
+            tracker.SetMount(mount);
+            bool ok = true;
+            // A GoTo leaves a plain search running, as PLANET LOCK finds it.
+            if (tracker.Stage() == S::Searching && !tracker.AutoAdvancing())
+                ok = tracker.PromoteToAutoAcquire(why);
+            else if (tracker.Stage() == S::Off)
+                ok = tracker.StartAutoAcquire(why);
+            if (!ok) return false;
+            slog.Mount("Moon map: acquisition (search -> calibrate -> centre -> lock)");
+            controls.SetPlanetLockState(true);
+            stepWide();
+            return true;
+        };
+        h.locked = [&]() { return tracker.Stage() == raduk::core::AcquisitionStage::Locked; };
+        h.moonSeen = [&]() {
+            return lastAnalysis.valid && (lastAnalysis.centroidValid || lastAnalysis.surfaceTracked);
+        };
+        h.startFocus = [&]() { startAutofocus(); };
+        h.abortFocus = [&]() { abortAutofocus(); };
+        h.startRecording = [&](const std::string& section) {
+            if (capturer.IsRecording()) return false;
+            moonRec.on     = true;
+            moonRec.prefix = raduk::app::MoonMapController::PrefixFor(section);
+            moonRec.dir    = moonMap.CaptureDir(controls.GetOutputDir());
+            doRecord();
+            moonRec.on = false;
+            return capturer.IsRecording();
+        };
+        h.stopRecording = [&]() {
+            endRecording(true, "moon map");
+            controls.ForceRecordButtonUpdate(false);
+        };
+        h.lastFile = [&]() { return capturer.LastFilePath(); };
+        h.frameSize = [&](int& w, int& hgt) { w = roiWidth; hgt = roiHeight; };
+        h.session = [&](const std::string& t) { slog.Capture("%s", t.c_str()); };
+        h.notify = [&](raduk::app::ToastLevel l, const std::string& u8) {
+            if (l == raduk::app::ToastLevel::Info) notifBar.NotifyInfo(raduk::core::ToWide(u8));
+            else                                   notifBar.NotifyWarn(raduk::core::ToWide(u8));
+        };
+        h.changed = [&]() { moonMapWindow.Refresh(); };
+        moonMap.SetHooks(std::move(h));
+        moonMap.Open(raduk::core::Paths::EnsureSub("moonmaps"));
+        moonMapWindow.SetModel(&moonMap);
+        if (moonMap.HasProject())
+            Log("[MOONMAP] project '%s': %s\n", moonMap.Active().Name().c_str(),
+                moonMap.Active().Summary().c_str());
+    }
+
+    // Every way of asking the map for something -- its window's buttons, a
+    // click on a section, Dash, the keyboard, a scenario -- comes through
+    // here, so each has one implementation and one refusal.
+    std::function<void(const std::string&, const std::string&)> moonMapCommand =
+        [&](const std::string& cmd, const std::string& arg) {
+        const auto& rig = raduk::core::RigConfig::Get();
+        auto refuse = [&](const std::string& why) {
+            Log("[MOONMAP] %s refused: %s\n", cmd.c_str(), why.c_str());
+            notifBar.NotifyWarn(L"Moon map: " + raduk::core::ToWide(why));
+            moonMapWindow.Refresh();
+        };
+        std::string why;
+
+        if (cmd == "SELECT") {
+            moonMap.Select(arg);
+        } else if (cmd == "NEW") {
+            if (moonMap.runner.Running()) return refuse("a map run is going");
+            // Sized for the frame the Moon is RECORDED on, which is its
+            // profile's and may not be the one on screen now.
+            int fw = roiWidth, fh = roiHeight;
+            {
+                const int idx = profiles.FindForTarget("Moon", rig.cameraName);
+                if (idx >= 0) {
+                    fw = profiles.Profiles()[idx].roiWidth;
+                    fh = profiles.Profiles()[idx].roiHeight;
+                }
+            }
+            const auto fov = raduk::sky::FrameFov(fw, fh, rig.plateScaleArcsecPx);
+            const int n = rig.moonMapSectionsPerSide > 0 ? rig.moonMapSectionsPerSide
+                                                         : raduk::sky::SectionsPerSide(fov);
+            if (n <= 0) return refuse("no frame size or plate scale, so no section size");
+            if (rig.moonMapSectionsPerSide == 0 &&
+                !raduk::sky::FrameHoldsSection(fov, n, raduk::sky::MOON_MAX_DIAMETER_ARCMIN,
+                                               raduk::sky::MOONMAP_OVERLAP))
+                return refuse("the Moon profile's frame is too small to map with: use more of the sensor");
+            std::time_t tt = std::time(nullptr);
+            std::tm lt{};
+            localtime_s(&lt, &tt);
+            char base[40];
+            std::strftime(base, sizeof(base), "Moon %Y-%m-%d", &lt);
+            bool made = moonMap.NewProject(arg.empty() ? std::string(base) : arg, n, why);
+            for (char suffix = 'b'; !made && arg.empty() && suffix <= 'z'; ++suffix)
+                made = moonMap.NewProject(std::string(base) + " " + suffix, n, why);
+            if (!made) return refuse(why);
+            Log("[MOONMAP] %s\n", raduk::sky::DescribeMoonGrid(fov, n).c_str());
+            slog.Capture("Moon map: new project %s", moonMap.Active().Name().c_str());
+            wchar_t msg[160];
+            swprintf(msg, 160, L"Moon map '%hs': %d sections", moonMap.Active().Name().c_str(),
+                     moonMap.Active().Total());
+            notifBar.NotifyInfo(msg);
+        } else if (cmd == "PREV" || cmd == "NEXT") {
+            if (!moonMap.Step(cmd == "NEXT" ? 1 : -1)) return refuse("there is no other project to show");
+        } else if (cmd == "DISCARD") {
+            // An empty project only: one made by mistake, or by a test.
+            if (!moonMap.DiscardEmpty(why)) return refuse(why);
+        } else if (cmd == "GOTO" || cmd == "MARK" || cmd == "CLEAR") {
+            const std::string id = arg.empty() ? moonMap.Selected() : arg;
+            if (id.empty()) return refuse("pick a section first");
+            if (cmd == "GOTO") {
+                if (capturer.IsRecording()) return refuse("stop the recording first");
+                if (!moonMap.GoTo(id, why)) return refuse(why);
+                Log("[MOONMAP] GoTo %s: RECORD now files the run under that section\n", id.c_str());
+                notifBar.NotifyInfo(L"Moon map: slewing to " + raduk::core::ToWide(id) +
+                                    L" - RECORD files the run under it");
+            } else if (cmd == "MARK") {
+                if (!moonMap.Mark(id)) return refuse("no section called " + id);
+            } else {
+                if (!moonMap.Clear(id)) return refuse(id + " has no capture to clear");
+            }
+        } else if (cmd == "START" || cmd == "STOP") {
+            if (moonMap.runner.Running()) {
+                moonMap.Stop("stopped by the operator");
+                return;
+            }
+            if (cmd == "STOP") return;
+            if (capturer.IsRecording() || gotoPanel.MosaicRunning() || core.afCtl.Busy() ||
+                autorun.Running())
+                return refuse("finish what is running first");
+            if (!moonMap.HasProject()) return refuse("no project: press NEW first");
+            // The Moon's own settings and limit, before the run is sized.
+            profileForTarget("Moon");
+            const auto fov = raduk::sky::FrameFov(roiWidth, roiHeight, rig.plateScaleArcsecPx);
+            if (!raduk::sky::FrameHoldsSection(fov, moonMap.Active().PerSide(),
+                                               raduk::sky::MOON_MAX_DIAMETER_ARCMIN, 0.0)) {
+                // A grid somebody set by hand (MoonMapSectionsPerSide) is
+                // theirs to run, and is told what it costs. One sized by
+                // the app and then met with a smaller frame is a mistake.
+                if (rig.moonMapSectionsPerSide == 0)
+                    return refuse("the frame is smaller than a section of this project");
+                Log("[MOONMAP] the frame does not hold a whole section at every camera angle: "
+                    "the sections' edges may be missing from the mosaic\n");
+            }
+#ifndef RADUK_EMULATOR
+            // The emulated mount has no horizon; a real one does.
+            if (rig.SiteIsSet()) {
+                const auto v = raduk::sky::LunarViewAt(raduk::sky::CurrentJD(),
+                                                       raduk::gui::GoToPanel::SiteObserver());
+                double alt = 0.0, az = 0.0;
+                raduk::core::RADecToAltAzNow(v.raHours, v.decDeg, alt, az);
+                if (alt < 10.0) return refuse("the Moon is below 10 degrees");
+            }
+#endif
+            raduk::core::MoonMapRunner::Config c;
+            c.settleSec    = rig.moonMapSettleSec;
+            c.lock         = rig.moonMapLock;
+            c.refocusEvery = focuser.IsOpen() ? rig.moonMapRefocusEvery : 0;
+            c.runSec       = raduk::core::AutorunRunSec(
+                0.0, controls.GetLimitByFrames(), controls.GetLimitFrames(),
+                controls.GetLimitTimeSec(), capture.Stats().fps.load());
+            const double nowSec = std::chrono::duration<double>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+            if (!moonMap.Start(c, nowSec, why)) return refuse(why);
+            wchar_t msg[160];
+            swprintf(msg, 160, L"Moon map: %d sections in sunlight, runs of %.0f s",
+                     moonMap.runner.Total(), c.runSec);
+            notifBar.NotifyInfo(msg);
+        } else {
+            return refuse("no command called " + cmd);
+        }
+        moonMapWindow.Refresh();
+    };
+    moonMapWindow.SetCommand(moonMapCommand);
+    window.SetMoonMapToggleHandler([&]() {
+        moonMap.RefreshSky();
+        moonMapWindow.Toggle();
+    });
+    window.SetMoonMapRunHandler([&]() { moonMapCommand("START", ""); });
+    auto lastMoonMapSky = std::chrono::steady_clock::now();
 
     // Phase 49: Help toggle — toolbar [?] button and ? key
     auto doHelp = [&]() { helpWindow.Toggle(); };
@@ -6878,6 +7153,13 @@ static int RunApp(bool useEmulator) {
                 slog.Mount("APEX: goto_target %s", rc.arg.c_str());
                 // Same path as sky map click — auto-loads profile + slews
                 gotoPanel.RequestGoToByName(rc.arg);
+            } else if (rc.cmd == "moonmap") {
+                // Phase 162: "START", "NEW", "SELECT NE-A1", "MARK", ...
+                // The same commands the Moon map window's buttons send.
+                const size_t sp = rc.arg.find(' ');
+                Log("[WS] Remote moonmap: %s\n", rc.arg.c_str());
+                moonMapCommand(rc.arg.substr(0, sp),
+                               sp == std::string::npos ? std::string() : rc.arg.substr(sp + 1));
             }
         }
     });
@@ -6988,6 +7270,17 @@ static int RunApp(bool useEmulator) {
                     g_scenario->ActionFailed("the player has nothing open, or no command '" + a.arg.substr(5) + "'");
                 break;
             }
+            // Phase 162: the Moon map window's buttons, and a section.
+            if (a.arg == "MOONMAP:SHOW") {
+                moonMap.RefreshSky();
+                moonMapWindow.Show();
+                break;
+            }
+            if (a.arg.rfind("MOONMAP:", 0) == 0) {
+                if (!moonMapWindow.ScenarioPress(a.arg.substr(8)))
+                    g_scenario->ActionFailed("no Moon map button called '" + a.arg.substr(8) + "'");
+                break;
+            }
             if (a.arg.rfind("GOTO:", 0) == 0) {
                 if (!gotoPanel.ScenarioPress(a.arg.substr(5)))
                     g_scenario->ActionFailed("no GoTo panel button called '" + a.arg.substr(5) + "'");
@@ -7077,6 +7370,7 @@ static int RunApp(bool useEmulator) {
             // recording has to be stopped first, because exiting while
             // recording asks a question nobody is there to answer.
             if (autorun.Running()) autorun.Abort("scenario finished");
+            moonMap.Stop("scenario finished");
             if (capturer.IsRecording()) capturer.StopRecording(false);
             const std::string rep = g_scenario->Report("Sandbox: " + g_scenarioDir + "\n");
             if (FILE* f = fopen(g_scenarioReport.c_str(), "w")) { fputs(rep.c_str(), f); fclose(f); }
@@ -8087,6 +8381,26 @@ static int RunApp(bool useEmulator) {
                     now.time_since_epoch()).count();
                 core.arCtl.Tick(nowSec, capturer.IsRecording(), core.afCtl.Busy(),
                                 capturer.FramesRecorded());   // phase 153.3
+                // Phase 162: the Moon map's run, on the same tick.
+                moonMap.Tick(nowSec, capturer.IsRecording(), core.afCtl.Busy(),
+                             capturer.FramesRecorded());
+                // A hand recording of a section the map's GOTO went to.
+                if (moonRec.donePending) {
+                    moonRec.donePending = false;
+                    const std::string sec = moonRec.manual;
+                    moonRec.manual.clear();
+                    if (moonRec.doneNormal && !sec.empty() && capturer.FramesRecorded() > 0 &&
+                        !moonMap.runner.Running())
+                        moonMap.Mark(sec, moonRec.donePath, capturer.FramesRecorded());
+                }
+                // The terminator moves half a degree an hour.
+                if (now - lastMoonMapSky > std::chrono::seconds(30)) {
+                    lastMoonMapSky = now;
+                    if (moonMap.HasProject() && !moonMap.runner.Running()) {
+                        moonMap.RefreshSky();
+                        moonMapWindow.Refresh();
+                    }
+                }
             }
 
             // GoTo panel — refresh planet positions and slew status.
@@ -8729,6 +9043,36 @@ static int RunApp(bool useEmulator) {
                 telemetry.output_dir   = cfg.outputDir;
                 telemetry.file_prefix  = cfg.filePrefix;
                 telemetry.limit_frames = cfg.limitFrames;
+
+                // Phase 162: the Moon map, for Dash.
+                telemetry.moonmap_name.clear();
+                telemetry.moonmap_cells.clear();
+                telemetry.moonmap_side = telemetry.moonmap_captured = 0;
+                telemetry.moonmap_total = telemetry.moonmap_lit = 0;
+                telemetry.moonmap_ready = false;
+                telemetry.moonmap_running = moonMap.runner.Running();
+                telemetry.moonmap_section = moonMap.CurrentSection();
+                telemetry.moonmap_phase =
+                    raduk::core::MoonMapRunner::PhaseName(moonMap.runner.State());
+                telemetry.moonmap_selected = moonMap.Selected();
+                if (moonMap.HasProject()) {
+                    const auto& mp = moonMap.Active();
+                    telemetry.moonmap_name     = mp.Name();
+                    telemetry.moonmap_side     = mp.PerSide();
+                    telemetry.moonmap_captured = mp.Captured();
+                    telemetry.moonmap_total    = mp.Total();
+                    telemetry.moonmap_lit      = moonMap.CapturableNow();
+                    telemetry.moonmap_ready    = mp.Complete();
+                    const bool sky = moonMap.HaveSky();
+                    for (size_t i = 0; i < mp.Sections().size(); ++i) {
+                        char ch = 'D';
+                        if (mp.IsCaptured(mp.Sections()[i].id)) ch = 'C';
+                        else if (sky && moonMap.Sky((int)i).Capturable()) ch = 'L';
+                        else if (sky && moonMap.Sky((int)i).visible &&
+                                 moonMap.Sky((int)i).litFraction > 0.0) ch = 'T';
+                        telemetry.moonmap_cells += ch;
+                    }
+                }
 
                 if (lastAnalysis.valid) {
                     telemetry.seeing_score = lastAnalysis.seeingScore;
