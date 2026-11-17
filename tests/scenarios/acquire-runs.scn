@@ -27,7 +27,11 @@ press  RUNS
 expect 10  [AUTORUN] start: 1 runs
 expect 10  [AUTORUN] waiting for acquisition to end before focus or a run
 absent 3   [AUTORUN] focus before run
-expect 120 [ACQUIRE] locked: the profile's frame, on the target
+# 300 s: centring never reverses an axis (backlash), so an error against an
+# axis tracking faster than 1"/s closes at about 1"/s. On Kochab that is
+# the afternoon (az -1.9"/s: 84" took over 2 min, 2026-11-17 15:23), not
+# the early morning (az -0.66"/s: under a minute).
+expect 300 [ACQUIRE] locked: the profile's frame, on the target
 expect 10  [AUTORUN] acquisition has ended: going on
 expect 10  [AUTORUN] focus before run
 expect 600 [AUTORUN] end:
