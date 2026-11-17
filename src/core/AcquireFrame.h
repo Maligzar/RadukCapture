@@ -19,7 +19,12 @@
 //      recording is about to start. Locked with a centroid: centred on
 //      the target. Otherwise: where the small frame was;
 //    - forget, without moving anything, if the frame is changed by hand
-//      while wide. The operator has taken over.
+//      while wide. The operator has taken over;
+//    - hold, while an autofocus sweep runs. A sweep compares sharpness
+//      frame by frame, and a frame that changes size halfway through
+//      compares two different images (the 4-hour soak, 2026-11-16: 28
+//      of 30 sweeps had the frame change under them). The widen or the
+//      restore happens when the sweep ends.
 //
 //  Pure: no Windows, no camera. main.cpp applies what it says through
 //  applyFormat and reports back the size the camera granted (NoteApplied),
@@ -44,6 +49,7 @@ public:
         bool enabled       = true;     // rig.ini AcquireWide
         bool acquiring     = false;    // the tracker's auto-acquire is running
         bool recording     = false;
+        bool focusing      = false;    // an autofocus sweep is running
         bool locked        = false;    // the tracker reached LOCKED
         bool centroidValid = false;
         int  centroidX = 0, centroidY = 0;   // sensor pixels
@@ -70,6 +76,16 @@ public:
     // begin calibrating on the small frame.
     Out Step(const In& in) {
         Out o;
+        // The frame never changes under a sweep. A recording does not
+        // run during one, so nothing below is needed until it ends.
+        if (in.focusing) {
+            if (m_wide && (in.roiW != m_wideW || in.roiH != m_wideH)) {
+                m_wide = false;
+                o.act = Act::Forget;
+                o.why = "the frame was changed by hand while wide: left as it is";
+            }
+            return o;
+        }
         if (!m_wide) {
             if (!in.enabled || !in.acquiring || in.recording) return o;
             if (in.sensorW <= 0 || in.sensorH <= 0 || in.roiW <= 0 || in.roiH <= 0) return o;

@@ -119,6 +119,47 @@ int main() {
         Check(w.Step(in).act == WideAcquire::Act::Restore, "a recording on the wide frame ends it");
     }
 
+    printf("\n2b. The frame holds still under a sweep\n");
+    {
+        // The 4-hour soak (2026-11-16): a sweep started on the wide frame
+        // and the lock put 640x480 back under it, 28 times in 30.
+        WideAcquire w;
+        WideAcquire::In in = Small();
+        in.acquiring = true;
+        w.Step(in);
+        in.roiW = 3840; in.roiH = 2160;
+        w.NoteApplied(3840, 2160);
+        in.focusing = true;
+        in.acquiring = false; in.locked = true;
+        Check(w.Step(in).act == WideAcquire::Act::None && w.Wide(),
+              "locked during a sweep: the restore waits");
+        in.focusing = false;
+        const auto o = w.Step(in);
+        Check(o.act == WideAcquire::Act::Restore && o.w == 640 && o.h == 480,
+              "and happens when the sweep ends");
+    }
+    {
+        WideAcquire w;
+        WideAcquire::In in = Small();
+        in.focusing = true;
+        in.acquiring = true;
+        Check(w.Step(in).act == WideAcquire::Act::None && !w.Wide(),
+              "an acquire started during a sweep: the widen waits");
+        in.focusing = false;
+        Check(w.Step(in).act == WideAcquire::Act::Widen, "and happens when the sweep ends");
+    }
+    {
+        WideAcquire w;
+        WideAcquire::In in = Small();
+        in.acquiring = true;
+        w.Step(in);
+        w.NoteApplied(3840, 2160);
+        in.focusing = true;
+        in.roiW = 1920; in.roiH = 1080;   // changed by hand during the sweep
+        Check(w.Step(in).act == WideAcquire::Act::Forget && !w.Wide(),
+              "a frame changed by hand during a sweep is still left alone");
+    }
+
     printf("\n3. The camera's say, and the operator's\n");
     {
         WideAcquire w;

@@ -61,6 +61,13 @@ public:
         // at most. Focus drifts slowly; the spell does not come back.
         bool   deferFocusInPrime = false;
         double primeDeferMaxSec  = 1800.0;
+
+        // Phase 157.0c. Acquisition runs on a wide frame and puts the
+        // profile's frame back when it locks, so a sweep or a run started
+        // during it would see the frame change under it. They wait for it
+        // to end, this long at most: acquisition ends by itself (locked,
+        // lost or refused), and this only catches one that never does.
+        double acquireHoldSec    = 600.0;
     };
 
     enum class Action { None, StartFocus, StartRun, StopRun, AbortFocus };
@@ -76,6 +83,7 @@ public:
         bool     diskHasRoom = false;
         bool     seeingOpen  = false;
         bool     prime       = false;   // phase 144
+        bool     acquiring   = false;   // phase 157.0c: an auto-acquire is running
     };
 
     // Why a sequence may not start. nullptr means it may.
@@ -106,6 +114,7 @@ public:
         m_seeingHeld   = false;
         m_seeingWaived = false;
         m_seeingGaveUp = 0;
+        m_acqHeld      = false;
         m_deferring    = false;
         m_focusDeferred = 0;
         m_stopPending = false;
@@ -209,6 +218,10 @@ public:
     bool  HoldingForSeeing() const {
         return m_phase == Phase::Waiting && m_seeingHeld;
     }
+    // Waiting for an acquisition to end (157.0c).
+    bool  HoldingForAcquisition() const {
+        return m_phase == Phase::Waiting && m_acqHeld;
+    }
     const std::string& Reason() const { return m_reason; }
     bool Running() const {
         return m_phase == Phase::Waiting || m_phase == Phase::Focusing ||
@@ -230,6 +243,16 @@ private:
             Fail("no room on the capture disk for another run");
             return Action::None;
         }
+        // 157.0c: ahead of the target, because on the wide frame the
+        // target may not be found yet, and that is not it leaving.
+        if (in.acquiring) {
+            if (!m_acqHeld) { m_acqHeld = true; m_acqSince = nowSec; }
+            if (nowSec - m_acqSince > m_cfg.acquireHoldSec)
+                Fail("acquisition did not finish");
+            return Action::None;
+        }
+        m_acqHeld = false;
+
         if (!in.targetSeen) {
             if (!m_held) { m_held = true; m_heldSince = nowSec; }
             if (nowSec - m_heldSince > m_cfg.holdLimitSec)
@@ -311,6 +334,8 @@ private:
     bool   m_seeingHeld   = false;
     bool   m_seeingWaived = false;
     double m_seeingSince  = 0.0;
+    bool   m_acqHeld      = false;
+    double m_acqSince     = 0.0;
     int    m_seeingGaveUp = 0;
     bool   m_deferring    = false;
     double m_deferSince   = 0.0;

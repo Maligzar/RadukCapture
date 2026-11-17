@@ -3849,6 +3849,7 @@ static int RunApp(bool useEmulator) {
         in.wideMaxH  = rig.acquireWideMaxH;
         in.acquiring = tracker.AutoAdvancing();
         in.recording = capturer.IsRecording();
+        in.focusing  = core.afCtl.Busy();   // the frame holds still under a sweep
         in.locked    = tracker.Stage() == raduk::core::AcquisitionStage::Locked;
         in.centroidValid = tracker.LastCentroidValid();
         in.centroidX = roiStartX + (int)tracker.LastCentroidX();   // ROI-relative to sensor
@@ -6452,6 +6453,7 @@ static int RunApp(bool useEmulator) {
             ai.targetSeen = lastAnalysis.valid && lastAnalysis.centroidValid;
             ai.altDeg     = preview.MountAltitude();
             ai.seeingOpen = seeing.Open(core.Clock().Now());
+            ai.acquiring  = tracker.AutoAdvancing();   // phase 157.0c
             if (core.arCtl.Jupiter())
                 ai.prime = jupiterDisc(raduk::sky::PreciseJdNow()).Prime();
             // A disk that will not answer is not a reason to stop.

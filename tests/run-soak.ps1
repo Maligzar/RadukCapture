@@ -30,7 +30,13 @@
 #    - the cycle script failing before the deadline (a GoTo or a run not
 #      finished; a lock refused is counted and its reason listed, not failed,
 #      as is a lock made), with the scenario report's reason;
-#    - no recording completed at all.
+#    - no recording completed at all;
+#    - the frame changing size during an autofocus sweep (157.0c, found by
+#      the first 4-hour soak, 2026-11-16: the cycle waited a fixed 45 s
+#      after PLANET LOCK, acquisition on the wide frame took longer, and
+#      28 sweeps of 30 had 640x480 put back under them). RUNS is now
+#      pressed while acquisition is still running, so every cycle checks
+#      that the sequence waits for it to end.
 #
 #  Too long for every push: nightly, or by hand on the imaging PC. The
 #  report is reports\soak_<stamp>.txt, the samples beside it as
@@ -99,7 +105,7 @@ expect 30  Auto-loading '$t' profile
 expect 240 SEARCHING
 wait   3
 press  PLANET LOCK
-wait   45
+wait   3
 press  RUNS
 expect 10  [AUTORUN] start: 2 runs
 expect 900 [AUTORUN] end:
@@ -288,6 +294,27 @@ if ($box) {
             $refused[$why] = 1 + [int]$refused[$why]
         }
     }
+    # 157.0c: no frame change inside a sweep. A sweep runs from Autorun's
+    # "focus before run" to the autofocus result; a widen or a restore
+    # logs "[ACQUIRE] ...: WxH -> WxH".
+    $sweeps = 0; $crossed = 0; $acqWaits = 0
+    foreach ($l in $logs) {
+        $inSweep = $false
+        foreach ($ln in [IO.File]::ReadLines($l.FullName)) {
+            if ($ln.Contains('[AUTORUN] focus before run')) { $inSweep = $true; $sweeps++; continue }
+            if ($ln.Contains('[AUTORUN] waiting for acquisition')) { $acqWaits++; continue }
+            if ($inSweep -and ($ln.Contains('[AF] Complete') -or $ln.Contains('[AF] Failed') -or
+                               $ln.Contains('[AF] Abort') -or $ln.Contains('[AF] Not started'))) {
+                $inSweep = $false; continue
+            }
+            if ($inSweep -and $ln -match '\[ACQUIRE\] .*: \d+x\d+ -> \d+x\d+') {
+                $crossed++
+                $problems += "the frame changed during a sweep: $($ln.Trim())"
+            }
+        }
+    }
+    $lines += "Sweeps: $sweeps, $crossed with the frame changed during them; the sequence waited for acquisition $acqWaits times."
+
     $nRefused = ($refused.Values | Measure-Object -Sum).Sum
     $lines += "Locks: $made made, $([int]$nRefused) refused."
     foreach ($k in $refused.Keys) { $lines += "  refused $($refused[$k])x: $k" }

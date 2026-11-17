@@ -1,0 +1,35 @@
+# Phase 157.0c: RUNS pressed while acquisition is on its wide frame.
+# The first 4-hour soak (2026-11-16) pressed RUNS 45 s after PLANET LOCK,
+# while acquisition was still on 3840x2160. The sweep started wide and
+# the lock put 640x480 back under it, 28 times in 30. The sequence now
+# waits for acquisition to end, then focuses and runs on the profile's
+# frame. The soak checks the same thing on every cycle.
+name    Acquire then runs: the sequence waits for the lock
+timeout 900
+rig     AutorunRuns=1
+rig     AutorunGapSec=20
+rig     AutorunRefocusEvery=1
+rig     AutorunSeeingPct=0
+rig     AutorunMinAltDeg=10
+
+profile star.ini focuser position=168000
+
+expect 30  [SCENARIO] Acquire then runs
+wait   3
+goto   Kochab
+expect 30  [PROFILE] Created 'kochab.ini' for 'Kochab' from the Star profile
+expect 120 SEARCHING
+wait   3
+press  PLANET LOCK
+expect 15  [ACQUIRE] acquisition: wide frame to find and calibrate
+wait   3
+press  RUNS
+expect 10  [AUTORUN] start: 1 runs
+expect 10  [AUTORUN] waiting for acquisition to end before focus or a run
+absent 3   [AUTORUN] focus before run
+expect 120 [ACQUIRE] locked: the profile's frame, on the target
+expect 10  [AUTORUN] acquisition has ended: going on
+expect 10  [AUTORUN] focus before run
+expect 600 [AUTORUN] end:
+expect 10  [BUTTON] RUNS -> RUNS
+shot   after-runs
