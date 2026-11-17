@@ -100,6 +100,7 @@ Results go to `tests\web\results\dash-results.json`. Phase 156's bundle picks th
 |---|---|---|
 | `offline.spec.js` | nothing running | Dash loads with no internet, no script errors, and no request leaves the PC |
 | `live.spec.js` (`@live`) | the app running | Dash connects with the token, live telemetry arrives, and START/STOP CAPTURE works from the browser |
+| `acquire-wide.spec.js` (`@live`) | the app running | Dash loads the Star profile (640x480), CENTROID widens the frame and the ROI row reads `WIDE`, RESET puts 640x480 back (157.0c) |
 
 ### Found by it already
 **Dash fetches a weather forecast from `api.open-meteo.com`.** It does this even with no site set, asking for latitude 0, longitude 0. That breaks rule 7, airplane mode. The Phase 151 audit missed it, because it checked Dash's files and not its requests. `offline.spec.js` fails on it until it is fixed: owed as 151.4, gate the fetch on `Offline` and a known site, or take the weather from Leoben.
