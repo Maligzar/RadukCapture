@@ -426,6 +426,9 @@ inline bool CommandAllowedWithoutToken(const std::string& cmd, const std::string
         return true;
     // The Moon map's own STOP (phase 162): "STOP", nothing after it.
     if (cmd == "moonmap" && detail::IEquals(detail::Trim(arg), "STOP")) return true;
+    // The night plan's STOP (phase 163). Not its PAUSE: that is one button
+    // that also CONTINUES a paused plan, so it can start motion.
+    if (cmd == "nightplan" && detail::IEquals(detail::Trim(arg), "STOP")) return true;
     return false;
 }
 

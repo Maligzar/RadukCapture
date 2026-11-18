@@ -31,6 +31,8 @@
 #include <cmath>
 #include <mutex>
 #include <atomic>
+#include <algorithm>
+#include <ctime>
 
 #include "../sky/SkyObject.h"
 #include "../sky/ASTAPSolver.h"
@@ -39,6 +41,8 @@
 #include "../sky/MosaicPlan.h"
 #include "../sky/MosaicRunner.h"
 #include "../core/SatDesk.h"
+#include "../core/NightPlan.h"          // phase 163
+#include "../app/NightPlanController.h" // phase 163
 #include <chrono>
 #include "../sky/PointingModel.h"
 #include "../core/IMount.h"
@@ -1078,6 +1082,11 @@ private:
         ID_BTN_SURVEY      = 2030,  // Phase 13: start/stop sky survey
         ID_LBL_SURVEY      = 2031,  // Phase 13: survey progress label
         ID_BTN_MOON_MAP    = 2034,  // Phase 162b: open the Moon map
+        ID_BTN_NIGHT_PLAN  = 2038,  // Phase 163: the Tonight tab's plan
+        ID_BTN_NIGHT_RUN   = 2039,
+        ID_LIST_NIGHT_PLAN = 2040,
+        ID_LBL_NIGHT_STATE = 2041,
+        ID_BTN_NIGHT_PAUSE = 2042,  // Phase 163b
     };
 
     // ── Phase 14: Session Planner ──────────────────────────────
@@ -1242,6 +1251,7 @@ private:
 
     void PopulateTonightList() {
         if (!m_listTonight) return;
+        m_tonightFilling = true;   // phase 163: these check changes are not the operator's
         ListView_DeleteAllItems(m_listTonight);
         m_plannerItems.clear();
         m_plannerItems = BuildPlannerList();
@@ -1289,7 +1299,10 @@ private:
             wchar_t magW[10]; swprintf(magW, 10, L"%.1f", e.mag);
             sub.iSubItem = 5; sub.pszText = magW;
             SendMessageW(m_listTonight, LVM_SETITEMW, 0, (LPARAM)&sub);
+
+            if (IsNightTicked(e.name)) ListView_SetCheckState(m_listTonight, i, TRUE);
         }
+        m_tonightFilling = false;
     }
 
     // ── P3.3: one place that decides where everything goes ────
@@ -1427,11 +1440,25 @@ private:
         int ty = tabTop;
         const int passTopY = ty;
         place(m_lblTonightHdr, x, ty, cw, SH);        ty += SH + 4;
-        int tonightListH = h - ty - (BH + 4) - 12;
-        if (tonightListH < m_fontPx * 6) tonightListH = m_fontPx * 6;
-        place(m_listTonight, x, ty, cw, tonightListH);
-        ty += tonightListH + 4;
-        place(m_btnGoToTonight, x, ty, cw, BH + 4);
+        // Phase 163: the list, GOTO, the two plan buttons, the plan and its
+        // state line. The two lists share what is left, the objects more.
+        {
+            const int fixedBelow = (BH + 4) + 6 + (BH + 4) + 6 + 4 + SH + 8;
+            int both = h - ty - fixedBelow;
+            if (both < m_fontPx * 12) both = m_fontPx * 12;
+            const int tonightListH = both * 3 / 5;
+            const int planListH = both - tonightListH;
+            place(m_listTonight, x, ty, cw, tonightListH);
+            ty += tonightListH + 4;
+            place(m_btnGoToTonight, x, ty, cw, BH + 4);   ty += BH + 4 + 6;
+            const int hw3 = (cw - 12) / 3;
+            place(m_btnNightPlan,  x, ty, hw3, BH + 4);
+            place(m_btnNightRun,   x + hw3 + 6, ty, hw3, BH + 4);
+            place(m_btnNightPause, x + 2 * (hw3 + 6), ty, cw - 2 * (hw3 + 6), BH + 4);
+            ty += BH + 4 + 6;
+            place(m_listNightPlan, x, ty, cw, planListH);   ty += planListH + 4;
+            place(m_lblNightState, x, ty, cw, SH);
+        }
 
         // Phase 116: the same stretch of panel as the Tonight tab.
         {
@@ -1479,6 +1506,19 @@ private:
             ListView_SetColumnWidth(m_listObjects, 0, name);
             for (int i = 1; i < 5; i++)
                 ListView_SetColumnWidth(m_listObjects, i, (int)(fixed[i] * k));
+        }
+        // Phase 163: the plan. Times and state fixed, the reason takes the rest.
+        if (m_listNightPlan) {
+            const int fixed[] = { 44, 80, 70, 110 };
+            const double k = (double)m_fontPx / 12.0;
+            int used = 0;
+            for (int i = 0; i < 4; i++) {
+                ListView_SetColumnWidth(m_listNightPlan, i, (int)(fixed[i] * k));
+                used += (int)(fixed[i] * k);
+            }
+            int why = cw - used - 24;
+            if (why < (int)(160 * k)) why = (int)(160 * k);
+            ListView_SetColumnWidth(m_listNightPlan, 4, why);
         }
         if (m_listTonight) {
             const int fixed[] = { 0, 38, 90, 48, 40, 36 };
@@ -1562,12 +1602,23 @@ private:
         setVis(m_lblAlign,      g);
         setVis(m_lblAlignState, g);
         setVis(m_btnSolveAlign, g);
+        // Phase 163: the labels and the survey too. They were never
+        // hidden; the Tonight list used to cover them, and the night
+        // plan's layout no longer does.
+        for (HWND h : { m_hdrAlign, m_hdrCatalog, m_lblSearch, m_hdrManual, m_lblRA, m_lblDec,
+                        m_hdrSolve, m_hdrSurvey, m_lblSurvey, m_btnSurvey })
+            setVis(h, g);
         // Tab 1: Tonight planner
         bool t = (tab == 1);
         setVis(m_listTonight,      t);
         setVis(m_btnGoToTonight,   t);
         setVis(m_lblTonightHdr,    t);
-        if (t) PopulateTonightList();
+        setVis(m_btnNightPlan,     t);   // phase 163
+        setVis(m_btnNightRun,      t);
+        setVis(m_btnNightPause,    t);
+        setVis(m_listNightPlan,    t);
+        setVis(m_lblNightState,    t);
+        if (t) { PopulateTonightList(); RefreshNightPlan(); }
         // Tab 2: Satellite passes
         bool p = (tab == 2);
         setVis(m_lblPassHdr,  p);
@@ -1841,9 +1892,248 @@ private:
     }
 
 public:
+    // ── Phase 163: the night plan for planets and stars ────────
+    //
+    // The ticks are kept here, by name, because the Tonight list is
+    // rebuilt every time the tab opens. Every change of them comes in as
+    // a command through main.cpp, so Dash, a scenario and a click on the
+    // box all do the same thing.
+    void SetNightPlanCommand(std::function<void(const std::string&, const std::string&)> cb) {
+        m_onNightCmd = std::move(cb);
+    }
+    void SetNightPlanModel(raduk::app::NightPlanController* m) { m_nightModel = m; RefreshNightPlan(); }
+
+    const std::vector<std::string>& NightTicked() const { return m_nightTicked; }
+    bool IsNightTicked(const std::string& n) const {
+        for (const auto& t : m_nightTicked) if (_stricmp(t.c_str(), n.c_str()) == 0) return true;
+        return false;
+    }
+    // The catalogue's own spelling of a name, or "" when there is none.
+    std::string CatalogName(const std::string& n) const {
+        for (const auto& o : m_catalog.Objects())
+            if (_stricmp(o.name.c_str(), n.c_str()) == 0) return o.name;
+        return std::string();
+    }
+    // False when there is no such object.
+    bool SetNightTick(const std::string& name, bool on) {
+        const std::string n = CatalogName(name);
+        if (n.empty()) return false;
+        auto it = std::find_if(m_nightTicked.begin(), m_nightTicked.end(),
+            [&](const std::string& t) { return _stricmp(t.c_str(), n.c_str()) == 0; });
+        if (on && it == m_nightTicked.end()) m_nightTicked.push_back(n);
+        if (!on && it != m_nightTicked.end()) m_nightTicked.erase(it);
+        SyncTonightChecks();
+        return true;
+    }
+    void ClearNightTicks() { m_nightTicked.clear(); SyncTonightChecks(); }
+
+    // Planets and stars that reach 45 deg between now and dawn, for Dash's
+    // picker. Worked out at most once a minute.
+    const std::vector<std::string>& NightCandidates() {
+        const double now = raduk::sky::PreciseJdNow();
+        if (!m_nightCandidates.empty() && now - m_nightCandidatesJd < 60.0 / 86400.0)
+            return m_nightCandidates;
+        m_nightCandidatesJd = now;
+        m_nightCandidates.clear();
+        const double end = NightPlanEndJd();
+        for (const auto& o : m_catalog.Objects()) {
+            if (!o.isPlanet() && o.type != "Star") continue;
+            for (double t = now; t < end; t += 10.0 / 1440.0) {
+                double ra = 0, dec = 0;
+                if (!PositionAt(o, t, ra, dec)) break;
+                if (raduk::sky::SkyObjectCatalog::CalcAlt(ra, dec, LSTFromJD(t), m_lat) >=
+                    raduk::core::NIGHT_GOOD_DEG) {
+                    m_nightCandidates.push_back(o.name);
+                    break;
+                }
+            }
+        }
+        return m_nightCandidates;
+    }
+
+    // The plan runs from now to the next astronomical dawn.
+    double NightPlanEndJd() const { return AstroDawnJD(AstroDuskJD()); }
+
+    // Altitude worked out from the catalogue and the site, not the mount.
+    double ComputedAltNow(const std::string& name) const {
+        const double jd = raduk::sky::PreciseJdNow();
+        for (const auto& o : m_catalog.Objects()) {
+            if (_stricmp(o.name.c_str(), name.c_str()) != 0) continue;
+            double ra = 0, dec = 0;
+            if (!PositionAt(o, jd, ra, dec)) return -90.0;
+            return raduk::sky::SkyObjectCatalog::CalcAlt(ra, dec, LSTFromJD(jd), m_lat);
+        }
+        return -90.0;
+    }
+
+    // The ticked targets planned from now, around the ticked passes, to
+    // astronomical dawn or `maxHours` from now if that is sooner.
+    raduk::core::NightPlan BuildNightPlanFor(const std::vector<std::string>& names,
+                                             const raduk::core::NightPlanOptions& opt,
+                                             double maxHours = 0.0) {
+        using namespace raduk::sky;
+        RefreshSky();
+        std::vector<raduk::core::NightTarget> targets;
+        std::vector<const SkyObject*> objs;
+        for (const auto& n : names) {
+            const SkyObject* found = nullptr;
+            for (const auto& o : m_catalog.Objects())
+                if (_stricmp(o.name.c_str(), n.c_str()) == 0) { found = &o; break; }
+            raduk::core::NightTarget t;
+            t.name = found ? found->name : n;
+            if (!found) { t.plannable = false; t.notPlannable = "not in the catalogue"; }
+            else if (found->type == "Moon" || found->isLunarFeature()) {
+                t.plannable = false; t.notPlannable = "the Moon has its own map (MOON MAP)";
+            } else if (!found->isPlanet() && found->type != "Star") {
+                t.plannable = false; t.notPlannable = "not a planet or a star";
+            }
+            targets.push_back(t);
+            objs.push_back(found);
+        }
+        const double d2r = 3.14159265358979 / 180.0;
+        raduk::core::NightSampler sampler = [&](int i, double jd) {
+            raduk::core::NightSample s;
+            const SkyObject* o = objs[(size_t)i];
+            double ra = 0, dec = 0;
+            if (!o || !PositionAt(*o, jd, ra, dec)) return s;
+            const double lst = LSTFromJD(jd);
+            s.altDeg = SkyObjectCatalog::CalcAlt(ra, dec, lst, m_lat);
+            // Azimuth from north through east, for the slew to it (163b).
+            {
+                const double ha = (lst - ra) * 15.0 * d2r, de = dec * d2r, la = m_lat * d2r;
+                const double az = std::atan2(-std::cos(de) * std::sin(ha),
+                                             std::sin(de) * std::cos(la) - std::cos(de) * std::sin(la) * std::cos(ha));
+                s.azDeg = std::fmod(az / d2r + 360.0, 360.0);
+            }
+            double sra = 0, sdec = 0;
+            SunRADec(jd, sra, sdec);
+            s.sunAltDeg = SkyObjectCatalog::CalcAlt(sra, sdec, lst, m_lat);
+            const double c = std::sin(dec * d2r) * std::sin(sdec * d2r) +
+                             std::cos(dec * d2r) * std::cos(sdec * d2r) * std::cos((ra - sra) * 15.0 * d2r);
+            s.sunSepDeg = std::acos((std::max)(-1.0, (std::min)(1.0, c))) / d2r;
+            return s;
+        };
+        // Ticked passes, from the Passes tab, are kept clear.
+        std::vector<raduk::core::NightBusy> busy;
+        if (m_listPasses)
+            for (int i : TickedPasses())
+                busy.push_back({m_passRows[(size_t)i].pass.trackStartJd,
+                                m_passRows[(size_t)i].pass.trackEndJd, m_passRows[(size_t)i].name});
+        const double now = PreciseJdNow();
+        double end = NightPlanEndJd();
+        if (maxHours > 0.0 && now + maxHours / 24.0 < end) end = now + maxHours / 24.0;
+        // Phase 163b: the first slew is from where the tube is now. With
+        // no mount it is allowed the longest there can be.
+        raduk::core::NightPlanOptions o = opt;
+        if (m_mount && m_mount->IsConnected()) {
+            double ra = 0.0, dec = 0.0;
+            if (m_mount->GetRADec(ra, dec)) {
+                raduk::core::RADecToAltAzNow(ra, dec, o.startAltDeg, o.startAzDeg);
+                o.haveStart = true;
+            }
+        }
+        return raduk::core::BuildNightPlan(targets, sampler, now, end, busy, o);
+    }
+
+    // "21:40", local time.
+    static std::string LocalClock(double jd) {
+        const time_t tt = (time_t)((jd - 2440587.5) * 86400.0 + 0.5);
+        struct tm lt;
+        if (localtime_s(&lt, &tt) != 0) return "--:--";
+        char b[16];
+        snprintf(b, sizeof(b), "%02d:%02d", lt.tm_hour, lt.tm_min);
+        return b;
+    }
+
+    // The plan list, the state line and the RUN button, from the model.
+    void RefreshNightPlan() {
+        if (!m_nightModel) return;
+        const std::string st = m_nightModel->StateLine();
+        if (m_lblNightState && st != m_nightStateShown) {
+            m_nightStateShown = st;
+            wchar_t w[260];
+            MultiByteToWideChar(CP_UTF8, 0, st.c_str(), -1, w, 260);
+            SetWindowTextW(m_lblNightState, w);
+        }
+        const bool run = m_nightModel->runner.Running();
+        if (m_btnNightRun && run != m_nightRunShown) {
+            m_nightRunShown = run;
+            SetWindowTextW(m_btnNightRun, run ? L"STOP TONIGHT" : L"RUN TONIGHT");
+            raduk::core::ProbeW("[BUTTON]", run ? L"RUN TONIGHT -> STOP TONIGHT"
+                                                : L"STOP TONIGHT -> RUN TONIGHT");
+        }
+        const bool paused = m_nightModel->Paused();
+        if (m_btnNightPause && paused != m_nightPauseShown) {
+            m_nightPauseShown = paused;
+            SetWindowTextW(m_btnNightPause, paused ? L"CONTINUE" : L"PAUSE");
+            raduk::core::ProbeW("[BUTTON]", paused ? L"PAUSE -> CONTINUE" : L"CONTINUE -> PAUSE");
+        }
+        if (!m_listNightPlan) return;
+        SendMessageW(m_listNightPlan, WM_SETREDRAW, FALSE, 0);
+        ListView_DeleteAllItems(m_listNightPlan);
+        int row = 0;
+        auto cell = [&](int r, int col, const std::string& text) {
+            wchar_t w[260];
+            MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1, w, 260);
+            LVITEMW li = {};
+            li.iSubItem = col;
+            li.pszText = w;
+            if (col == 0) {
+                li.mask = LVIF_TEXT;
+                li.iItem = r;
+                SendMessageW(m_listNightPlan, LVM_INSERTITEMW, 0, (LPARAM)&li);
+            } else {
+                SendMessageW(m_listNightPlan, LVM_SETITEMTEXTW, r, (LPARAM)&li);
+            }
+        };
+        // What is done tonight, then the plan, then what it left out.
+        for (const auto& r : m_nightModel->Rows()) {
+            cell(row, 0, r.slew);
+            cell(row, 1, r.runs);
+            cell(row, 2, r.name);
+            cell(row, 3, r.state);
+            cell(row, 4, r.why);
+            ++row;
+        }
+        SendMessageW(m_listNightPlan, WM_SETREDRAW, TRUE, 0);
+        InvalidateRect(m_listNightPlan, nullptr, TRUE);
+    }
+
+private:
+    bool PositionAt(const raduk::sky::SkyObject& o, double jd, double& ra, double& dec) const {
+        if (o.isPlanet()) {
+            for (const auto& p : raduk::sky::kPlanets)
+                if (o.name == p.name) return raduk::sky::PlanetRADec(p, jd, ra, dec);
+            return false;
+        }
+        ra = o.ra;
+        dec = o.dec;
+        return true;
+    }
+
+    void SyncTonightChecks() {
+        if (!m_listTonight) return;
+        m_tonightFilling = true;
+        for (int i = 0; i < (int)m_plannerItems.size(); ++i)
+            ListView_SetCheckState(m_listTonight, i, IsNightTicked(m_plannerItems[(size_t)i].name) ? TRUE : FALSE);
+        m_tonightFilling = false;
+    }
+
+public:
     // ── Phase 127: what a scenario can do here ─────────────────
     // Press a button by its label, or open a tab by its name.
     bool ScenarioPress(const std::string& name) {
+        // Phase 163: "TICK Kochab", "UNTICK Kochab", as a click on the box.
+        for (const char* verb : { "TICK ", "UNTICK " }) {
+            const size_t n = strlen(verb);
+            if (name.size() > n && _strnicmp(name.c_str(), verb, n) == 0) {
+                if (!m_onNightCmd) return false;
+                std::string v(verb);
+                v.pop_back();
+                m_onNightCmd(v, name.substr(n));
+                return true;
+            }
+        }
         struct N { const char* name; int id; };
         static const N kButtons[] = {
             { "UPDATE ELEMENTS",        ID_BTN_PASS_UPDATE },
@@ -1851,6 +2141,11 @@ public:
             { "STOP TRACKING",          ID_BTN_PASS_TRACK },
             { "PLAN THE NIGHT",         ID_BTN_PASS_PLAN },
             { "RUN THE PLAN",           ID_BTN_PASS_RUN },
+            { "PLAN TONIGHT",           ID_BTN_NIGHT_PLAN },   // phase 163
+            { "RUN TONIGHT",            ID_BTN_NIGHT_RUN },
+            { "STOP TONIGHT",           ID_BTN_NIGHT_RUN },
+            { "PAUSE",                  ID_BTN_NIGHT_PAUSE },   // 163b
+            { "CONTINUE",               ID_BTN_NIGHT_PAUSE },
             { "FOLLOW",                 ID_BTN_FOLLOW },
             { "TRACK WHAT IS IN FRAME", ID_BTN_MOTION },
             { "SKY SURVEY",             ID_BTN_SURVEY },
@@ -2513,7 +2808,7 @@ private:
             GetModuleHandle(nullptr), nullptr);
         if (m_listTonight) {
             ListView_SetExtendedListViewStyle(m_listTonight,
-                LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
+                LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES | LVS_EX_CHECKBOXES);   // phase 163
             SetWindowTheme(m_listTonight, L"", L"");
             auto addCol = [&](const wchar_t* text, int width, int col) {
                 LVCOLUMNW lvc = {};
@@ -2532,6 +2827,31 @@ private:
         tonightY += tonightListH + 4;
         m_btnGoToTonight = Button(L"GOTO SELECTED OBJECT", x, tonightY, w, BH+4,
                                   ID_BTN_GOTO_TONIGHT);
+
+        // Phase 163: tick planets and stars, plan them into their GOOD and
+        // PRIME time, and run the plan.
+        m_btnNightPlan = Button(L"PLAN TONIGHT", x, tonightY, w, BH+4, ID_BTN_NIGHT_PLAN);
+        m_btnNightRun  = Button(L"RUN TONIGHT", x, tonightY, w, BH+4, ID_BTN_NIGHT_RUN);
+        m_btnNightPause = Button(L"PAUSE", x, tonightY, w, BH+4, ID_BTN_NIGHT_PAUSE);   // 163b
+        m_listNightPlan = CreateWindowExW(WS_EX_CLIENTEDGE, WC_LISTVIEWW, L"",
+            WS_CHILD | WS_VSCROLL | LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_NOSORTHEADER,
+            x, tonightY, w, 120, m_hwnd, (HMENU)(INT_PTR)ID_LIST_NIGHT_PLAN,
+            GetModuleHandle(nullptr), nullptr);
+        if (m_listNightPlan) {
+            ListView_SetExtendedListViewStyle(m_listNightPlan, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
+            SetWindowTheme(m_listNightPlan, L"", L"");
+            const wchar_t* cols[] = { L"Slew", L"Runs", L"Target", L"State", L"Why" };
+            const int widths[] = { 44, 80, 70, 110, 220 };
+            for (int c = 0; c < 5; ++c) {
+                LVCOLUMNW lvc = {};
+                lvc.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
+                lvc.cx = widths[c]; lvc.pszText = const_cast<wchar_t*>(cols[c]);
+                lvc.iSubItem = c;
+                SendMessageW(m_listNightPlan, LVM_INSERTCOLUMNW, c, (LPARAM)&lvc);
+            }
+        }
+        m_lblNightState = Label(L"Tick planets and stars, then PLAN TONIGHT", x, tonightY, w, SH,
+                                ID_LBL_NIGHT_STATE);
 
         // Phase 116: the Passes tab.
         m_lblPassHdr = Label(L"Next 24 hours from this site", x, tonightY, w, SH);
@@ -2805,6 +3125,22 @@ public:
         m_goToIssued = false;
         DoGoTo(raH, decDeg, "Moon");
         m_quietGoTo = false;
+        if (!m_goToIssued) { why = "the slew was refused: cord wrap"; return false; }
+        return true;
+    }
+    // ── Phase 163: a night plan's GoTo ──────────────────────────
+    //
+    // The same GoTo as a click in the lists: the target's profile, the
+    // pointing map, the cord-wrap veto, the stuck-slew watch, and the
+    // search armed when it lands. By exact name, and false with the
+    // reason when the slew did not go.
+    bool RequestGoToNamed(const std::string& name, std::string& why) {
+        if (!m_mount || !m_mount->IsConnected()) { why = "no mount connected"; return false; }
+        if (m_mosaic.Running()) { why = "a mosaic is running"; return false; }
+        double ra = 0.0, dec = 0.0;
+        if (!LookupNow(name, ra, dec)) { why = "no object called " + name; return false; }
+        m_goToIssued = false;
+        DoGoTo(ra, dec, CatalogName(name));
         if (!m_goToIssued) { why = "the slew was refused: cord wrap"; return false; }
         return true;
     }
@@ -3252,6 +3588,20 @@ private:
                     self->RequestMotion();
                     return 0;
                 }
+                // Phase 163: the night plan. Everything goes through
+                // main.cpp's one command path, as Dash and scenarios do.
+                if (id == ID_BTN_NIGHT_PLAN) {
+                    if (self->m_onNightCmd) self->m_onNightCmd("PLAN", "");
+                    return 0;
+                }
+                if (id == ID_BTN_NIGHT_RUN) {
+                    if (self->m_onNightCmd) self->m_onNightCmd("RUN", "");
+                    return 0;
+                }
+                if (id == ID_BTN_NIGHT_PAUSE) {
+                    if (self->m_onNightCmd) self->m_onNightCmd("PAUSE", "");
+                    return 0;
+                }
                 // Phase 14: GoTo from tonight planner
                 if (id == ID_BTN_GOTO_TONIGHT) {
                     int sel = ListView_GetNextItem(self->m_listTonight, -1, LVNI_SELECTED);
@@ -3344,11 +3694,30 @@ private:
                         }
                     }
                 }
+                // Phase 163: a tick in the Tonight list is a target for
+                // the night plan.
+                if (hdr->hwndFrom == self->m_listTonight && hdr->code == LVN_ITEMCHANGED &&
+                        !self->m_tonightFilling) {
+                    auto* nv = reinterpret_cast<NMLISTVIEW*>(lParam);
+                    if ((nv->uChanged & LVIF_STATE) &&
+                        ((nv->uNewState ^ nv->uOldState) & LVIS_STATEIMAGEMASK) &&
+                        (nv->uOldState & LVIS_STATEIMAGEMASK) != 0 &&
+                        nv->iItem >= 0 && nv->iItem < (int)self->m_plannerItems.size()) {
+                        const bool on = ((nv->uNewState & LVIS_STATEIMAGEMASK) >> 12) == 2;
+                        if (self->m_onNightCmd)
+                            self->m_onNightCmd(on ? "TICK" : "UNTICK", self->m_plannerItems[nv->iItem].name);
+                    }
+                }
                 // Single click on Tonight list → action popup
                 if (hdr->hwndFrom == self->m_listTonight
                         && hdr->code == NM_CLICK) {
                     auto* nm = reinterpret_cast<NMITEMACTIVATE*>(lParam);
                     int row = nm->iItem;
+                    // Phase 163: not for a click on the tick box.
+                    LVHITTESTINFO ht = {};
+                    ht.pt = nm->ptAction;
+                    ListView_SubItemHitTest(self->m_listTonight, &ht);
+                    if (ht.flags & LVHT_ONITEMSTATEICON) row = -1;
                     if (row >= 0 && row < (int)self->m_plannerItems.size()) {
                         const auto& e = self->m_plannerItems[row];
                         self->ShowActionPopup(self->m_listTonight, row,
@@ -3445,6 +3814,21 @@ private:
     HWND m_listTonight    = nullptr;
     HWND m_btnGoToTonight = nullptr;
     HWND m_lblTonightHdr  = nullptr;
+    // Phase 163: the night plan for planets and stars.
+    HWND m_btnNightPlan   = nullptr;
+    HWND m_btnNightRun    = nullptr;
+    HWND m_btnNightPause  = nullptr;   // 163b
+    bool m_nightPauseShown = false;
+    HWND m_listNightPlan  = nullptr;
+    HWND m_lblNightState  = nullptr;
+    bool m_tonightFilling = false;
+    std::vector<std::string> m_nightTicked;
+    raduk::app::NightPlanController* m_nightModel = nullptr;
+    std::function<void(const std::string&, const std::string&)> m_onNightCmd;
+    std::vector<std::string> m_nightCandidates;
+    double m_nightCandidatesJd = 0.0;
+    std::string m_nightStateShown;
+    bool m_nightRunShown = false;
     HWND m_lblPassHdr     = nullptr;
     HWND m_listPasses     = nullptr;
     HWND m_btnPassUpdate  = nullptr;

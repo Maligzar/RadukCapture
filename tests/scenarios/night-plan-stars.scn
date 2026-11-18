@@ -1,0 +1,90 @@
+# Phase 163: the night plan for planets and stars, planned and run.
+#
+# Kochab and Pherkad are ticked on the Tonight tab, with a globular
+# cluster that the plan must list and leave out. PLAN TONIGHT places
+# each star in its GOOD or PRIME time; RUN TONIGHT then takes them in
+# turn: GoTo (which loads the star's profile), PLANET LOCK's full
+# acquisition, and one run of the RUNS sequence.
+#
+# From the real site (about 33 N) these two stars are in GOOD for only a
+# couple of hours a day. At 65 N both stay above 45 deg all day, and each
+# is in PRIME about half of it. The emulator's sky follows the rig's site.
+# The plan covers the next hour only (NightPlanHours=1), so it never
+# waits hours for PRIME: both visits fit in the hour whatever the time.
+# Which star goes first depends on the hour, so the steps below do not
+# name one.
+#
+# Centring can take up to about 5 minutes in the afternoon (see
+# acquire-runs.scn), so the lock waits 300 s and each visit is 15 min.
+
+name    Night plan: two stars, planned and run
+timeout 3600
+rig     SiteLatDeg=65
+rig     AutorunRuns=1
+rig     AutorunGapSec=10
+rig     AutorunRefocusEvery=0
+rig     AutorunSeeingPct=0
+rig     AutorunMinAltDeg=10
+rig     NightPlanHours=1
+rig     NightPlanVisitMin=15
+rig     NightPlanMinVisitMin=3
+rig     NightPlanSettleSec=10
+rig     NightPlanLockSec=300
+rig     NightPlanFocusSec=0
+
+profile star.ini focuser position=168000
+
+expect 30  [SCENARIO] Night plan
+wait   3
+press  GOTO:TONIGHT
+wait   2
+press  GOTO:TICK Kochab
+expect 10  [NIGHTPLAN] ticked Kochab: 1 ticked
+press  GOTO:TICK Pherkad
+expect 10  [NIGHTPLAN] ticked Pherkad: 2 ticked
+press  GOTO:TICK M13 Hercules Cluster
+expect 10  [NIGHTPLAN] ticked M13 Hercules Cluster: 3 ticked
+press  GOTO:TICK No Such Star
+expect 10  [NIGHTPLAN] TICK refused: no object called 'No Such Star'
+
+# A run with no plan is refused, and says why.
+press  GOTO:RUN TONIGHT
+expect 10  [NIGHTPLAN] RUN refused: no plan: press PLAN TONIGHT first
+
+press  GOTO:PLAN TONIGHT
+expect 30  [NIGHTPLAN] planned 2 visits, 1 skipped
+expect 5   [NIGHTPLAN] visit 1:
+expect 5   [NIGHTPLAN] visit 2:
+expect 5   [NIGHTPLAN] not planned: M13 Hercules Cluster: not a planet or a star
+absent 3   [NIGHTPLAN] not planned: Kochab
+absent 3   [NIGHTPLAN] not planned: Pherkad
+shot   plan-made
+
+press  GOTO:RUN TONIGHT
+expect 10  [NIGHTPLAN] running: 2 visits, lock limit 300 s
+expect 10  [BUTTON] RUN TONIGHT -> STOP TONIGHT
+# At once when the first star is where the plan wants it; otherwise at its
+# slot, which is inside the hour.
+expect 1200 (1 of 2): slewing
+expect 120 SEARCHING
+expect 60  : locking
+expect 330 : locked, starting the runs
+expect 10  [AUTORUN] start: 1 runs
+expect 60  [AUTORUN] run 1 of 1
+expect 600 [AUTORUN] end: 1 of 1 runs
+expect 20  visited: its runs are done
+shot   first-done
+
+expect 1500 (2 of 2): slewing
+expect 60  : locking
+expect 330 : locked, starting the runs
+expect 10  [AUTORUN] start: 1 runs
+expect 60  [AUTORUN] run 1 of 1
+expect 600 [AUTORUN] end: 1 of 1 runs
+expect 20  visited: its runs are done
+expect 20  [NIGHTPLAN] plan finished: 2 visited, 0 skipped
+expect 10  [NOTICE] Night plan finished
+expect 10  [BUTTON] STOP TONIGHT -> RUN TONIGHT
+absent 3   [NIGHTPLAN] Kochab skipped
+absent 3   [NIGHTPLAN] Pherkad skipped
+shot   plan-done

@@ -49,7 +49,7 @@ From the owner's weakness review, 2026-11-13. Status: `PLANNED`.
 
 ## 154.0a, as built (2026-11-17, 3.3.26)
 - **`src/net/WsProtocol.h`**, pure:
-  - `CommandAllowedWithoutToken` lists what a tokenless client may send: `mount_stop`, `stop_capture`, `autofocus_abort`, and `moonmap` with `STOP` alone. Everything else is refused, including a command nobody has listed yet.
+  - `CommandAllowedWithoutToken` lists what a tokenless client may send: `mount_stop`, `stop_capture`, `autofocus_abort`, `moonmap` with `STOP` alone, and `nightplan` with `STOP` alone (not its PAUSE: one button that also continues a paused plan). Everything else is refused, including a command nobody has listed yet.
   - `OriginAllowedWithoutToken` allows no Origin, `"null"` (Dash as a file), and pages served from this network (localhost, loopback or private IPv4, a name with no dot, `.local`, `.lan`, `.home.arpa`). It refuses every other http(s) origin, every other scheme, and IPv6 literals.
   - The handshake now reads `Origin`.
   - `RefusalMessage` echoes only command-name characters.

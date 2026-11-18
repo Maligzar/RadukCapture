@@ -211,6 +211,11 @@ endif()
 # of Unicode characters in string literals when system codepage is not UTF-8.
 if(MSVC)
     target_compile_options(RadukCapture PRIVATE /utf-8)
+    # 2026-11-17: main.cpp passed the default object file's 65,279
+    # sections in the emulator build (C1128) once phase 163's night plan
+    # and the camera replug landed together. /bigobj lifts the limit to
+    # about 4 billion; it changes nothing at run time.
+    target_compile_options(RadukCapture PRIVATE /bigobj)
     # 2026-11-09: a PDB for Release too, so the crash handler
     # (core/CrashDiag.h) can name the function that threw. Linker /DEBUG
     # only: it writes function names at no cost to the compiler. /Zi was

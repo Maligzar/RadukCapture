@@ -383,6 +383,12 @@ int main() {
               !CommandAllowedWithoutToken("moonmap", "GOTO") &&
               !CommandAllowedWithoutToken("moonmap", "STOP NE-A1"),
               "the Moon map's other commands are refused, STOP with a tail too");
+        Check(CommandAllowedWithoutToken("nightplan", "STOP"), "the night plan's STOP is allowed");
+        Check(!CommandAllowedWithoutToken("nightplan", "PAUSE") &&
+              !CommandAllowedWithoutToken("nightplan", "CONTINUE") &&
+              !CommandAllowedWithoutToken("nightplan", "RUN") &&
+              !CommandAllowedWithoutToken("nightplan", "TICK Jupiter"),
+              "but not its PAUSE, which also resumes, nor RUN or TICK");
         Check(!CommandAllowedWithoutToken("some_new_command", ""), "a command nobody listed is refused (default deny)");
         Check(!CommandAllowedWithoutToken("Mount_Stop", "") && !CommandAllowedWithoutToken("mount_stop ", ""),
               "names match exactly, as the app's dispatcher does");

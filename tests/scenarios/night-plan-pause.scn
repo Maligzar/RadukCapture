@@ -1,0 +1,74 @@
+# Phase 163b: pause the night plan, stay on a target, change the plan,
+# and continue with the rest planned again from the sky as it is then.
+#
+# Kochab alone is planned and run. During its runs the plan is paused:
+# the runs finish by themselves and the plan does not move on, however
+# long it stays. Pherkad is ticked while paused. CONTINUE counts Kochab
+# as visited, plans Pherkad from now, and visits it.
+#
+# Site and timing as night-plan-stars.scn: 65 N, one hour planned.
+
+name    Night plan: pause, change the plan, continue
+timeout 2400
+rig     SiteLatDeg=65
+rig     AutorunRuns=1
+rig     AutorunGapSec=10
+rig     AutorunRefocusEvery=0
+rig     AutorunSeeingPct=0
+rig     AutorunMinAltDeg=10
+rig     NightPlanHours=1
+rig     NightPlanVisitMin=15
+rig     NightPlanMinVisitMin=3
+rig     NightPlanSettleSec=10
+rig     NightPlanLockSec=300
+rig     NightPlanFocusSec=0
+
+profile star.ini focuser position=168000
+
+expect 30  [SCENARIO] Night plan
+wait   3
+press  GOTO:TONIGHT
+wait   2
+press  GOTO:TICK Kochab
+expect 10  [NIGHTPLAN] ticked Kochab: 1 ticked
+
+# PAUSE means nothing until a plan is running.
+press  GOTO:PAUSE
+expect 10  [NIGHTPLAN] PAUSE refused: the plan is not running
+
+press  GOTO:PLAN TONIGHT
+expect 30  [NIGHTPLAN] planned 1 visit, 0 skipped
+press  GOTO:RUN TONIGHT
+expect 10  [NIGHTPLAN] running: 1 visits
+expect 1200 Kochab (1 of 1): slewing
+expect 330 Kochab: locked, starting the runs
+expect 60  [AUTORUN] run 1 of 1
+
+press  GOTO:PAUSE
+expect 10  [NIGHTPLAN] paused on Kochab (runs)
+expect 10  [BUTTON] PAUSE -> CONTINUE
+# The runs end by themselves, and the plan stays where it is.
+expect 600 [AUTORUN] end: 1 of 1 runs
+absent 20  Kochab visited
+absent 1   plan finished
+shot   paused
+
+# The plan changes while paused; PLAN itself is refused.
+press  GOTO:TICK Pherkad
+expect 10  [NIGHTPLAN] ticked Pherkad: 2 ticked
+press  GOTO:PLAN TONIGHT
+expect 10  [NIGHTPLAN] PLAN refused: the plan is paused
+
+press  GOTO:CONTINUE
+expect 10  [NIGHTPLAN] continuing: 1 ticked target not yet visited, planned again from now
+expect 10  [NIGHTPLAN] re-planned 1 visit
+expect 10  [NIGHTPLAN] visit 1: Pherkad
+expect 10  [BUTTON] CONTINUE -> PAUSE
+absent 3   [NIGHTPLAN] visit 1: Kochab
+expect 1200 Pherkad (1 of 1): slewing
+expect 330 Pherkad: locked, starting the runs
+expect 60  [AUTORUN] run 1 of 1
+expect 600 [AUTORUN] end: 1 of 1 runs
+expect 20  Pherkad visited: its runs are done
+expect 20  [NIGHTPLAN] plan finished: 2 visited, 0 skipped
+shot   continued
