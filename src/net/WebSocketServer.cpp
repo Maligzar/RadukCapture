@@ -5,6 +5,7 @@
 // ============================================================
 #include "WebSocketServer.h"
 #include "../core/ThreadName.h"
+#include "APEXTelemetry.h"
 
 #include <bcrypt.h>
 #pragma comment(lib, "bcrypt.lib")
@@ -128,6 +129,7 @@ namespace {
 const char* StatusLine(int status) {
     switch (status) {
     case 401: return "HTTP/1.1 401 Unauthorized\r\n";
+    case 403: return "HTTP/1.1 403 Forbidden\r\n";
     case 426: return "HTTP/1.1 426 Upgrade Required\r\nSec-WebSocket-Version: 13\r\n";
     case 431: return "HTTP/1.1 431 Request Header Fields Too Large\r\n";
     case 503: return "HTTP/1.1 503 Service Unavailable\r\n";
@@ -363,6 +365,15 @@ void WebSocketServer::HandleHandshake(WsClient& c) {
     }
     const bool tokenOk = ws::TokenEquals(m_token, h.token);
     const bool lanExempt = !tokenOk && ws::PeerExemptFromToken(m_lanOpen, c.peerIpv4);
+    if (lanExempt && !ws::OriginAllowedWithoutToken(h.origin)) {
+        // 154.0a: a page from the internet, in a browser on this
+        // network. The origin is not echoed: it is the peer's own text.
+        printf("[WSServer] Refused a tokenless client from a web page that is not on this "
+               "network (WsLanOpen admits only Dash and local pages without the token)\n");
+        Refuse(c.sock, 403);
+        c.closed = true;
+        return;
+    }
     if (!tokenOk && !lanExempt) {
         printf("[WSServer] Refused a client: %s\n",
                m_token.empty() ? "no WsToken is configured, so nobody is admitted"
@@ -374,10 +385,12 @@ void WebSocketServer::HandleHandshake(WsClient& c) {
     if (lanExempt) {
         // The peer's address, which is the owner's own device on their
         // own network -- never the token, which this client did not send.
-        printf("[WSServer] Admitted %u.%u.%u.%u without a token (home network, WsLanOpen)\n",
+        printf("[WSServer] Admitted %u.%u.%u.%u without a token (home network, WsLanOpen): "
+               "telemetry and stop only\n",
                c.peerIpv4 >> 24, (c.peerIpv4 >> 16) & 0xFF,
                (c.peerIpv4 >> 8) & 0xFF, c.peerIpv4 & 0xFF);
     }
+    c.hasToken = tokenOk;
 
     // Compute accept value: SHA1(key + GUID) | base64
     static const char GUID[] = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
@@ -421,6 +434,22 @@ void WebSocketServer::HandleWsData(WsClient& c) {
         case ws::PreviewRequest::On:  c.wantsPreview = true;  continue;
         case ws::PreviewRequest::Off: c.wantsPreview = false; continue;
         case ws::PreviewRequest::None: break;
+        }
+        if (!c.hasToken) {
+            // 154.0a. Parsed with the same parser the app executes with,
+            // so the gate and the executor cannot read a message
+            // differently.
+            APEXCommand cmd;
+            const bool parsed = APEXCommand::Parse(m, cmd);
+            if (!parsed || !ws::CommandAllowedWithoutToken(cmd.cmd, cmd.arg)) {
+                printf("[WSServer] Refused '%s' from %u.%u.%u.%u: no token (watch and stop only)\n",
+                       parsed ? ws::SafeCommandName(cmd.cmd).c_str() : "(not a command)",
+                       c.peerIpv4 >> 24, (c.peerIpv4 >> 16) & 0xFF,
+                       (c.peerIpv4 >> 8) & 0xFF, c.peerIpv4 & 0xFF);
+                const auto f = buildTextFrame(ws::RefusalMessage(parsed ? cmd.cmd : std::string()));
+                send(c.sock, (const char*)f.data(), (int)f.size(), 0);
+                continue;
+            }
         }
         if (m_onCommand) m_onCommand(m);
     }

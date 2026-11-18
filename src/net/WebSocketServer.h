@@ -66,6 +66,10 @@ struct WsClient {
     ws::FrameParser parser;       // carries fragment state between reads
     bool    wantsPreview = false; // B3: asked for the JPEG preview
     uint32_t peerIpv4 = 0;        // host byte order; 0 = not IPv4 / unknown
+    // 154.0a: presented the token. A client admitted without it (a
+    // WsLanOpen peer) may watch and stop, nothing else
+    // (ws::CommandAllowedWithoutToken).
+    bool    hasToken = false;
 };
 
 // ── WebSocketServer ───────────────────────────────────────────
@@ -132,6 +136,10 @@ public:
     // may connect without the token (ws::PeerExemptFromToken says
     // exactly who). Loopback and public addresses still need it. Set
     // BEFORE Start(), like the token.
+    //
+    // 154.0a: such a client is a watcher. It gets the telemetry and the
+    // preview and may send only the commands that stop something; a
+    // browser page from an internet origin is not admitted at all.
     void SetLanOpen(bool open) { m_lanOpen = open; }
 
     // Binds 127.0.0.1 by default. Set bindAny=true only on a trusted LAN

@@ -364,6 +364,78 @@ int main() {
               "arg=\"" + c.arg + "\"");
     }
 
+    // ---- 154.0a: a client without the token watches and stops ----
+    printf("\n154.0a. Without the token: watch and stop, and no internet pages\n");
+    {
+        Check(CommandAllowedWithoutToken("mount_stop", ""), "mount_stop is allowed");
+        Check(CommandAllowedWithoutToken("stop_capture", ""), "stop_capture is allowed");
+        Check(CommandAllowedWithoutToken("autofocus_abort", ""), "autofocus_abort is allowed");
+        Check(CommandAllowedWithoutToken("moonmap", "STOP") &&
+              CommandAllowedWithoutToken("moonmap", " stop "), "the Moon map's STOP is allowed");
+        const char* moving[] = { "goto_target", "jog", "move_eaf", "move_eaf_rel", "autofocus",
+                                 "calibrate_focus", "start_capture", "set_gain", "set_exposure",
+                                 "set_gamma", "load_profile", "centroid_start", "centroid_lock",
+                                 "centroid_roi", "centroid_reset", "cables_dressed" };
+        bool anyLeaks = false;
+        for (const char* c : moving) anyLeaks |= CommandAllowedWithoutToken(c, "");
+        Check(!anyLeaks, "every command that moves or changes the rig is refused");
+        Check(!CommandAllowedWithoutToken("moonmap", "START") &&
+              !CommandAllowedWithoutToken("moonmap", "GOTO") &&
+              !CommandAllowedWithoutToken("moonmap", "STOP NE-A1"),
+              "the Moon map's other commands are refused, STOP with a tail too");
+        Check(!CommandAllowedWithoutToken("some_new_command", ""), "a command nobody listed is refused (default deny)");
+        Check(!CommandAllowedWithoutToken("Mount_Stop", "") && !CommandAllowedWithoutToken("mount_stop ", ""),
+              "names match exactly, as the app's dispatcher does");
+
+        // The gate parses with the app's own parser, so they agree.
+        APEXCommand c;
+        Check(APEXCommand::Parse(R"({"cmd":"mount_stop"})", c) && CommandAllowedWithoutToken(c.cmd, c.arg),
+              "a real STOP message passes");
+        Check(APEXCommand::Parse(R"({"cmd":"jog","arg":"N"})", c) && !CommandAllowedWithoutToken(c.cmd, c.arg),
+              "a real jog message does not");
+
+        // Origins.
+        Check(OriginAllowedWithoutToken(""), "no Origin (a script, Leoben) is allowed");
+        Check(OriginAllowedWithoutToken("null"), "\"null\" (Dash opened as a file) is allowed");
+        Check(OriginAllowedWithoutToken("http://localhost:8080") &&
+              OriginAllowedWithoutToken("http://127.0.0.1") &&
+              OriginAllowedWithoutToken("http://192.168.1.20:8000") &&
+              OriginAllowedWithoutToken("https://10.0.0.5"),
+              "localhost, loopback and private addresses are allowed");
+        Check(OriginAllowedWithoutToken("http://starmachine") &&
+              OriginAllowedWithoutToken("http://elminster.local:3000") &&
+              OriginAllowedWithoutToken("http://pi.lan") &&
+              OriginAllowedWithoutToken("http://nas.home.arpa"),
+              "local names are allowed");
+        Check(!OriginAllowedWithoutToken("https://evil.example.com") &&
+              !OriginAllowedWithoutToken("http://8.8.8.8") &&
+              !OriginAllowedWithoutToken("http://192.168.1.20.evil.com") &&
+              !OriginAllowedWithoutToken("http://local.evil.com") &&
+              !OriginAllowedWithoutToken("https://evil.com.lan.example.org"),
+              "internet pages are refused, look-alikes included");
+        Check(!OriginAllowedWithoutToken("chrome-extension://abcd") &&
+              !OriginAllowedWithoutToken("file://") &&
+              !OriginAllowedWithoutToken("http://[::1]") &&
+              !OriginAllowedWithoutToken("http://") &&
+              !OriginAllowedWithoutToken("http://192.168.1.256") &&
+              !OriginAllowedWithoutToken("http://host_name"),
+              "other schemes, IPv6, empty and malformed hosts are refused");
+
+        // The handshake carries the Origin, case-insensitively.
+        std::string req = kValidHandshake;
+        req.insert(req.find("\r\n\r\n"), "\r\norigin: https://evil.example.com");
+        Handshake h = ParseHandshake(req);
+        Check(h.state == Handshake::State::Ok && h.origin == "https://evil.example.com",
+              "the Origin header is read", h.origin);
+        Check(ParseHandshake(kValidHandshake).origin.empty(), "and empty when not sent");
+
+        // The refusal echoes only a command name.
+        const std::string r = RefusalMessage("jog\",\"x\":\"<script>");
+        Check(r.find("<") == std::string::npos && r.find(R"("cmd":"jogxscript")") != std::string::npos,
+              "the refusal echoes only name characters", r.substr(0, 40));
+        Check(SafeCommandName(std::string(100, 'a')).size() == 32, "and at most 32 of them");
+    }
+
     printf("\n%s\n", g_fail == 0 ? "ALL CHECKS PASSED" : "SOME CHECKS FAILED");
     return g_fail == 0 ? 0 : 1;
 }

@@ -23,6 +23,7 @@
 // ============================================================
 
 #include <cstddef>
+#include <cstring>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -232,6 +233,7 @@ struct Handshake {
     size_t      consumed = 0;     // request bytes, through the blank line
     std::string key;              // Sec-WebSocket-Key
     std::string token;            // from ?token= in the request target
+    std::string origin;           // the Origin header; empty if none (154.0a)
 };
 
 namespace detail {
@@ -320,6 +322,7 @@ inline Handshake ParseHandshake(const std::string& buf) {
         if      (detail::IEquals(name, "Upgrade"))               upgrade   = detail::IContains(value, "websocket");
         else if (detail::IEquals(name, "Sec-WebSocket-Version")) version13 = (value == "13");
         else if (detail::IEquals(name, "Sec-WebSocket-Key"))     h.key     = value;
+        else if (detail::IEquals(name, "Origin"))                h.origin  = value;
     }
 
     if (!upgrade)         { h.state = Handshake::State::Bad; h.status = 400; return h; }
@@ -399,6 +402,110 @@ inline bool IsPrivateLanPeer(uint32_t ipv4) {
 // first and separately by the server; this is only the exemption.
 inline bool PeerExemptFromToken(bool lanOpen, uint32_t peerIpv4) {
     return lanOpen && IsPrivateLanPeer(peerIpv4);
+}
+
+// ── 154.0a: what a client without the token may do ───────────
+//
+// The cost the owner accepted for WsLanOpen in 2026-10 turned out to be
+// larger than "a page on this network": nothing checked the Origin
+// header, so ANY web page, from any site, open in a browser on ANY
+// device on the home network could open ws://<capture-pc>:8765 and slew
+// the mount (cross-site WebSocket hijacking). The rig runs with
+// WsLanOpen=1. Two changes, both for tokenless clients only; a client
+// with the token is exactly as before.
+//
+// 1. Without the token, a client watches and can stop. It gets the
+//    telemetry and the preview, and of the commands only the ones that
+//    stop something. Everything else -- moving, focusing, recording,
+//    camera settings, a profile, and any command not listed -- needs
+//    the token. Default deny: a command added later is guarded until
+//    someone decides otherwise here. Stopping is never the dangerous
+//    direction, and STOP has to work from whatever is in your hand.
+inline bool CommandAllowedWithoutToken(const std::string& cmd, const std::string& arg) {
+    if (cmd == "mount_stop" || cmd == "stop_capture" || cmd == "autofocus_abort")
+        return true;
+    // The Moon map's own STOP (phase 162): "STOP", nothing after it.
+    if (cmd == "moonmap" && detail::IEquals(detail::Trim(arg), "STOP")) return true;
+    return false;
+}
+
+// 2. A tokenless handshake is refused when a browser says it comes from
+//    a page on the internet. Allowed: no Origin (a script, Leoben, the
+//    bridge -- not a browser), "null" (Dash opened as a file, which is
+//    how [DASH] and the phone open it), and a page served from this
+//    network: localhost, a private or loopback IPv4 address, or a local
+//    name (no dot, .local, .lan, .home.arpa).
+//
+//    This is the cheap half and not the protection. A sandboxed iframe
+//    on any site also says "null", so a hostile page can still connect
+//    -- and by rule 1 it can then only watch and stop. The token is
+//    what moves hardware.
+namespace detail {
+inline bool ParseIpv4(const std::string& s, uint32_t& out) {
+    uint32_t v = 0; int parts = 0; size_t i = 0;
+    while (parts < 4) {
+        if (i >= s.size() || s[i] < '0' || s[i] > '9') return false;
+        uint32_t n = 0; int digits = 0;
+        while (i < s.size() && s[i] >= '0' && s[i] <= '9') {
+            n = n * 10 + uint32_t(s[i] - '0');
+            if (++digits > 3 || n > 255) return false;
+            i++;
+        }
+        v = (v << 8) | n; parts++;
+        if (parts < 4) { if (i >= s.size() || s[i] != '.') return false; i++; }
+    }
+    if (i != s.size()) return false;
+    out = v; return true;
+}
+inline bool EndsWithI(const std::string& s, const char* suf) {
+    const size_t n = std::strlen(suf);
+    if (s.size() < n) return false;
+    for (size_t k = 0; k < n; k++)
+        if (Lower(s[s.size() - n + k]) != Lower(suf[k])) return false;
+    return true;
+}
+} // namespace detail
+
+inline bool OriginAllowedWithoutToken(const std::string& origin) {
+    if (origin.empty() || origin == "null") return true;
+    std::string rest;
+    if      (origin.compare(0, 7, "http://")  == 0) rest = origin.substr(7);
+    else if (origin.compare(0, 8, "https://") == 0) rest = origin.substr(8);
+    else return false;   // file:// sends "null"; anything else is not ours
+    if (rest.empty() || rest[0] == '[') return false;   // no IPv6 literals: keep it narrow
+    std::string host = rest.substr(0, rest.find_first_of(":/"));
+    if (host.empty()) return false;
+    if (detail::IEquals(host, "localhost")) return true;
+    uint32_t ip = 0;
+    if (detail::ParseIpv4(host, ip))
+        return IsPrivateLanPeer(ip) || (ip >> 24) == 127;
+    for (char c : host) {
+        const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                        (c >= '0' && c <= '9') || c == '-' || c == '.';
+        if (!ok) return false;
+    }
+    if (host.find('.') == std::string::npos) return true;   // "starmachine"
+    return detail::EndsWithI(host, ".local") || detail::EndsWithI(host, ".lan") ||
+           detail::EndsWithI(host, ".home.arpa");
+}
+
+// A command name from the peer, fit to echo into a log or JSON: only the
+// characters a command name uses, at most 32 of them.
+inline std::string SafeCommandName(const std::string& cmd) {
+    std::string safe;
+    for (char c : cmd) {
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_')
+            safe += c;
+        if (safe.size() >= 32) break;
+    }
+    return safe;
+}
+
+// What a refused command is answered with, so Dash can say why instead
+// of the button silently doing nothing.
+inline std::string RefusalMessage(const std::string& cmd) {
+    return std::string(R"({"type":"refused","cmd":")") + SafeCommandName(cmd) +
+           R"(","why":"token required: this command moves or changes the rig. Enter the access token (WsToken in rig.ini) in Dash"})";
 }
 
 // ── B3: the preview subscription ─────────────────────────────

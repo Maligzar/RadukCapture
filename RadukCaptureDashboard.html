@@ -2262,7 +2262,18 @@ function rcConnect() {
       };
       rcWs.onmessage = (e) => {
         if (e.data instanceof Blob) { rcDrawPreview(e.data); return; }
-        try { rcHandleData(JSON.parse(e.data)); } catch(ex) {}
+        let d;
+        try { d = JSON.parse(e.data); } catch(ex) { return; }
+        // 154.0a: without the token, Dash watches and can stop; the app
+        // answers anything else with this, not with telemetry.
+        if (d && d.type === 'refused') {
+          const why = 'Not sent: ' + (d.cmd || 'that command') +
+            ' needs the access token. Enter WsToken from rig.ini in the token box. Without it Dash can watch and STOP.';
+          rcSetSyncMsg(why, 'err');
+          rcLogSession('[RC] ' + why, 'err');
+          return;
+        }
+        try { rcHandleData(d); } catch(ex) {}
       };
       // A browser cannot see WHY a handshake failed: a refused token and a
       // closed port both arrive as onerror then onclose. Say both causes,
