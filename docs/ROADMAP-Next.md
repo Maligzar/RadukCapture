@@ -1324,6 +1324,41 @@ The review's beginner and advanced modes and its first-run wizard serve
 adoption, which the owner has said is not a goal. They are left with the
 parked plan.
 
+## The 2026-11-17 ChatGPT review, mapped
+
+The owner brought ChatGPT's "flagship platform modernization" review on 2026-11-17 and asked for each recommendation to be steelmanned, added if it held up, and explored where uncertain. Most of it restates the README and the 2026-11-13 mapping above: the same P0 to P5 programmes and the same 3.4 to 4.0 milestones. Its closing request for a ZIP of the repository does not apply, because the review was done in the repository. Each point was checked against the code.
+
+**Already planned or built, so not added:**
+
+| Recommendation | Covered by |
+|---|---|
+| Keep the capture thread off disk, serial and locks | The architecture as built (ring buffer, `WriteBuffer`) |
+| Multi-hour capture, disk full, camera timeout, independent SER/FITS checks | 157.0 to 157.2, 135.1, 135.3 |
+| USB disconnect and reconnect (camera) | 3.3.25: `ICamera::Reconnect`, the emulator's handle now dies on an unplug like the SDK's |
+| Focuser safety as mandatory | 161.0 to 161.2, written; release 3.4 |
+| `main.cpp` as a testing risk, a layered core | 153 (`AppCore`, the controllers) |
+| Adaptive exposure (as a fixed band), seeing-aware runs | 140.1, 140.2, 114 (see 164 below for the adaptive part) |
+| Frame quality, ROI, ADC, feature tracking | 107, 109, 157.0c, the ADC window, the quick-look stacker (live, aligned, quality-gated) |
+| Focus drift, refocus | 158 |
+| Vendor-independent cameras, QHY, Player One, mono, filter wheel, more than one camera | 149.1, 149.4 to 149.6, 159, 160 |
+| Guide camera, deep sky | 150, after 4.0 by the owner's word |
+| Dew or haze, whether a target is still worth it | `FadeWatch` (133.2), 114's seeing hold |
+| Recording windows, session comparison, nightly reports | 113, 144, 124 (`[STATS]`), 143 |
+| Observation records, science export, satellites, lunar | 48, 143, 116 to 122, 162, the 3.7 science backlog |
+| Keep PolyForm Noncommercial | P5.7, decided 2026-11-01 |
+| Don't build ahead of validation | The ranking rule at the top of this file, and `UNVERIFIED.md` |
+
+**Not added, with why:**
+- **Multi-region quality analysis while capturing.** That is the stacker's job (AutoStakkert's alignment points). At capture, one figure per frame is what decides a run.
+- **Installer and distribution (its P5).** Parked by the owner, 2026-11-01. Adoption is not a goal.
+
+**Added:**
+- **154.0a, moved into release 3.4 by the owner the same day, and written (3.3.26).** The token for hardware commands, which 154.3 already planned, pulled forward on its own. Checked: the rig runs `WsLanOpen=1`, a tokenless LAN client gets every command, and the handshake checks no `Origin`. So a web page on any device on the home network can try to drive the telescope. The review saw an inconsistency between documents; the code shows the gap is real and switched on.
+- **157.0d.** A slow-disk fault, and quitting mid-recording, in the fault harness. Both are handled by design, and neither is gated.
+- **157.0e.** The focuser re-opened after an unplug, distrusting its position when it comes back different. Explored: EAF owners report losing position on power loss, and the app saves no last position to compare against. The mount gets no automatic reconnect.
+- **Phase 164, exploratory.** Whether the best exposure moves with the night's seeing. Clear-night item 55 on three nights decides whether anything is built.
+- **A written rule in 152.** The assistant advises and never acts on hardware. True today; written down before a stronger model makes tools tempting.
+
 ## Data sources
 
 **Reviewed 2026-11-11.** Evidence and sources in
@@ -1656,10 +1691,23 @@ paths pass fault injection, and one unattended sky run completes.
    guards, arrival checks, the emulator's faults) and 161.2. The table
    and the rule are in the plan.
 
+24b. **154.0a (row 54), the hardware-command token, size S**: moved into
+   3.4 by the owner 2026-11-17 (the ChatGPT review, mapped above), and
+   built next at the owner's word. **Written 2026-11-17 (3.3.26)**: a
+   tokenless `WsLanOpen` client watches and stops; a browser page from an
+   internet origin is refused; Dash says why a command was refused.
+24c. **157.0d and 157.0e (row 57)**: a slow disk and quitting mid-run in
+   the fault harness; the focuser re-opened after an unplug, with its
+   position distrusted when it comes back different.
+
 #### Release 3.5: planetary excellence
 
 Acceptance: autofocus repeatable across sessions, and the seeing figure
 checked against the eye (clear-night items 1, 37, 55, 57 and 58).
+
+25b. **Phase 164 (row 64), exploratory**: whether the best exposure moves
+    with the seeing. 164.0 is clear-night item 55 on three nights, and no
+    code; it decides whether 164.1 or 164.2 is built.
 
 25. **Phase 158 (row 58), focus through the night**: the focus history,
     and a refocus when focus drifts.

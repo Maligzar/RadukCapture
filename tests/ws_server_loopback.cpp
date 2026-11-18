@@ -245,6 +245,111 @@ int main() {
         lan.Stop();
     }
 
+    // 154.0a, end to end. A tokenless client has to come from a PRIVATE
+    // address, which loopback is not, so this dials the server on this
+    // PC's own private IPv4: the server then sees that address as the
+    // peer, exactly as it would a phone on the home network. Skipped,
+    // and said so, on a machine with no private address.
+    printf("\n6. 154.0a: a tokenless LAN client watches and stops, and no internet page gets in\n");
+    {
+        // The servers above have stopped, and Stop() cleans Winsock up;
+        // the lookups below need it, and the calls are reference counted.
+        WSADATA wsa; WSAStartup(MAKEWORD(2, 2), &wsa);
+        uint32_t lanIp = 0;
+        char host[256] = {};
+        if (gethostname(host, sizeof(host)) == 0) {
+            addrinfo hints{}; hints.ai_family = AF_INET; hints.ai_socktype = SOCK_STREAM;
+            addrinfo* res = nullptr;
+            if (getaddrinfo(host, nullptr, &hints, &res) == 0) {
+                for (addrinfo* p = res; p && !lanIp; p = p->ai_next) {
+                    const uint32_t ip = ntohl(((sockaddr_in*)p->ai_addr)->sin_addr.s_addr);
+                    if (ws::IsPrivateLanPeer(ip)) lanIp = ip;
+                }
+                freeaddrinfo(res);
+            }
+        }
+        if (!lanIp) {
+            printf("  [SKIP] no private IPv4 on this machine; the pure rules are in ws_protocol\n");
+        } else {
+            std::mutex mu;
+            std::vector<std::string> got;
+            WebSocketServer lan;
+            lan.SetRequiredToken(token);
+            lan.SetLanOpen(true);
+            lan.SetCommandCallback([&](const std::string& m) { std::lock_guard<std::mutex> lk(mu); got.push_back(m); });
+            lan.Start(kPort, true);
+            auto dialLan = [&]() {
+                SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+                sockaddr_in a{}; a.sin_family = AF_INET;
+                a.sin_addr.s_addr = htonl(lanIp); a.sin_port = htons(kPort);
+                if (connect(s, (sockaddr*)&a, sizeof(a)) != 0) { closesocket(s); return INVALID_SOCKET; }
+                DWORD tmo = 3000;
+                setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tmo, sizeof(tmo));
+                return s;
+            };
+            auto withOrigin = [](const std::string& origin) {
+                std::string r = Request("/");
+                r.insert(r.size() - 2, "Origin: " + origin + "\r\n");
+                return r;
+            };
+            auto readFrameText = [](SOCKET s) {
+                std::string b; char buf[2048];
+                // An unmasked server text frame: 0x81, a length byte (< 126 here,
+                // or 126 + two bytes), then the payload.
+                for (int i = 0; i < 20; i++) {
+                    if (b.size() >= 2) {
+                        size_t len = (unsigned char)b[1] & 0x7F, hdr = 2;
+                        if (len == 126 && b.size() >= 4) { len = ((unsigned char)b[2] << 8) | (unsigned char)b[3]; hdr = 4; }
+                        if (len != 126 && b.size() >= hdr + len) return b.substr(hdr, len);
+                    }
+                    const int n = recv(s, buf, sizeof(buf), 0);
+                    if (n <= 0) break;
+                    b.append(buf, n);
+                }
+                return std::string();
+            };
+
+            SOCKET e = dialLan();
+            SendAll(e, withOrigin("https://evil.example.com"));
+            Check(ReadResponse(e).rfind("HTTP/1.1 403", 0) == 0, "a page from the internet, no token: 403");
+            closesocket(e);
+
+            SOCKET d = dialLan();
+            SendAll(d, withOrigin("null"));
+            Check(ReadResponse(d).rfind("HTTP/1.1 101", 0) == 0, "Dash as a file, no token: admitted");
+            SendAll(d, Frame(true, 1, R"({"cmd":"jog","arg":"N"})"));
+            const std::string refusal = readFrameText(d);
+            Check(refusal.find(R"("type":"refused")") != std::string::npos &&
+                  refusal.find(R"("cmd":"jog")") != std::string::npos,
+                  "  a jog is answered with a refusal", refusal.substr(0, 40));
+            SendAll(d, Frame(true, 1, R"({"cmd":"mount_stop"})"));
+            std::this_thread::sleep_for(std::chrono::milliseconds(300));
+            {
+                std::lock_guard<std::mutex> lk(mu);
+                bool jog = false, stop = false;
+                for (auto& m : got) { jog |= m.find("jog") != std::string::npos; stop |= m.find("mount_stop") != std::string::npos; }
+                Check(!jog, "  the jog never reaches the app");
+                Check(stop, "  a STOP does");
+                got.clear();
+            }
+            closesocket(d);
+
+            SOCKET k = dialLan();
+            SendAll(k, Request("/?token=" + token));
+            Check(ReadResponse(k).rfind("HTTP/1.1 101", 0) == 0, "with the token: admitted");
+            SendAll(k, Frame(true, 1, R"({"cmd":"jog","arg":"N"})"));
+            std::this_thread::sleep_for(std::chrono::milliseconds(300));
+            {
+                std::lock_guard<std::mutex> lk(mu);
+                Check(got.size() == 1 && got[0].find("jog") != std::string::npos,
+                      "  and a jog reaches the app, as before");
+            }
+            closesocket(k);
+            lan.Stop();
+        }
+        WSACleanup();
+    }
+
     printf("\n%s\n", g_fail == 0 ? "ALL CHECKS PASSED" : "SOME CHECKS FAILED");
     return g_fail == 0 ? 0 : 1;
 }
