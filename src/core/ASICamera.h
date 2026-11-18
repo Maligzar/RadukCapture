@@ -8,9 +8,11 @@
 #  include "ASICamera2Stub.h"
 #else
 #  include "ASICamera2.h"
+#include <atomic>
 #include <vector>
 #include <string>
 #include "ASITypeMap.h"
+#include "CameraSettingsCache.h"
 
 namespace raduk::core {
 
@@ -51,7 +53,9 @@ public:
     
     // Recovery: Restarts the video stream to clear SDK/USB wedges
     bool RestartCapture() override;
-    
+    // After an unplug: close, find the same camera, re-open, restore.
+    bool Reconnect() override;
+
     bool IsCapturing() const override { return m_isCapturing; }
     bool GetVideoFrame(uint8_t* buffer, int bufferSize, int timeoutMs);
     // Phase 58 (review C4): error-code-preserving variant — the capture loop
@@ -112,11 +116,15 @@ public:
     DeviceIdentity Identity() const override;   // phase 157.3
 
 private:
-    int                             m_cameraId = -1;
+    // Atomic: Reconnect swaps it on the capture thread while the UI
+    // thread keeps calling setters and readouts with it.
+    std::atomic<int>                m_cameraId{-1};
     ASI_CAMERA_INFO                 m_info{};
     bool                            m_isOpen = false;
     bool                            m_isCapturing = false;
     std::vector<ASI_CONTROL_CAPS>   m_controls;
+    std::string                     m_serial;     // to know it again after a replug
+    CameraSettingsCache             m_settings;   // to tell it again after a replug
 
     const ASI_CONTROL_CAPS* FindControl(ASI_CONTROL_TYPE type) const;
 };

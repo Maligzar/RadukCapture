@@ -1382,3 +1382,17 @@ the bench already showed, so the night only has to confirm it. The plan is
     different nights are under different light: stitch one night's
     sections first. `MOON_MAP_PROVEN_ON_SKY` and
     `MOON_MAP_RUN_PROVEN_ON_SKY` stay false until this has been done.
+61. **A pulled camera cable, on the real camera** (added 2026-11-17). Bench
+    only, no sky needed. With the camera streaming at a non-default format
+    (say a 640x480 ROI, gain 300, 8 ms), pull its USB cable, wait about
+    five seconds and plug it back in. Expected in the core log:
+    `CAMERA FAULT: camera removed`, then within a second or two of the
+    replug `[ASICamera] Re-opened ZWO ASI678MC after a USB drop (ID a -> b),
+    N settings restored` and `Camera recovered`. Then check that the
+    preview is the same 640x480 window at the same gain and exposure, not
+    the full sensor at defaults. Repeat once while recording: the run
+    should carry on in the same file. If the log instead repeats
+    `RestartCapture` failures for ever, or `Re-opened` never comes, the
+    SDK wants something this sequence does not do (ASICamera::Reconnect):
+    note what the log says. The emulator only models this; it cannot
+    prove the SDK behaves the way the code assumes.

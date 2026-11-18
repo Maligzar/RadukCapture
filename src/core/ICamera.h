@@ -154,6 +154,14 @@ public:
     virtual bool RestartCapture() = 0;
     virtual bool IsCapturing() const = 0;
 
+    // After a USB drop. RestartCapture stops and starts video on the
+    // same handle, which clears a wedge but cannot revive a camera that
+    // was unplugged: the SDK handle is dead. This closes it, finds the
+    // same camera again (it may come back under a new ID), opens it,
+    // restores every setting it had and resumes streaming if it was.
+    // False while the camera is still gone; the capture loop retries.
+    virtual bool Reconnect() { return false; }
+
     // The hot path. err distinguishes the outcomes above so the
     // caller can tell a normal timeout from an unplugged camera.
     //

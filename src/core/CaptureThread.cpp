@@ -209,10 +209,20 @@ void CaptureThread::Run() {
                            Describe(frameErr));
                 }
                 std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-                if (m_running.load(std::memory_order_relaxed) &&
-                    m_camera->RestartCapture()) {
-                    raduk::core::CoreLog("[CaptureThread] RestartCapture succeeded after fault\n");
-                    m_stats.restarts.fetch_add(1, std::memory_order_relaxed);
+                // A restart on the same handle first: cheap, and enough
+                // when the handle survived. A real unplug kills the
+                // handle, and then only closing, finding and re-opening
+                // the camera brings it back (ICamera::Reconnect).
+                if (m_running.load(std::memory_order_relaxed)) {
+                    if (m_camera->RestartCapture()) {
+                        raduk::core::CoreLog("[CaptureThread] RestartCapture succeeded after fault\n");
+                        m_stats.restarts.fetch_add(1, std::memory_order_relaxed);
+                    } else if (m_camera->Reconnect()) {
+                        raduk::core::CoreLog("[CaptureThread] Camera re-opened after a USB drop, "
+                               "settings restored\n");
+                        m_stats.restarts.fetch_add(1, std::memory_order_relaxed);
+                        m_stats.reconnects.fetch_add(1, std::memory_order_relaxed);
+                    }
                 }
                 wedge.Reset(Timestamp::Now());   // a fault is not also a wedge
             } else {

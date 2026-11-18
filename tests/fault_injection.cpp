@@ -174,6 +174,18 @@ static void GroupCameraBlip() {
     p.Loop(2.0);
     Check(p.core.capturer.FramesRecorded() > before, "and frames are flowing again",
           std::to_string(before) + " -> " + std::to_string(p.core.capturer.FramesRecorded()));
+    // The emulator's handle now dies on an unplug, as the SDK's does, so
+    // frames can only be flowing again because the camera was re-opened.
+    Check(p.core.capture.Stats().reconnects.load() > 0,
+          "because the camera was closed and opened again",
+          std::to_string(p.core.capture.Stats().reconnects.load()) + " re-open(s)");
+    {
+        int w = 0, h = 0, b = 0; ImageType t{};
+        p.core.cam.GetRegion(w, h, b, t);
+        Check(w == 640 && h == 480 && t == ImageType::Raw8,
+              "with the format it had, not the sensor default",
+              std::to_string(w) + "x" + std::to_string(h));
+    }
     p.core.recCtl.End(true, "test done");
     p.Stop();
 }
