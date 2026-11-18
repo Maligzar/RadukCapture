@@ -130,6 +130,7 @@ struct APEXTelemetry {
     // each row is "slew|runs|target|why|state". The two lists are names
     // joined by '|'. Additive: an older dashboard ignores them.
     bool        nightplan_running = false;
+    bool        nightplan_paused  = false;   // 163b: PAUSE, then CONTINUE re-plans
     std::string nightplan_state;
     std::string nightplan_target;
     std::string nightplan_ticked;

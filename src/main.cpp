@@ -6716,6 +6716,20 @@ static int RunApp(bool useEmulator) {
     // Nothing new here either: the GoTo is the panel's by name, which
     // loads the target's profile; the lock is PLANET LOCK's; the runs are
     // the RUNS button's. The controller puts them in time order.
+    // The plan's settings, from rig.ini, for PLAN and for CONTINUE's re-plan.
+    auto nightPlanOptions = []() {
+        const auto& rig = raduk::core::RigConfig::Get();
+        raduk::core::NightPlanOptions o;
+        o.visitMin      = rig.nightPlanVisitMin;
+        o.minVisitMin   = rig.nightPlanMinVisitMin;
+        o.slewSec       = rig.nightPlanSlewSec;
+        o.lockSec       = rig.nightPlanLockSec;
+        o.focusSec      = rig.nightPlanFocusSec;
+        o.sunMaxAltDeg  = rig.nightPlanSunMaxDeg;
+        o.sunAvoidDeg   = rig.nightPlanSunAvoidDeg;
+        o.passMarginSec = rig.nightPlanPassMarginSec;
+        return o;
+    };
     {
         raduk::app::NightPlanHooks h;
         h.jdNow  = []() { return raduk::sky::PreciseJdNow(); };
@@ -6773,13 +6787,20 @@ static int RunApp(bool useEmulator) {
             else                                   notifBar.NotifyWarn(raduk::core::ToWide(u8));
         };
         h.changed = [&]() { gotoPanel.RefreshNightPlan(); };
+        // Phase 163b: CONTINUE plans what is left from the sky as it is then.
+        h.ticked = [&]() { return gotoPanel.NightTicked(); };
+        h.replan = [&](const std::vector<std::string>& names) {
+            return gotoPanel.BuildNightPlanFor(names, nightPlanOptions(),
+                                               raduk::core::RigConfig::Get().nightPlanHours);
+        };
         nightPlan.SetHooks(std::move(h));
         gotoPanel.SetNightPlanModel(&nightPlan);
     }
 
     // Every way of asking the night plan for something -- the Tonight
     // tab's ticks and buttons, Dash, a scenario -- comes through here.
-    //   TICK <name>, UNTICK <name>, CLEAR, PLAN, RUN (or stop), STOP
+    //   TICK <name>, UNTICK <name>, CLEAR, PLAN, RUN (or stop), STOP,
+    //   PAUSE, CONTINUE (phase 163b)
     std::function<void(const std::string&, const std::string&)> nightPlanCommand =
         [&](const std::string& cmdIn, const std::string& argIn) {
         std::string cmd = cmdIn;
@@ -6794,7 +6815,8 @@ static int RunApp(bool useEmulator) {
         };
         const auto& rig = raduk::core::RigConfig::Get();
         if (cmd == "TICK" || cmd == "UNTICK") {
-            if (nightPlan.runner.Running()) {
+            // While paused the ticks are free: CONTINUE plans with them.
+            if (nightPlan.runner.Running() && !nightPlan.Paused()) {
                 gotoPanel.SetNightTick(arg, gotoPanel.IsNightTicked(arg));   // put the box back
                 return refuse("the plan is running: STOP it first");
             }
@@ -6808,19 +6830,11 @@ static int RunApp(bool useEmulator) {
             nightPlan.ClearPlan();
             Log("[NIGHTPLAN] ticks and plan cleared\n");
         } else if (cmd == "PLAN") {
+            if (nightPlan.Paused()) return refuse("the plan is paused: CONTINUE plans the rest again");
             if (nightPlan.runner.Running()) return refuse("the plan is running: STOP it first");
             const auto names = gotoPanel.NightTicked();
             if (names.empty()) return refuse("tick some planets or stars first");
-            raduk::core::NightPlanOptions o;
-            o.visitMin      = rig.nightPlanVisitMin;
-            o.minVisitMin   = rig.nightPlanMinVisitMin;
-            o.slewSec       = rig.nightPlanSlewSec;
-            o.lockSec       = rig.nightPlanLockSec;
-            o.focusSec      = rig.nightPlanFocusSec;
-            o.sunMaxAltDeg  = rig.nightPlanSunMaxDeg;
-            o.sunAvoidDeg   = rig.nightPlanSunAvoidDeg;
-            o.passMarginSec = rig.nightPlanPassMarginSec;
-            nightPlan.SetPlan(gotoPanel.BuildNightPlanFor(names, o, rig.nightPlanHours));
+            nightPlan.SetPlan(gotoPanel.BuildNightPlanFor(names, nightPlanOptions(), rig.nightPlanHours));
             const auto& p = nightPlan.Plan();
             wchar_t msg[160];
             swprintf(msg, 160, L"Night plan: %d visits, %d not planned", (int)p.visits.size(),
@@ -6837,6 +6851,17 @@ static int RunApp(bool useEmulator) {
         } else if (cmd == "STOP") {
             if (!nightPlan.runner.Running()) return refuse("the plan is not running");
             nightPlan.Stop("stopped by the operator");
+        } else if (cmd == "PAUSE" || cmd == "CONTINUE" || cmd == "RESUME") {
+            // One button: PAUSE when running, CONTINUE when paused.
+            std::string why;
+            const bool cont = cmd != "PAUSE" || nightPlan.Paused();
+            if (cmd == "PAUSE" && nightPlan.Paused()) {
+                if (!nightPlan.Continue(why)) return refuse(why);
+            } else if (cont) {
+                if (!nightPlan.Continue(why)) return refuse(why);
+            } else if (!nightPlan.Pause(why)) {
+                return refuse(why);
+            }
         } else {
             return refuse("no command '" + cmd + "'");
         }
@@ -9264,21 +9289,11 @@ static int RunApp(bool useEmulator) {
                     telemetry.nightplan_target     = nightPlan.CurrentTarget();
                     telemetry.nightplan_ticked     = join(gotoPanel.NightTicked());
                     telemetry.nightplan_candidates = join(gotoPanel.NightCandidates());
+                    telemetry.nightplan_paused     = nightPlan.Paused();   // 163b
                     std::string rows;
-                    if (nightPlan.HasPlan()) {
-                        const auto& np = nightPlan.Plan();
-                        for (int i = 0; i < (int)np.visits.size(); ++i) {
-                            const auto& v = np.visits[(size_t)i];
-                            if (!rows.empty()) rows += ';';
-                            rows += raduk::gui::GoToPanel::LocalClock(v.slewJd) + "|" +
-                                    raduk::gui::GoToPanel::LocalClock(v.imageJd) + "-" +
-                                    raduk::gui::GoToPanel::LocalClock(v.endJd) + "|" + v.name + "|" +
-                                    v.Why() + "|" + nightPlan.VisitState(i);
-                        }
-                        for (const auto& sk : np.skipped) {
-                            if (!rows.empty()) rows += ';';
-                            rows += "--|--|" + sk.name + "|" + sk.why + "|not planned";
-                        }
+                    for (const auto& r : nightPlan.Rows()) {
+                        if (!rows.empty()) rows += ';';
+                        rows += r.slew + "|" + r.runs + "|" + r.name + "|" + r.why + "|" + r.state;
                     }
                     telemetry.nightplan_rows = rows;
                 }

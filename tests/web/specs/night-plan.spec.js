@@ -49,8 +49,22 @@ test.describe('@live Dash: the night plan', () => {
       await page.locator('#rcNightRun').click();
       await expect(state).toHaveText(/^RUNNING 1\/\d+/, { timeout: 10_000 });
       await expect(page.locator('#rcNightRun')).toHaveText(/STOP/);
-      await page.locator('#rcNightRun').click();
-      await expect(state).toHaveText(/^STOPPED/, { timeout: 15_000 });
+
+      // Phase 163b: PAUSE holds the plan where it is; CONTINUE plans the
+      // rest again from now and runs on.
+      const pause = page.locator('#rcNightPause');
+      await expect(pause).toHaveText('PAUSE');
+      await pause.click();
+      await expect(state).toHaveText(/^PAUSED (ON|BEFORE) /, { timeout: 10_000 });
+      await expect(pause).toHaveText('CONTINUE');
+      await expect(page.locator('#rcNightSection')).toHaveAttribute('data-paused', '1');
+      await pause.click();
+      await expect(state).toHaveText(/^(RUNNING|DONE)/, { timeout: 15_000 });
+      await expect(pause).toHaveText('PAUSE');
+      if (/^RUNNING/.test(await state.textContent())) {
+        await page.locator('#rcNightRun').click();
+      }
+      await expect(state).toHaveText(/^(STOPPED|DONE)/, { timeout: 15_000 });
       await expect(page.locator('#rcNightRun')).toHaveText(/RUN/);
     }
 

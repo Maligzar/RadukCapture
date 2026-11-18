@@ -1086,6 +1086,7 @@ private:
         ID_BTN_NIGHT_RUN   = 2039,
         ID_LIST_NIGHT_PLAN = 2040,
         ID_LBL_NIGHT_STATE = 2041,
+        ID_BTN_NIGHT_PAUSE = 2042,  // Phase 163b
     };
 
     // ── Phase 14: Session Planner ──────────────────────────────
@@ -1450,9 +1451,10 @@ private:
             place(m_listTonight, x, ty, cw, tonightListH);
             ty += tonightListH + 4;
             place(m_btnGoToTonight, x, ty, cw, BH + 4);   ty += BH + 4 + 6;
-            const int hw2 = (cw - 6) / 2;
-            place(m_btnNightPlan, x, ty, hw2, BH + 4);
-            place(m_btnNightRun,  x + hw2 + 6, ty, cw - hw2 - 6, BH + 4);
+            const int hw3 = (cw - 12) / 3;
+            place(m_btnNightPlan,  x, ty, hw3, BH + 4);
+            place(m_btnNightRun,   x + hw3 + 6, ty, hw3, BH + 4);
+            place(m_btnNightPause, x + 2 * (hw3 + 6), ty, cw - 2 * (hw3 + 6), BH + 4);
             ty += BH + 4 + 6;
             place(m_listNightPlan, x, ty, cw, planListH);   ty += planListH + 4;
             place(m_lblNightState, x, ty, cw, SH);
@@ -1613,6 +1615,7 @@ private:
         setVis(m_lblTonightHdr,    t);
         setVis(m_btnNightPlan,     t);   // phase 163
         setVis(m_btnNightRun,      t);
+        setVis(m_btnNightPause,    t);
         setVis(m_listNightPlan,    t);
         setVis(m_lblNightState,    t);
         if (t) { PopulateTonightList(); RefreshNightPlan(); }
@@ -2042,6 +2045,12 @@ public:
             raduk::core::ProbeW("[BUTTON]", run ? L"RUN TONIGHT -> STOP TONIGHT"
                                                 : L"STOP TONIGHT -> RUN TONIGHT");
         }
+        const bool paused = m_nightModel->Paused();
+        if (m_btnNightPause && paused != m_nightPauseShown) {
+            m_nightPauseShown = paused;
+            SetWindowTextW(m_btnNightPause, paused ? L"CONTINUE" : L"PAUSE");
+            raduk::core::ProbeW("[BUTTON]", paused ? L"PAUSE -> CONTINUE" : L"CONTINUE -> PAUSE");
+        }
         if (!m_listNightPlan) return;
         SendMessageW(m_listNightPlan, WM_SETREDRAW, FALSE, 0);
         ListView_DeleteAllItems(m_listNightPlan);
@@ -2060,25 +2069,14 @@ public:
                 SendMessageW(m_listNightPlan, LVM_SETITEMTEXTW, r, (LPARAM)&li);
             }
         };
-        if (m_nightModel->HasPlan()) {
-            const auto& p = m_nightModel->Plan();
-            for (int i = 0; i < (int)p.visits.size(); ++i) {
-                const auto& v = p.visits[(size_t)i];
-                cell(row, 0, LocalClock(v.slewJd));
-                cell(row, 1, LocalClock(v.imageJd) + "-" + LocalClock(v.endJd));
-                cell(row, 2, v.name);
-                cell(row, 3, m_nightModel->VisitState(i));
-                cell(row, 4, v.Why());
-                ++row;
-            }
-            for (const auto& s : p.skipped) {
-                cell(row, 0, "--");
-                cell(row, 1, "--");
-                cell(row, 2, s.name);
-                cell(row, 3, "not planned");
-                cell(row, 4, s.why);
-                ++row;
-            }
+        // What is done tonight, then the plan, then what it left out.
+        for (const auto& r : m_nightModel->Rows()) {
+            cell(row, 0, r.slew);
+            cell(row, 1, r.runs);
+            cell(row, 2, r.name);
+            cell(row, 3, r.state);
+            cell(row, 4, r.why);
+            ++row;
         }
         SendMessageW(m_listNightPlan, WM_SETREDRAW, TRUE, 0);
         InvalidateRect(m_listNightPlan, nullptr, TRUE);
@@ -2129,6 +2127,8 @@ public:
             { "PLAN TONIGHT",           ID_BTN_NIGHT_PLAN },   // phase 163
             { "RUN TONIGHT",            ID_BTN_NIGHT_RUN },
             { "STOP TONIGHT",           ID_BTN_NIGHT_RUN },
+            { "PAUSE",                  ID_BTN_NIGHT_PAUSE },   // 163b
+            { "CONTINUE",               ID_BTN_NIGHT_PAUSE },
             { "FOLLOW",                 ID_BTN_FOLLOW },
             { "TRACK WHAT IS IN FRAME", ID_BTN_MOTION },
             { "SKY SURVEY",             ID_BTN_SURVEY },
@@ -2815,6 +2815,7 @@ private:
         // PRIME time, and run the plan.
         m_btnNightPlan = Button(L"PLAN TONIGHT", x, tonightY, w, BH+4, ID_BTN_NIGHT_PLAN);
         m_btnNightRun  = Button(L"RUN TONIGHT", x, tonightY, w, BH+4, ID_BTN_NIGHT_RUN);
+        m_btnNightPause = Button(L"PAUSE", x, tonightY, w, BH+4, ID_BTN_NIGHT_PAUSE);   // 163b
         m_listNightPlan = CreateWindowExW(WS_EX_CLIENTEDGE, WC_LISTVIEWW, L"",
             WS_CHILD | WS_VSCROLL | LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_NOSORTHEADER,
             x, tonightY, w, 120, m_hwnd, (HMENU)(INT_PTR)ID_LIST_NIGHT_PLAN,
@@ -3580,6 +3581,10 @@ private:
                     if (self->m_onNightCmd) self->m_onNightCmd("RUN", "");
                     return 0;
                 }
+                if (id == ID_BTN_NIGHT_PAUSE) {
+                    if (self->m_onNightCmd) self->m_onNightCmd("PAUSE", "");
+                    return 0;
+                }
                 // Phase 14: GoTo from tonight planner
                 if (id == ID_BTN_GOTO_TONIGHT) {
                     int sel = ListView_GetNextItem(self->m_listTonight, -1, LVNI_SELECTED);
@@ -3795,6 +3800,8 @@ private:
     // Phase 163: the night plan for planets and stars.
     HWND m_btnNightPlan   = nullptr;
     HWND m_btnNightRun    = nullptr;
+    HWND m_btnNightPause  = nullptr;   // 163b
+    bool m_nightPauseShown = false;
     HWND m_listNightPlan  = nullptr;
     HWND m_lblNightState  = nullptr;
     bool m_tonightFilling = false;

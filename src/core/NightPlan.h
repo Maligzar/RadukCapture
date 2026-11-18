@@ -412,6 +412,12 @@ public:
         m_reason = why ? why : "stopped";
     }
 
+    // Phase 163b: the plan ends with nothing left to do, from outside.
+    void Close(const char* why) {
+        m_phase  = Phase::Complete;
+        m_reason = why ? why : "closed";
+    }
+
     // The caller could not do what it was told. Each costs this target.
     void SlewRefused(const char* why, double nowJd) { SkipNow(why ? why : "the slew was refused", nowJd); }
     void LockRefused(const char* why, double nowJd) {

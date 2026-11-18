@@ -1220,6 +1220,7 @@ body { background:var(--d-void); color:var(--d-text); font-family:'Barlow Conden
         <div class="rc-btn-row" style="padding:0 0 4px">
           <button class="rc-ctrl-btn amber" id="rcNightPlan"  onclick="rcSendCmd('nightplan','PLAN')"  title="Place each ticked target in its GOOD or PRIME time">PLAN</button>
           <button class="rc-ctrl-btn green" id="rcNightRun"   onclick="rcSendCmd('nightplan','RUN')"   title="Run the plan, or stop it" style="flex:2">&#9654; RUN</button>
+          <button class="rc-ctrl-btn cyan"  id="rcNightPause" onclick="rcSendCmd('nightplan','PAUSE')" title="Pause to stay on the target as long as you like; CONTINUE plans the rest again from the sky then">PAUSE</button>
           <button class="rc-ctrl-btn red"   id="rcNightClear" onclick="rcSendCmd('nightplan','CLEAR')" title="Untick everything and forget the plan">CLEAR</button>
         </div>
         <div id="rcNightRows" style="font-size:11px;line-height:1.35"></div>
@@ -2608,12 +2609,15 @@ function rcUpdateNightPlan(data) {
   const st = document.getElementById('rcNightState');
   if (st) {
     st.textContent = (data.nightplan_state || '--').toUpperCase();
-    st.className = data.nightplan_running ? 'rv' : (/^PLANNED/.test(data.nightplan_state) ? 'rv-amber' : 'rv-dim');
+    st.className = data.nightplan_paused ? 'rv-amber' : data.nightplan_running ? 'rv' : (/^PLANNED/.test(data.nightplan_state) ? 'rv-amber' : 'rv-dim');
   }
   const run = document.getElementById('rcNightRun');
   if (run) run.textContent = data.nightplan_running ? '■ STOP' : '▶ RUN';
+  const pause = document.getElementById('rcNightPause');
+  if (pause) pause.textContent = data.nightplan_paused ? 'CONTINUE' : 'PAUSE';
   const sect = document.getElementById('rcNightSection');
   if (sect) sect.dataset.running = data.nightplan_running ? '1' : '0';
+  if (sect) sect.dataset.paused = data.nightplan_paused ? '1' : '0';
 
   const cands = data.nightplan_candidates || '';
   if (cands !== rcNightCandKey) {

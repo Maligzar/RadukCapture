@@ -45,6 +45,15 @@ struct NightPlanHooks {
     std::function<void(const std::string&)>       session;        // a Capture line in the session log
     std::function<void(ToastLevel, const std::string&)> notify;
     std::function<void()>                         changed;        // redraw
+    // Phase 163b: CONTINUE plans what is left again, from now.
+    std::function<raduk::core::NightPlan(const std::vector<std::string>& names)> replan;
+    std::function<std::vector<std::string>()>     ticked;         // the targets ticked now
+};
+
+// One line of the plan as shown: what has been done tonight, then what
+// is planned, then what was left out.
+struct NightRow {
+    std::string slew, runs, name, state, why;
 };
 
 class NightPlanController {
@@ -61,10 +70,20 @@ public:
         m_plan = p;
         m_havePlan = true;
         m_ran = false;
+        m_paused = false;
+        m_history.clear();
+        LogPlan(p, "planned");
+        char b[120];
+        std::snprintf(b, sizeof(b), "Night plan: %d visits, %d skipped", (int)p.visits.size(), (int)p.skipped.size());
+        Session(b);
+        Changed();
+    }
+
+    void LogPlan(const raduk::core::NightPlan& p, const char* verb) {
         char b[200];
-        std::snprintf(b, sizeof(b), "[NIGHTPLAN] planned %d visit%s, %d skipped, %s to %s: "
+        std::snprintf(b, sizeof(b), "[NIGHTPLAN] %s %d visit%s, %d skipped, %s to %s: "
                       "%d min of imaging, %d of it PRIME\n",
-                      (int)p.visits.size(), p.visits.size() == 1 ? "" : "s", (int)p.skipped.size(),
+                      verb, (int)p.visits.size(), p.visits.size() == 1 ? "" : "s", (int)p.skipped.size(),
                       Clock(p.startJd).c_str(), Clock(p.endJd).c_str(),
                       p.TotalImagingMin(), p.TotalPrimeMin());
         Line(b);
@@ -80,9 +99,6 @@ public:
         for (const auto& s : p.busy)
             Line("[NIGHTPLAN] kept clear: the pass of " + s.label + ", " + Clock(s.startJd) +
                  "-" + Clock(s.endJd) + "\n");
-        std::snprintf(b, sizeof(b), "Night plan: %d visits, %d skipped", (int)p.visits.size(), (int)p.skipped.size());
-        Session(b);
-        Changed();
     }
     bool HasPlan() const { return m_havePlan; }
     const raduk::core::NightPlan& Plan() const { return m_plan; }
@@ -91,6 +107,8 @@ public:
         m_plan = {};
         m_havePlan = false;
         m_ran = false;
+        m_paused = false;
+        m_history.clear();
         Changed();
     }
 
@@ -102,8 +120,12 @@ public:
         const double now = Jd();
         if (now >= m_plan.visits.back().endJd) { why = "every visit in the plan is over: plan again"; return false; }
         if (!runner.Start(m_plan, c, now)) { why = runner.Reason(); return false; }
+        m_cfg = c;
         m_shown = true;
         m_ran = true;
+        m_paused = false;
+        m_history.clear();
+        m_doneBefore = m_skippedBefore = 0;
         char b[200];
         std::snprintf(b, sizeof(b), "[NIGHTPLAN] running: %d visits, lock limit %.0f s\n",
                       runner.Total(), c.lockLimitSec);
@@ -116,6 +138,7 @@ public:
 
     void Stop(const char* why) {
         if (!runner.Running()) return;
+        m_paused = false;
         runner.Abort(why);
         Tick();     // carry out the stop now: close the runs, drop the lock
     }
@@ -130,6 +153,11 @@ public:
 
     // One line for the panel and Dash.
     std::string StateLine() const {
+        if (m_paused) {
+            const auto& v = runner.Visits()[(size_t)runner.Index()];
+            return std::string(m_pausedOn ? "PAUSED on " : "PAUSED before ") + v.name +
+                   ": CONTINUE plans the rest from the sky then";
+        }
         if (runner.Running()) {
             const auto& v = runner.Visits()[(size_t)runner.Index()];
             char b[200];
@@ -144,7 +172,14 @@ public:
         }
         if (m_ran) {
             const auto p = runner.State();
-            const char* how = p == Runner::Phase::Complete ? "DONE" : p == Runner::Phase::Aborted ? "STOPPED" : "FAILED";
+            if (p == Runner::Phase::Complete) {
+                // The whole night, across any CONTINUE, not the last stretch.
+                char b[96];
+                std::snprintf(b, sizeof(b), "DONE: %d visited, %d skipped",
+                              m_doneBefore + runner.Visited(), m_skippedBefore + runner.Skipped());
+                return b;
+            }
+            const char* how = p == Runner::Phase::Aborted ? "STOPPED" : "FAILED";
             return std::string(how) + ": " + runner.Reason();
         }
         if (!m_havePlan) return "NO PLAN";
@@ -173,8 +208,99 @@ public:
         return b;
     }
 
+    // ── Phase 163b: pause, and continue with the rest planned again ──
+    //
+    // PAUSE stops the plan's clock and nothing else: the runs, the lock and
+    // the mount are left as they are and are the operator's, to stay longer
+    // on a target or do something else. The ticks can be changed meanwhile.
+    //
+    // CONTINUE keeps what is done, counts the visit it was paused on as
+    // visited if its runs had started, and plans every ticked target not
+    // yet visited again from now: the windows from the sky as it is then,
+    // the slew, lock and focus before each visit, and the ticked passes.
+    bool Paused() const { return m_paused; }
+
+    bool Pause(std::string& why) {
+        if (!runner.Running()) { why = "the plan is not running"; return false; }
+        if (m_paused)          { why = "the plan is already paused"; return false; }
+        m_paused = true;
+        m_pausedPhase = runner.State();
+        m_pausedOn = m_pausedPhase != Runner::Phase::Waiting;
+        const auto& v = runner.Visits()[(size_t)runner.Index()];
+        Line(std::string("[NIGHTPLAN] paused ") + (m_pausedOn ? "on " : "before ") + v.name + " (" +
+             Runner::PhaseName(m_pausedPhase) + "): the plan's clock is stopped; the runs, the lock and "
+             "the mount are left as they are. CONTINUE plans the rest from the sky then\n");
+        Session("Night plan paused " + std::string(m_pausedOn ? "on " : "before ") + v.name);
+        Changed();
+        return true;
+    }
+
+    bool Continue(std::string& why) {
+        if (!m_paused) { why = "the plan is not paused"; return false; }
+        const auto& visits = runner.Visits();
+        const int at = runner.Index();
+        // What this stretch of the plan did stays in the history.
+        for (int i = 0; i < at && i < (int)visits.size(); ++i)
+            m_history.push_back(RowOf(visits[(size_t)i], VisitState(i)));
+        if (at < (int)visits.size()) {
+            const auto& v = visits[(size_t)at];
+            if (m_pausedPhase == Runner::Phase::Running) {
+                // Its runs started: it was visited, for as long as wanted.
+                if (m_hooks.runsRunning && m_hooks.runsRunning() && m_hooks.stopRuns)
+                    m_hooks.stopRuns("the night plan continues");
+                m_history.push_back(RowOf(v, "done: stayed on through a pause"));
+                ++m_doneBefore;
+            } else if (m_pausedPhase != Runner::Phase::Waiting) {
+                if (m_hooks.dropLock) m_hooks.dropLock();
+            }
+        }
+        m_doneBefore += runner.Visited();
+        m_skippedBefore += runner.Skipped();
+
+        // Every ticked target not yet visited tonight.
+        std::vector<std::string> pending;
+        const std::vector<std::string> ticks = m_hooks.ticked ? m_hooks.ticked() : std::vector<std::string>();
+        for (const auto& n : ticks) {
+            bool done = false;
+            for (const auto& h : m_history)
+                if (h.name == n && h.state.rfind("done", 0) == 0) { done = true; break; }
+            if (!done) pending.push_back(n);
+        }
+        m_paused = false;
+        Line("[NIGHTPLAN] continuing: " + std::to_string(pending.size()) + " ticked target" +
+             (pending.size() == 1 ? "" : "s") + " not yet visited, planned again from now\n");
+        raduk::core::NightPlan p;
+        if (!pending.empty() && m_hooks.replan) p = m_hooks.replan(pending);
+        m_plan = p;
+        LogPlan(p, "re-planned");
+        if (p.visits.empty()) {
+            runner.Close(pending.empty() ? "every ticked target is visited"
+                                         : "nothing left fits a GOOD or PRIME window");
+        } else if (!runner.Start(p, m_cfg, Jd())) {
+            runner.Close(runner.Reason().c_str());
+        }
+        char b[120];
+        std::snprintf(b, sizeof(b), "Night plan continued: %d visits re-planned", (int)p.visits.size());
+        Session(b);
+        Changed();
+        if (!runner.Running()) { m_shown = false; Ended(); }
+        return true;
+    }
+
+    // What has been done tonight, then the plan, then what it left out.
+    std::vector<NightRow> Rows() const {
+        std::vector<NightRow> out = m_history;
+        if (!m_havePlan) return out;
+        for (int i = 0; i < (int)m_plan.visits.size(); ++i)
+            out.push_back(RowOf(m_plan.visits[(size_t)i], VisitState(i)));
+        for (const auto& s : m_plan.skipped)
+            out.push_back({"--", "--", s.name, "not planned", s.why});
+        return out;
+    }
+
     // From the 500 ms readout.
     void Tick() {
+        if (m_paused) return;          // the clock is stopped
         if (!runner.Running() && !m_shown) return;
 
         Runner::Inputs in;
@@ -281,6 +407,10 @@ private:
         Session("Night plan: " + name + " skipped: " + why);
     }
 
+    NightRow RowOf(const raduk::core::NightVisit& v, const std::string& state) const {
+        return {Clock(v.slewJd), Clock(v.imageJd) + "-" + Clock(v.endJd), v.name, state, v.Why()};
+    }
+
     void Ended() {
         const auto p = runner.State();
         const char* how = p == Runner::Phase::Complete ? "finished" : p == Runner::Phase::Aborted ? "stopped" : "FAILED";
@@ -289,7 +419,8 @@ private:
         const bool done = p == Runner::Phase::Complete;
         const std::string why = done ? std::string() : " (" + runner.Reason() + ")";
         char b[300];
-        std::snprintf(b, sizeof(b), "Night plan %s: %d visited, %d skipped", how, runner.Visited(), runner.Skipped());
+        std::snprintf(b, sizeof(b), "Night plan %s: %d visited, %d skipped", how,
+                      m_doneBefore + runner.Visited(), m_skippedBefore + runner.Skipped());
         Line("[NIGHTPLAN] plan " + std::string(b).substr(11) + why + "\n");
         Session(std::string(b) + why);
         Notify(p == Runner::Phase::Complete ? ToastLevel::Info : ToastLevel::Warn,
@@ -310,6 +441,12 @@ private:
     bool           m_ran = false;
     bool           m_shown = false;
     std::string    m_busyShown;
+    Runner::Config m_cfg;
+    bool           m_paused = false;
+    bool           m_pausedOn = false;          // on a target, not between two
+    Runner::Phase  m_pausedPhase = Runner::Phase::Idle;
+    std::vector<NightRow> m_history;            // before the last CONTINUE
+    int            m_doneBefore = 0, m_skippedBefore = 0;
 };
 
 } // namespace raduk::app

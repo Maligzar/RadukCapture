@@ -20,6 +20,7 @@
 // ============================================================
 
 #include "core/NightPlan.h"
+#include "app/NightPlanController.h"   // phase 163b: pause and continue
 
 #include <cmath>
 #include <cstdio>
@@ -452,6 +453,110 @@ int main() {
         in.nowJd = sec(10, 40); Check(r.Tick(in).kind == A::None, "still no frame rate at the ROI: waits");
         in.framesFlowing = true;
         in.nowJd = sec(10, 41); Check(r.Tick(in).kind == A::StartRuns, "frames flowing, locked 3 s or more: RUNS");
+    }
+
+    // ── Phase 163b: pause, stay, change the ticks, continue ──
+    printf("\n22. PAUSE stays on a target; CONTINUE plans the rest again from now\n");
+    {
+        raduk::app::RecordingUiSink ui;
+        raduk::app::NightPlanController ctl(ui);
+        double now = Jd(10);
+        bool runs = false;
+        int stops = 0;
+        std::vector<std::string> ticks = {"Kochab", "Pherkad"};
+        std::vector<std::string> asked;
+        raduk::app::NightPlanHooks h;
+        h.jdNow = [&]() { return now; };
+        h.altNow = [](const std::string&) { return 50.0; };
+        h.slew = [](const std::string&, std::string&) { return true; };
+        h.mountSlewing = []() { return false; };
+        h.startLock = [](std::string&) { return true; };
+        h.locked = []() { return true; };
+        h.startRuns = [&](std::string&) { runs = true; return true; };
+        h.runsRunning = [&]() { return runs; };
+        h.stopRuns = [&](const char*) { runs = false; ++stops; };
+        h.runsAborted = []() { return false; };
+        h.ticked = [&]() { return ticks; };
+        // A re-plan from now: one visit a name, back to back, as the
+        // planner would place them on a clear sky.
+        h.replan = [&](const std::vector<std::string>& names) {
+            asked = names;
+            NightPlan p;
+            p.startJd = now;
+            double t = now;
+            for (const auto& n : names) {
+                NightVisit v; v.name = n; v.slewJd = t; v.imageJd = t + 7 / 1440.0;
+                v.endJd = t + 27 / 1440.0; v.goodMin = 20;
+                p.visits.push_back(v);
+                t = v.endJd;
+            }
+            return p;
+        };
+        ctl.SetHooks(h);
+        ctl.SetPlan(twoVisits());
+        R::Config c; c.afterLockSec = 0.0;
+        std::string why;
+        Check(ctl.Start(c, why), "the plan runs", why);
+        // Kochab: slew, settle, lock, runs.
+        for (int s = 0; s <= 60 && !runs; s += 1) { now = sec(10, s); ctl.Tick(); }
+        Check(runs && ctl.CurrentTarget() == "Kochab", "Kochab's runs are going");
+
+        Check(ctl.Pause(why), "PAUSE", why);
+        Check(ctl.StateLine().rfind("PAUSED on Kochab", 0) == 0, "the state says paused on Kochab", ctl.StateLine());
+        Check(!ctl.Pause(why), "a second PAUSE is refused", why);
+        now = Jd(45);                      // Kochab's slot ended at 37
+        ctl.Tick();
+        Check(runs && stops == 0, "past its slot, the runs are left going: the clock is stopped");
+
+        ticks.push_back("Vega");           // the plan changed during the pause
+        now = Jd(50);
+        Check(ctl.Continue(why), "CONTINUE", why);
+        Check(stops == 1 && !runs, "Kochab's runs are stopped as the plan moves on");
+        Check(asked.size() == 2 && asked[0] == "Pherkad" && asked[1] == "Vega",
+              "re-planned: every ticked target not yet visited, Vega included",
+              asked.size() > 1 ? asked[0] + ", " + asked[1] : "");
+        Check(ctl.runner.Running() && ctl.runner.Total() == 2, "and the plan runs on with two visits");
+        Check(ctl.runner.Visits()[0].slewJd >= Jd(50) - 1e-9, "the new visits start from now, not from the old plan");
+        const auto rows = ctl.Rows();
+        Check(rows.size() == 3 && rows[0].name == "Kochab" && rows[0].state == "done: stayed on through a pause",
+              "Kochab stays in the list, done", rows.empty() ? "" : rows[0].state);
+        Check(ui.Saw("[NIGHTPLAN] re-planned 2 visits"), "the re-plan is in the log");
+
+        // Paused before a visit started: nothing to stop, nothing counted.
+        for (int s = 0; s < 5; ++s) { now = Jd(50) + s / 86400.0; ctl.Tick(); }
+        now = Jd(51);
+        ctl.Tick();
+        // Run Pherkad and Vega to the end.
+        for (int m = 0; m < 70 && ctl.runner.Running(); ++m) {
+            for (int s = 0; s < 60; s += 2) { now = Jd(51 + m) + s / 86400.0; ctl.Tick(); }
+            if (runs && m % 10 == 9) runs = false;   // the runs finish by themselves
+        }
+        Check(!ctl.runner.Running() && ui.Saw("[NIGHTPLAN] plan finished: 3 visited, 0 skipped"),
+              "the night ends with all three counted");
+        Check(ctl.StateLine() == "DONE: 3 visited, 0 skipped", "and the state line counts the whole night",
+              ctl.StateLine());
+    }
+
+    printf("\n23. CONTINUE with nothing left ends the plan\n");
+    {
+        raduk::app::RecordingUiSink ui;
+        raduk::app::NightPlanController ctl(ui);
+        double now = Jd(5);
+        raduk::app::NightPlanHooks h;
+        h.jdNow = [&]() { return now; };
+        h.ticked = []() { return std::vector<std::string>{}; };   // everything unticked
+        h.replan = [](const std::vector<std::string>&) { return NightPlan{}; };
+        ctl.SetHooks(h);
+        ctl.SetPlan(twoVisits());
+        R::Config c;
+        std::string why;
+        ctl.Start(c, why);
+        Check(ctl.Pause(why) && ctl.StateLine().rfind("PAUSED before Kochab", 0) == 0,
+              "paused while waiting for the first", ctl.StateLine());
+        Check(ctl.Continue(why) && !ctl.runner.Running(), "CONTINUE with nothing ticked ends it");
+        Check(ui.Saw("plan finished: 0 visited, 0 skipped (every ticked target is visited)") ||
+              ui.Saw("plan finished: 0 visited, 0 skipped"), "and says so");
+        Check(!ctl.Continue(why), "CONTINUE when not paused is refused", why);
     }
 
     printf("\n%s: %d failure(s)\n", g_fail ? "FAILED" : "PASSED", g_fail);

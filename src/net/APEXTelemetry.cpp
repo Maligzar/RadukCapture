@@ -84,6 +84,7 @@ std::string APEXTelemetry::ToJSON() const {
     j << "\"moonmap_selected\":" << jsonStr(moonmap_selected) << ",";
     j << "\"moonmap_cells\":"    << jsonStr(moonmap_cells) << ",";
     j << "\"nightplan_running\":"    << (nightplan_running ? "true" : "false") << ",";
+    j << "\"nightplan_paused\":"     << (nightplan_paused ? "true" : "false") << ",";
     j << "\"nightplan_state\":"      << jsonStr(nightplan_state) << ",";
     j << "\"nightplan_target\":"     << jsonStr(nightplan_target) << ",";
     j << "\"nightplan_ticked\":"     << jsonStr(nightplan_ticked) << ",";

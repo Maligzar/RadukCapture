@@ -120,6 +120,31 @@ Moon map, a person recording) is skipped with that reason.
 Every step and skip goes to the session log with its reason, and to
 `raduk_log.txt` as `[NIGHTPLAN]` lines.
 
+## Pause and continue (163b)
+
+Asked for by the owner the same evening: "the ability to pause the plan and
+then continue if I want to stay longer on a spot or change the plan during
+the night, when this happens the downstream must calculate based on sky and
+slew availability."
+
+- **PAUSE** stops the plan's clock and nothing else. The runs, the lock and
+  the mount are left as they are, and are the operator's. A visit can run
+  past its slot for as long as wanted. The ticks can be changed. PLAN is
+  refused while paused, because CONTINUE does it.
+- **CONTINUE** keeps what is done. The visit it was paused on counts as
+  visited if its runs had started; its runs are stopped if still going. A
+  visit paused before its runs started is planned again.
+- Then every ticked target not yet visited tonight is **planned again from
+  now** by the same rules as PLAN: windows from the sky as it is then, the
+  slew, lock and focus before each visit, the ticked passes kept clear. A
+  target skipped earlier (no lock, say) gets another chance.
+- Nothing left, or nothing that fits a window: the plan ends and says why.
+- The list keeps what was done above the new plan. STOP works while paused.
+
+Slew time is the fixed overhead (`NightPlanSlewSec`), the same as for the
+first plan, not worked out from where the tube is pointing. 90 s is a
+starting figure, not measured on this mount.
+
 ## Where it lives
 
 | Piece | File |
