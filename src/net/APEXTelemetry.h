@@ -125,6 +125,17 @@ struct APEXTelemetry {
     std::string moonmap_selected;
     std::string moonmap_cells;
 
+    // ── Phase 163: the night plan for planets and stars. `nightplan_rows`
+    // is one row a visit, then one a target not planned, joined by ';';
+    // each row is "slew|runs|target|why|state". The two lists are names
+    // joined by '|'. Additive: an older dashboard ignores them.
+    bool        nightplan_running = false;
+    std::string nightplan_state;
+    std::string nightplan_target;
+    std::string nightplan_ticked;
+    std::string nightplan_candidates;
+    std::string nightplan_rows;
+
     // ── Session events (cleared after each broadcast) ─────────
     std::vector<SessionEvent> session_events;
 
