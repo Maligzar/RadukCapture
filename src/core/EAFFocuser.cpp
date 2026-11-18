@@ -68,6 +68,22 @@ bool EAFFocuser::Open(int index) {
     return true;
 }
 
+// Phase 157.3: the EAF's firmware, which nothing logged before.
+DeviceIdentity EAFFocuser::Identity() const {
+    DeviceIdentity d;
+    d.model = m_info.Name;
+    d.sdk   = TidyVersion(EAFGetSDKVersion());
+    if (m_isOpen) {
+        unsigned char ma = 0, mi = 0, bu = 0;
+        if (EAFGetFirmwareVersion(m_focuserId, &ma, &mi, &bu) == EAF_SUCCESS)
+            d.firmware = VersionString(ma, mi, bu);
+        EAF_SN sn{};
+        if (EAFGetSerialNumber(m_focuserId, &sn) == EAF_SUCCESS)
+            d.serial = SerialHex(sn.id, (int)sizeof(sn.id));
+    }
+    return d;
+}
+
 void EAFFocuser::Close() {
     if (!m_isOpen) return;
 

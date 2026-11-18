@@ -19,7 +19,14 @@ Phase 157.3. This is the compatibility matrix that phases 159 and 160 (QHY, Play
 - The camera's name: the session log `logs/session_20261108_014110.log` ("Opened: ZWO ASI678MC"; header "Telescope: Celestron 8SE Camera: ZWO ASI678MC").
 - The pixel size and Bayer pattern: each recording's observation record.
 - The SDK versions: the DLLs in `build/Release` (`ASICamera2.dll` 1.41.0.0 and `EAF_focuser.dll` 1.7.7.0, both dated 2026-10-09, before the night).
-- **Firmware is not recorded.** Neither the app nor the session log writes the camera's or the EAF's firmware version. Owed: log both at connect, so the next row has them.
+- **Firmware is not recorded for H1.** Up to 3.3.21 nothing wrote the camera's or the EAF's firmware.
+- **From 3.3.22 the session log has an `Identity:` line for each device at connect:** model, firmware, SDK and serial.
+  - The EAF reports its firmware and serial.
+  - The NexStar reports its hand-control version.
+  - ZWO's camera SDK has no firmware call, so a ZWO camera always reads "firmware not reported". The serial and SDK version are still written.
+  - An ASCOM mount gives only its driver's name.
+  - Anything a device does not report reads "not reported", never a guess.
+  - The next row on this rig can take these straight from the log.
 
 ## 2. Measured on hardware
 
@@ -62,7 +69,7 @@ Each of these columns is empty because nothing has measured it. It is not empty 
 | Full-sensor frame rate and MB/s over USB | Every real run so far was exposure-limited | 146.2: the owner's indoor runs, capped camera at 0.1 ms |
 | Autofocus repeatability | No sweep has run on the sky (F9) | 133.3 or a 156 sky run |
 | Pointing error | The app has never measured it on this mount. The owner saw it about 8° off on 2026-11-07 (F12), but that is not a measurement | 133.4: re-align, then the pointing map's lock solves (Phase 123) |
-| Firmware versions | Not logged | Owed: log at connect |
+| Firmware versions | H1 ran before 3.3.22 logged them | The session log's `Identity:` lines on the next run (the EAF's and the hand control's; ZWO cameras do not report one) |
 
 ## 3. Measured on the emulator
 These rows test the app, not the hardware. They are kept so a regression shows against them.

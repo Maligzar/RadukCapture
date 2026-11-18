@@ -37,6 +37,7 @@
 // ============================================================
 
 #include <string>
+#include "DeviceIdentity.h"
 #include "FocuserGuard.h"
 
 namespace raduk::core {
@@ -116,6 +117,8 @@ public:
 
     // ── Identity ───────────────────────────────────────────────
     virtual int FocuserId() const = 0;
+    // Phase 157.3: model, firmware, SDK and serial (DeviceIdentity.h).
+    virtual DeviceIdentity Identity() const { return {}; }
 };
 
 } // namespace raduk::core

@@ -1019,6 +1019,12 @@ public:
         return ok;
     }
     CameraInfo Describe() const override { return asimap::Describe(m_info); }
+    DeviceIdentity Identity() const override {   // phase 157.3
+        DeviceIdentity d;
+        d.model = Describe().name;
+        d.firmware = d.sdk = "emulated";
+        return d;
+    }
     float      GetTemperatureC() const override { return Temperature(); }
 
 private:

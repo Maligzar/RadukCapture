@@ -115,7 +115,13 @@ These are left to the phases that own them, not duplicated here:
   - The intervals jitter about 0.1 ms over more than 1,300 distinct values a file, so they are the camera's real times, not a grid.
   - The fourth file holds one frame. The night's 37 Saturn files are gone.
 - **The locks that night (5 made, 4 ended by the guider) ran on 3.0.0, before #105's fixes,** and are recorded as such.
-- **Found, owed:** neither the camera's nor the EAF's firmware is logged anywhere, so table 1 says "not recorded". The connect path should log both.
+- **Found and fixed: nothing logged the devices' firmware,** so table 1 says "not recorded" for that night. The mount's hand-control version reached only the core log. Now each device writes an `Identity:` line to the session log at connect, from startup and from a reconnect: model, firmware, SDK and serial (`src/core/DeviceIdentity.h`, tested by `tests/device_identity.cpp`).
+  - EAF: `EAFGetFirmwareVersion` and its serial.
+  - ZWO camera: the SDK version and serial. ASICamera2 has no firmware call, so it reads "not reported".
+  - NexStar: the hand-control version.
+  - ASCOM: the driver's name only.
+  - The emulators say "emulated".
+  - The smoke scenario shows all three lines. The hardware path is built, but has not run on the rig yet.
 
 ## Rules
 Phase 149's rules hold, and rule 7: nothing here needs the internet. CI's Python step installs astropy from PyPI at build time, which is CI's network, not the app's.

@@ -977,6 +977,16 @@ static int RunApp(bool useEmulator) {
         std::string donePath;
     } moonRec;
 
+    // Phase 157.3: each device's model, firmware, SDK and serial, in the
+    // session log a night is read from (docs/QUALIFICATION.md).
+    auto logIdentity = [&](char kind, const raduk::core::DeviceIdentity& id) {
+        const std::string d = raduk::core::DescribeIdentity(id);
+        Log("[INIT] Identity (%c): %s\n", kind, d.c_str());
+        if (kind == 'C')      slog.Camera("Identity: %s", d.c_str());
+        else if (kind == 'F') slog.Focuser("Identity: %s", d.c_str());
+        else                  slog.Mount("Identity: %s", d.c_str());
+    };
+
     auto& cam = core.cam;
     if (!cam.Open(0)) {
         if (!useEmulator)
@@ -986,6 +996,7 @@ static int RunApp(bool useEmulator) {
     } else {
         Log("[INIT] Camera: %s\n", cam.Name().c_str());
         slog.Camera("Opened: %s", cam.Name().c_str());
+        logIdentity('C', cam.Identity());
         // Phase 149.0: the camera describes itself; remember it, so the
         // plate scale, the full-sensor size and every label follow it.
         const CameraInfo ci = cam.Describe();
@@ -1107,6 +1118,7 @@ static int RunApp(bool useEmulator) {
 #ifdef RADUK_EMULATOR
     focuser.Open(0);
     Log("[INIT] EAF emulated — pos=%d\n", focuser.GetPosition());
+    logIdentity('F', focuser.Identity());
     {
         // RADUK_EMU_FOCUS_SLACK=N: N steps of knob slack, so the same step
         // number reached from opposite sides is two focus positions, as
@@ -1123,8 +1135,10 @@ static int RunApp(bool useEmulator) {
         // just skip; focuser stays closed and all focuser calls are guarded by IsOpen()
         Log("[INIT] EAF: skipped (emulator mode)\n");
     } else if (EAFFocuser::GetCount() > 0) {
-        if (focuser.Open(0)) Log("[INIT] EAF OK pos=%d\n", focuser.GetPosition());
-        else Log("WARNING: EAF open failed.\n");
+        if (focuser.Open(0)) {
+            Log("[INIT] EAF OK pos=%d\n", focuser.GetPosition());
+            logIdentity('F', focuser.Identity());
+        } else Log("WARNING: EAF open failed.\n");
     }
 #endif // RADUK_EMULATOR
 
@@ -1181,6 +1195,7 @@ static int RunApp(bool useEmulator) {
         mountPtr.reset(em);
         startInRCControl = true;
         Log("[INIT] Mount: emulated\n");
+        logIdentity('M', {"NexStar emulator", "emulated", "emulated", ""});
     }
 #else
     if (useEmulator) {
@@ -1219,6 +1234,10 @@ static int RunApp(bool useEmulator) {
                     Log("[INIT] Mount: ASCOM (%s) - CPWI in control\n", ascomProgId.c_str());
                     slog.System("Mount: CPWI active via %s", ascomProgId.c_str());
                 }
+                // The ASCOM interface does not report the mount's
+                // firmware (GetVersion here is a fixed 3.0), so only the
+                // driver is named.
+                logIdentity('M', {"ASCOM " + ascomProgId, "", "", ""});
             } else {
                 if (am->IsSimulator())
                     Log("[INIT] ASCOM → simulator discovered, not named; ignoring. "
@@ -1243,6 +1262,16 @@ static int RunApp(bool useEmulator) {
                 Log("[INIT] Mount: NexStar direct (%s) — RC in control\n",
                     scan.port.c_str());
                 slog.System("Mount: RC direct via %s", scan.port.c_str());
+                {
+                    int ma = 0, mi = 0;
+                    raduk::core::DeviceIdentity mid{"Celestron NexStar hand control", "", "", ""};
+                    if (nm->GetVersion(ma, mi)) {
+                        char v[32];
+                        snprintf(v, sizeof(v), "%d.%d", ma, mi);
+                        mid.firmware = v;
+                    }
+                    logIdentity('M', mid);
+                }
                 g_mountForCrash = nm;
                 // Once per process, not once per connect. atexit
                 // handlers accumulate, and this lambda can now run
@@ -4004,6 +4033,7 @@ static int RunApp(bool useEmulator) {
         if (!cam.IsOpen()) {
             if (cam.Open(0)) {
                 Log("[HW] Camera: %s\n", cam.Name().c_str());
+                logIdentity('C', cam.Identity());
                 gotoPanel.SetPixelSizeUm(cam.Describe().pixelSizeUm);
                 // Phase 149.0: a different camera may have been plugged in.
                 {
@@ -4049,8 +4079,10 @@ static int RunApp(bool useEmulator) {
             if (!useEmulator && EAFFocuser::GetCount() > 0) focuser.Open(0);
 #endif
             configureFocuser();
-            if (focuser.IsOpen())
+            if (focuser.IsOpen()) {
                 Log("[HW] EAF: pos=%d\n", focuser.GetPosition());
+                logIdentity('F', focuser.Identity());
+            }
             else
                 Log("[HW] EAF: not found\n");
         }
