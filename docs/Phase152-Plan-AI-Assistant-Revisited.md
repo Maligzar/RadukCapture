@@ -59,6 +59,9 @@ Specific model names are not fixed here. Local models change month to month, so 
 - **152.4 Widen the scope, category by category.** Only for categories the model in use passed. The safety section stays forced and never depends on the model, as P3.6 required.
 - **152.5 The advisory loop** (the one-sentence advice every few minutes) uses whichever model is answering, and is tested in both scenarios: does it phrase the app's own concerns correctly, and does it stay silent when there are none?
 
+## Rule: the assistant advises and never acts (written down 2026-11-17)
+True of the code today: the assistant has no tool calls and no path to a device. It is written down here because a stronger model is exactly when giving it tools becomes tempting. Whatever model answers, the assistant may read the session's context and say things. It does not slew, focus, start or stop a recording, change a camera setting, or override a safety stop. A suggestion it makes becomes an action only through a control the owner presses. Any stage that would change this comes back to the owner first.
+
 ## Testing, both ways (the owner's requirement)
 - Every stage that touches behaviour is checked twice, with the preferred model on the 4090 PC and with the fallback on StarMachine.
 - Plus the switch between them: the preferred host goes away mid-session (the PC is turned off) and the fallback takes the next question; it comes back and is used again.

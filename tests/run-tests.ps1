@@ -43,7 +43,7 @@ $Tests = @(
     @{ Name = "hardware_link";     Sources = @() }
     @{ Name = "ws_protocol";       Sources = @("src\net\APEXTelemetry.cpp"); Asan = $true }
     @{ Name = "ws_fuzz";           Sources = @("src\net\APEXTelemetry.cpp"); Asan = $true }
-    @{ Name = "ws_server_loopback"; Sources = @("src\net\WebSocketServer.cpp"); Asan = $true }
+    @{ Name = "ws_server_loopback"; Sources = @("src\net\WebSocketServer.cpp", "src\net\APEXTelemetry.cpp"); Asan = $true }
     @{ Name = "preview_frame";     Sources = @("src\net\PreviewStreamer.cpp") }
     @{ Name = "dashboard_launch";  Sources = @() }
     @{ Name = "telemetry_night";   Sources = @("src\net\APEXTelemetry.cpp") }
