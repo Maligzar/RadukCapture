@@ -1205,6 +1205,27 @@ body { background:var(--d-void); color:var(--d-text); font-family:'Barlow Conden
         </div>
       </div>
 
+      <!-- Phase 163: the night plan for planets and stars. The same commands
+           as the GoTo panel's Tonight tab: tick targets, PLAN, then RUN.
+           Each visit is placed while its target is in GOOD (45-60 deg) or
+           PRIME (60 deg and up), around the passes ticked on Passes. -->
+      <div class="rc-ctrl-section" style="padding-bottom:6px" id="rcNightSection">
+        <div class="rc-ctrl-section-title">NIGHT PLAN</div>
+        <div class="rc-row"><span class="rk">STATE</span><span class="rv-dim" id="rcNightState">--</span></div>
+        <div class="rc-btn-row" style="padding:0 0 4px">
+          <select id="rcNightPick" title="Planets and stars that reach 45 deg before dawn" style="flex:2;min-width:0;background:var(--d-panel);color:var(--d-text);border:1px solid var(--d-border);border-radius:4px"></select>
+          <button class="rc-ctrl-btn cyan" id="rcNightTick" onclick="rcNightTickPicked()" title="Tick the picked target for the plan">TICK</button>
+        </div>
+        <div id="rcNightTicked" style="display:flex;flex-wrap:wrap;gap:4px;margin:2px 0 6px"></div>
+        <div class="rc-btn-row" style="padding:0 0 4px">
+          <button class="rc-ctrl-btn amber" id="rcNightPlan"  onclick="rcSendCmd('nightplan','PLAN')"  title="Place each ticked target in its GOOD or PRIME time">PLAN</button>
+          <button class="rc-ctrl-btn green" id="rcNightRun"   onclick="rcSendCmd('nightplan','RUN')"   title="Run the plan, or stop it" style="flex:2">&#9654; RUN</button>
+          <button class="rc-ctrl-btn cyan"  id="rcNightPause" onclick="rcSendCmd('nightplan','PAUSE')" title="Pause to stay on the target as long as you like; CONTINUE plans the rest again from the sky then">PAUSE</button>
+          <button class="rc-ctrl-btn red"   id="rcNightClear" onclick="rcSendCmd('nightplan','CLEAR')" title="Untick everything and forget the plan">CLEAR</button>
+        </div>
+        <div id="rcNightRows" style="font-size:11px;line-height:1.35"></div>
+      </div>
+
       <!-- Mount jog -->
       <div class="rc-ctrl-section" style="padding-bottom:6px">
         <div class="rc-ctrl-section-title">MOUNT JOG</div>
@@ -2467,6 +2488,7 @@ function rcHandleData(data) {
     if (data.seeing_score != null) rcUpdateSeeing(data.seeing_score, data.seeing_rms);
     rcSyncControlSliders(data);
     rcUpdateMoonMap(data);   // phase 162
+    rcUpdateNightPlan(data); // phase 163
     // Session events
     if (data.session_events && Array.isArray(data.session_events)) {
       data.session_events.forEach(ev => rcLogSession(ev.msg, ev.type || 'info'));
@@ -2569,6 +2591,81 @@ function rcUpdateMoonMap(data) {
     }
   }
   grid.innerHTML = html;
+}
+
+// ── Phase 163: the night plan ───────────────────────────────
+// `nightplan_rows` is "slew|runs|target|why|state" rows joined by ';'.
+function rcNightEsc(t) {
+  return String(t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function rcNightId(name) { return String(name).replace(/[^A-Za-z0-9]/g, '_'); }
+function rcNightTickPicked() {
+  const sel = document.getElementById('rcNightPick');
+  if (sel && sel.value) rcSendCmd('nightplan', 'TICK ' + sel.value);
+}
+let rcNightCandKey = null, rcNightTickKey = null, rcNightRowsKey = null;
+function rcUpdateNightPlan(data) {
+  if (data.nightplan_state === undefined) return;   // an older app
+  const st = document.getElementById('rcNightState');
+  if (st) {
+    st.textContent = (data.nightplan_state || '--').toUpperCase();
+    st.className = data.nightplan_paused ? 'rv-amber' : data.nightplan_running ? 'rv' : (/^PLANNED/.test(data.nightplan_state) ? 'rv-amber' : 'rv-dim');
+  }
+  const run = document.getElementById('rcNightRun');
+  if (run) run.textContent = data.nightplan_running ? '■ STOP' : '▶ RUN';
+  const pause = document.getElementById('rcNightPause');
+  if (pause) pause.textContent = data.nightplan_paused ? 'CONTINUE' : 'PAUSE';
+  const sect = document.getElementById('rcNightSection');
+  if (sect) sect.dataset.running = data.nightplan_running ? '1' : '0';
+  if (sect) sect.dataset.paused = data.nightplan_paused ? '1' : '0';
+
+  const cands = data.nightplan_candidates || '';
+  if (cands !== rcNightCandKey) {
+    rcNightCandKey = cands;
+    const sel = document.getElementById('rcNightPick');
+    if (sel) {
+      const keep = sel.value;
+      const names = cands ? cands.split('|') : [];
+      sel.innerHTML = names.length
+        ? names.map(n => `<option value="${rcNightEsc(n)}">${rcNightEsc(n)}</option>`).join('')
+        : '<option value="">nothing reaches 45 deg</option>';
+      if (names.includes(keep)) sel.value = keep;
+    }
+  }
+
+  const ticked = data.nightplan_ticked || '';
+  if (ticked !== rcNightTickKey) {
+    rcNightTickKey = ticked;
+    const box = document.getElementById('rcNightTicked');
+    if (box) {
+      const names = ticked ? ticked.split('|') : [];
+      box.innerHTML = names.map(n =>
+        `<button class="rc-ctrl-btn cyan" style="flex:none;padding:2px 6px" id="rcNightT_${rcNightId(n)}" ` +
+        `data-name="${rcNightEsc(n)}" title="Untick ${rcNightEsc(n)}" ` +
+        `onclick="rcSendCmd('nightplan','UNTICK ' + this.dataset.name)">${rcNightEsc(n)} ✕</button>`).join('');
+    }
+  }
+
+  const rows = data.nightplan_rows || '';
+  const key = rows + '#' + data.nightplan_target;
+  if (key !== rcNightRowsKey) {
+    rcNightRowsKey = key;
+    const box = document.getElementById('rcNightRows');
+    if (box) {
+      const list = rows ? rows.split(';') : [];
+      box.innerHTML = list.map((r, i) => {
+        const [slew, runs, name, why, state] = r.split('|');
+        const planned = state !== 'not planned';
+        const active = planned && name === data.nightplan_target;
+        const cls = !planned ? 'rv-dim' : /^done/.test(state) ? 'rv-green' : /^skipped/.test(state) ? 'rv-amber' : 'rv';
+        return `<div id="rcNightRow_${i}" data-name="${rcNightEsc(name)}" data-state="${rcNightEsc(state)}" ` +
+               `style="padding:2px 0;border-bottom:1px solid var(--d-border)${active ? ';box-shadow:inset 3px 0 0 var(--d-accent)' : ''}">` +
+               `<span class="${cls}">${rcNightEsc(name)}</span> ` +
+               (planned ? `<span class="rk">${rcNightEsc(runs)}</span>` : '') +
+               `<div class="rk" style="font-size:10px">${rcNightEsc(why)} &middot; ${rcNightEsc(state)}</div></div>`;
+      }).join('') || '<div class="rk">tick planets or stars, then PLAN</div>';
+    }
+  }
 }
 
 // ── Capture display ─────────────────────────────────────────
