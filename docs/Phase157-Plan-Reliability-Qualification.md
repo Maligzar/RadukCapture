@@ -107,6 +107,16 @@ These are left to the phases that own them, not duplicated here:
   - 1 unexplained frame: a single timestamp gap in one of 62 runs. To be judged on the rerun.
 - **The 4-hour soak rerun with the fix (`soak_20261117_055136`), PASS:** 26 locks, 0 refused; 52 sweeps, 0 with the frame changed, and the sequence waited for acquisition 26 times; 51 of 51 recordings pass the independent reader; 0 unexplained frames. Private memory flat (-15.6 MB/h over the later half, quarter medians 471.8 and 479.9 MB; peaks to 1142 MB are the wide windows), handles and threads flat. Neither the memory step nor the unexplained frame came back. It ran from a worktree with `RADUK_DATA_ROOT` set to it, so its baseline (472 MB, 126 threads) is not directly comparable with the first try's (617 MB, 184 threads).
 
+## 157.3, as built (2026-11-17, 3.3.22)
+- **[`QUALIFICATION.md`](QUALIFICATION.md)** has three tables: the hardware configurations run, what was measured on them, and what was measured on the emulator. Hardware and emulator rows are kept apart. A figure nothing has measured is written as not measured, with where it will come from.
+- **The 146.2 indoor runs and a 156 sky run have not happened yet,** so the hardware rows come from the one real night whose files are still on the disk:
+  - Four Uranus SERs from 2026-11-08 (converted by `fits2ser` from the app's FITS, so each frame's time is the FITS `FRAMES` table's `MJD_MID`).
+  - `ser_drop_audit` on three of them: 7105 frames at 51.1 fps, 8571 and 4698 at 37.0 fps. All exposure-limited, 0 dropped by the SDK or the buffer, 0 timestamp gaps.
+  - The intervals jitter about 0.1 ms over more than 1,300 distinct values a file, so they are the camera's real times, not a grid.
+  - The fourth file holds one frame. The night's 37 Saturn files are gone.
+- **The locks that night (5 made, 4 ended by the guider) ran on 3.0.0, before #105's fixes,** and are recorded as such.
+- **Found, owed:** neither the camera's nor the EAF's firmware is logged anywhere, so table 1 says "not recorded". The connect path should log both.
+
 ## Rules
 Phase 149's rules hold, and rule 7: nothing here needs the internet. CI's Python step installs astropy from PyPI at build time, which is CI's network, not the app's.
 
