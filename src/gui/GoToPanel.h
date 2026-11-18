@@ -242,6 +242,8 @@ public:
     // Phase 13: Survey — called by main.cpp to deliver a frame for plate-solving
     // Wire: window.SetSurveyFrameCallback([&]{ gotoPanel.SurveyFrameReady(data,w,h); });
     void SetSurveyFrameCallback(std::function<void()> cb) { m_onSurveyNeedFrame = cb; }
+    // Phase 162b: MOON MAP beside GOTO SELECTED opens the Moon map.
+    void SetMoonMapCallback(std::function<void()> cb) { m_onMoonMap = cb; }
 
     // Call from main.cpp when a fresh frame is ready during a survey solve request
     void SurveyProvideFrame(const uint8_t* data, uint32_t w, uint32_t h,
@@ -1079,10 +1081,11 @@ private:
         ID_LBL_TONIGHT_HDR = 2023,  // Phase 14: header label
         ID_BTN_SURVEY      = 2030,  // Phase 13: start/stop sky survey
         ID_LBL_SURVEY      = 2031,  // Phase 13: survey progress label
-        ID_BTN_NIGHT_PLAN  = 2034,  // Phase 163: the Tonight tab's plan
-        ID_BTN_NIGHT_RUN   = 2035,
-        ID_LIST_NIGHT_PLAN = 2036,
-        ID_LBL_NIGHT_STATE = 2037,
+        ID_BTN_MOON_MAP    = 2034,  // Phase 162b: open the Moon map
+        ID_BTN_NIGHT_PLAN  = 2038,  // Phase 163: the Tonight tab's plan
+        ID_BTN_NIGHT_RUN   = 2039,
+        ID_LIST_NIGHT_PLAN = 2040,
+        ID_LBL_NIGHT_STATE = 2041,
     };
 
     // ── Phase 14: Session Planner ──────────────────────────────
@@ -1393,7 +1396,12 @@ private:
         place(m_listObjects, x, y, cw, listH);
         y += listH + 6;
 
-        place(m_btnGoTo, x, y, cw, BH + 4);           y += BH + 4 + 8;
+        {
+            const int mw = cw / 3;
+            place(m_btnGoTo,    x, y, cw - mw - 4, BH + 4);
+            place(m_btnMoonMap, x + cw - mw, y, mw, BH + 4);
+        }
+        y += BH + 4 + 8;
         place(m_hdrManual, x, y, cw, SH);             y += SH + 4;
 
         const int coordLabW = m_fontPx * 4 + 6;
@@ -1580,6 +1588,7 @@ private:
         setVis(m_editSearch,    g);
         setVis(m_listObjects,   g);
         setVis(m_btnGoTo,       g);
+        setVis(m_btnMoonMap,    g);
         setVis(m_editRA,        g);
         setVis(m_editDec,       g);
         setVis(m_btnGoToCoord,  g);
@@ -2124,6 +2133,7 @@ public:
             { "TRACK WHAT IS IN FRAME", ID_BTN_MOTION },
             { "SKY SURVEY",             ID_BTN_SURVEY },
             { "GOTO",                   ID_BTN_GOTO },
+            { "MOON MAP",               ID_BTN_MOON_MAP },
             { "STOP",                   ID_BTN_STOP },
         };
         for (const N& n : kButtons)
@@ -2709,7 +2719,12 @@ private:
         y += listH + 6;
 
         // ── GoTo button ───────────────────────────────────────
-        m_btnGoTo = Button(L"GOTO SELECTED", x, y, w, BH+4, ID_BTN_GOTO);
+        // Phase 162b: MOON MAP shares the row, so nothing below moves.
+        {
+            const int mw = w / 3;
+            m_btnGoTo    = Button(L"GOTO SELECTED", x, y, w - mw - 4, BH+4, ID_BTN_GOTO);
+            m_btnMoonMap = Button(L"MOON MAP", x + w - mw, y, mw, BH+4, ID_BTN_MOON_MAP);
+        }
         y += BH + 8;
 
         // ── Manual RA/DEC entry ───────────────────────────────
@@ -3471,6 +3486,10 @@ private:
                     self->DoPlateSolveAndSync();
                     return 0;
                 }
+                if (id == ID_BTN_MOON_MAP) {
+                    if (self->m_onMoonMap) self->m_onMoonMap();
+                    return 0;
+                }
                 if (id == ID_BTN_GOTO) {
                     // Get selected object from list
                     int sel = ListView_GetNextItem(self->m_listObjects, -1, LVNI_SELECTED);
@@ -3719,6 +3738,7 @@ private:
     HWND m_editSearch    = nullptr;
     HWND m_listObjects   = nullptr;
     HWND m_btnGoTo       = nullptr;
+    HWND m_btnMoonMap    = nullptr;   // phase 162b
     HWND m_editRA        = nullptr;
     HWND m_editDec       = nullptr;
     HWND m_btnGoToCoord  = nullptr;
@@ -3900,6 +3920,7 @@ private:
     HFONT                       m_uiFont           = nullptr;
     int                         m_fontPx           = 0;
     std::function<void()>       m_onSurveyNeedFrame;
+    std::function<void()>       m_onMoonMap;      // phase 162b
 };
 
 } // namespace raduk::gui

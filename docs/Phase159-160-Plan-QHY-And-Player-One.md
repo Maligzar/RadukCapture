@@ -16,7 +16,7 @@ From the strategic roadmap review the owner brought on 2026-11-13. The owner reo
 3. **Vendor names stay in the backend.** CI's vendor step is extended: QHY's and Player One's identifiers may appear only in their own backend files and their emulator.
 4. **An emulator mode.** The existing camera emulator presents itself through the new backend's capability set, so the app's paths are tested in CI without the camera.
 5. **The SDKs.** Each vendor's SDK and its redistribution terms are read before anything is checked in. `external/` gets the headers and import libraries only if their licence allows; otherwise the build finds an installed SDK.
-6. **Validation.** It needs a camera of that make, borrowed or bought, which is the owner's call. Until one is run, the backend is `BUILT, NOT VALIDATED`, and it appears in [`QUALIFICATION.md`](Phase157-Plan-Reliability-Qualification.md) only once measured.
+6. **Validation.** It needs a camera of that make, borrowed or bought, which is the owner's call. Until one is run, the backend is `BUILT, NOT VALIDATED`, and it appears in [`QUALIFICATION.md`](QUALIFICATION.md) only once measured.
 
 ## Rules
 Phase 149's rules hold. Rule 7: the SDKs run locally; nothing needs the internet.

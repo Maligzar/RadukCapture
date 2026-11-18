@@ -157,4 +157,18 @@ const ASI_CONTROL_CAPS* ASICamera::FindControl(ASI_CONTROL_TYPE type) const {
     return nullptr;
 }
 
+// Phase 157.3. ASICamera2 has no call for the camera's firmware (1.41
+// has none), so that stays empty and the log says "not reported".
+DeviceIdentity ASICamera::Identity() const {
+    DeviceIdentity d;
+    d.model = m_info.Name;
+    d.sdk   = TidyVersion(ASIGetSDKVersion());
+    if (m_isOpen) {
+        ASI_SN sn{};
+        if (ASIGetSerialNumber(m_cameraId, &sn) == ASI_SUCCESS)
+            d.serial = SerialHex(sn.id, (int)sizeof(sn.id));
+    }
+    return d;
+}
+
 } // namespace raduk::core
