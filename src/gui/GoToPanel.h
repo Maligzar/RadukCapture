@@ -1497,6 +1497,19 @@ private:
             for (int i = 1; i < 5; i++)
                 ListView_SetColumnWidth(m_listObjects, i, (int)(fixed[i] * k));
         }
+        // Phase 163: the plan. Times and state fixed, the reason takes the rest.
+        if (m_listNightPlan) {
+            const int fixed[] = { 44, 80, 70, 110 };
+            const double k = (double)m_fontPx / 12.0;
+            int used = 0;
+            for (int i = 0; i < 4; i++) {
+                ListView_SetColumnWidth(m_listNightPlan, i, (int)(fixed[i] * k));
+                used += (int)(fixed[i] * k);
+            }
+            int why = cw - used - 24;
+            if (why < (int)(160 * k)) why = (int)(160 * k);
+            ListView_SetColumnWidth(m_listNightPlan, 4, why);
+        }
         if (m_listTonight) {
             const int fixed[] = { 0, 38, 90, 48, 40, 36 };
             const double k = (double)m_fontPx / 12.0;
@@ -1578,6 +1591,12 @@ private:
         setVis(m_lblAlign,      g);
         setVis(m_lblAlignState, g);
         setVis(m_btnSolveAlign, g);
+        // Phase 163: the labels and the survey too. They were never
+        // hidden; the Tonight list used to cover them, and the night
+        // plan's layout no longer does.
+        for (HWND h : { m_hdrAlign, m_hdrCatalog, m_lblSearch, m_hdrManual, m_lblRA, m_lblDec,
+                        m_hdrSolve, m_hdrSurvey, m_lblSurvey, m_btnSurvey })
+            setVis(h, g);
         // Tab 1: Tonight planner
         bool t = (tab == 1);
         setVis(m_listTonight,      t);
@@ -2039,16 +2058,16 @@ public:
                 cell(row, 0, LocalClock(v.slewJd));
                 cell(row, 1, LocalClock(v.imageJd) + "-" + LocalClock(v.endJd));
                 cell(row, 2, v.name);
-                cell(row, 3, v.Why());
-                cell(row, 4, m_nightModel->VisitState(i));
+                cell(row, 3, m_nightModel->VisitState(i));
+                cell(row, 4, v.Why());
                 ++row;
             }
             for (const auto& s : p.skipped) {
                 cell(row, 0, "--");
                 cell(row, 1, "--");
                 cell(row, 2, s.name);
-                cell(row, 3, s.why);
-                cell(row, 4, "not planned");
+                cell(row, 3, "not planned");
+                cell(row, 4, s.why);
                 ++row;
             }
         }
@@ -2788,8 +2807,8 @@ private:
         if (m_listNightPlan) {
             ListView_SetExtendedListViewStyle(m_listNightPlan, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
             SetWindowTheme(m_listNightPlan, L"", L"");
-            const wchar_t* cols[] = { L"Slew", L"Runs", L"Target", L"Why", L"State" };
-            const int widths[] = { 50, 90, 90, 200, 160 };
+            const wchar_t* cols[] = { L"Slew", L"Runs", L"Target", L"State", L"Why" };
+            const int widths[] = { 44, 80, 70, 110, 220 };
             for (int c = 0; c < 5; ++c) {
                 LVCOLUMNW lvc = {};
                 lvc.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;

@@ -356,6 +356,10 @@ public:
         double slewTimeoutSec = 180.0;
         double lockLimitSec   = 300.0;  // centring can take 5 min in the afternoon
         double minVisitSec    = 300.0;  // less than this left: skip, do not start
+        // After the lock, before RUNS: the frame has just gone from the
+        // whole sensor to the profile's ROI, and until frames flow at the
+        // new size there is no frame rate, so no run length.
+        double afterLockSec   = 3.0;
     };
 
     // Stop: the plan was stopped; stopRuns or dropLock says what to undo.
@@ -375,6 +379,7 @@ public:
         bool   locked      = false;
         bool   runsRunning = false;
         bool   runsByPerson = false; // the sequence was stopped by someone
+        bool   framesFlowing = true; // the camera has a frame rate at this size
     };
 
     enum class Outcome { Pending, Active, Done, Skipped };
@@ -468,9 +473,15 @@ public:
             return s;
         case Phase::Locking:
             if (in.locked) {
-                Enter(Phase::Running, t);
-                s.kind = Action::StartRuns;
-                return s;
+                if (m_lockedJd <= 0.0) m_lockedJd = t;
+                if ((t - m_lockedJd) * 86400.0 >= m_cfg.afterLockSec && in.framesFlowing) {
+                    m_lockedJd = 0.0;
+                    Enter(Phase::Running, t);
+                    s.kind = Action::StartRuns;
+                    return s;
+                }
+            } else {
+                m_lockedJd = 0.0;
             }
             if (t >= v.endJd) return Skip("its slot ended before it locked", t, true);
             if (secIn > m_cfg.lockLimitSec) {
@@ -529,7 +540,7 @@ public:
     }
 
 private:
-    void Enter(Phase p, double jd) { m_phase = p; m_enteredJd = jd; }
+    void Enter(Phase p, double jd) { m_phase = p; m_enteredJd = jd; if (p != Phase::Locking) m_lockedJd = 0.0; }
 
     bool BusyBetween(double a, double b) const {
         for (const auto& s : m_busy) if (a < s.endJd && b > s.startJd) return true;
@@ -588,6 +599,7 @@ private:
     Config      m_cfg;
     Phase       m_phase = Phase::Idle;
     double      m_enteredJd = 0.0;
+    double      m_lockedJd  = 0.0;   // when the lock was first seen
     int         m_at = 0, m_done = 0, m_skipped = 0;
     bool        m_stopRunsPending = false, m_dropLockPending = false;
     std::string m_reason, m_note;

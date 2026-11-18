@@ -36,6 +36,7 @@ struct NightPlanHooks {
     std::function<void()>                         dropLock;
     std::function<bool(std::string& why)>         startRuns;
     std::function<bool()>                         runsRunning;
+    std::function<bool()>                         framesFlowing;  // a frame rate at this size
     std::function<void(const char* why)>          stopRuns;
     std::function<bool()>                         runsAborted;    // the last sequence was stopped
     std::function<std::string()>                  runsReason;
@@ -196,6 +197,7 @@ public:
             // mount's cable.
             in.slewing = before == Runner::Phase::Slewing && m_hooks.mountSlewing && m_hooks.mountSlewing();
             in.locked  = before == Runner::Phase::Locking && m_hooks.locked && m_hooks.locked();
+            in.framesFlowing = !m_hooks.framesFlowing || m_hooks.framesFlowing();
             in.runsRunning = m_hooks.runsRunning && m_hooks.runsRunning();
             in.runsByPerson = before == Runner::Phase::Running && !in.runsRunning &&
                               m_hooks.runsAborted && m_hooks.runsAborted();
@@ -282,12 +284,14 @@ private:
     void Ended() {
         const auto p = runner.State();
         const char* how = p == Runner::Phase::Complete ? "finished" : p == Runner::Phase::Aborted ? "stopped" : "FAILED";
+        // A complete plan's reason is only the count again; any other
+        // ending says why.
+        const bool done = p == Runner::Phase::Complete;
+        const std::string why = done ? std::string() : " (" + runner.Reason() + ")";
         char b[300];
-        std::snprintf(b, sizeof(b), "[NIGHTPLAN] plan %s: %d visited, %d skipped: %s\n", how,
-                      runner.Visited(), runner.Skipped(), runner.Reason().c_str());
-        Line(b);
         std::snprintf(b, sizeof(b), "Night plan %s: %d visited, %d skipped", how, runner.Visited(), runner.Skipped());
-        Session(std::string(b) + ": " + runner.Reason());
+        Line("[NIGHTPLAN] plan " + std::string(b).substr(11) + why + "\n");
+        Session(std::string(b) + why);
         Notify(p == Runner::Phase::Complete ? ToastLevel::Info : ToastLevel::Warn,
                p == Runner::Phase::Complete ? std::string(b) : std::string(b) + " (" + runner.Reason() + ")");
         Changed();

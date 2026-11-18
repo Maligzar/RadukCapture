@@ -6468,6 +6468,15 @@ static int RunApp(bool useEmulator) {
         const auto& rig = raduk::core::RigConfig::Get();
         workOutDerotWindow(controls.GetFrameType());
 
+        // Phase 163, found by its scenario: just after a lock the frame
+        // has gone from the whole sensor to the ROI and there is no frame
+        // rate yet. A frame-limited run then has no length; it fell back
+        // to the derotation window, which for a star is endless, and the
+        // disk check refused it as "no room on the capture disk".
+        if (controls.GetLimitByFrames() && capture.Stats().fps.load() <= 0.0) {
+            why = "no frame rate yet, so no run length: wait for frames";
+            return false;
+        }
         raduk::core::AutorunRunner::Config c;
         c.runs         = rig.autorunRuns;
         c.gapSec       = rig.autorunGapSec;
@@ -6712,6 +6721,7 @@ static int RunApp(bool useEmulator) {
         };
         h.startRuns   = [&](std::string& why) { return startRuns(why); };
         h.runsRunning = [&]() { return autorun.Running(); };
+        h.framesFlowing = [&]() { return capture.Stats().fps.load() > 0.0; };
         h.stopRuns    = [&](const char* why) { if (autorun.Running()) autorun.Abort(why); };
         h.runsAborted = [&]() { return autorun.State() == raduk::core::AutorunRunner::Phase::Aborted; };
         h.runsReason  = [&]() { return autorun.Reason(); };

@@ -70,7 +70,8 @@ expect 120 SEARCHING
 expect 60  : locking
 expect 330 : locked, starting the runs
 expect 10  [AUTORUN] start: 1 runs
-expect 600 [AUTORUN] end:
+expect 60  [AUTORUN] run 1 of 1
+expect 600 [AUTORUN] end: 1 of 1 runs
 expect 20  visited: its runs are done
 shot   first-done
 
@@ -78,10 +79,12 @@ expect 1500 (2 of 2): slewing
 expect 60  : locking
 expect 330 : locked, starting the runs
 expect 10  [AUTORUN] start: 1 runs
-expect 600 [AUTORUN] end:
+expect 60  [AUTORUN] run 1 of 1
+expect 600 [AUTORUN] end: 1 of 1 runs
 expect 20  visited: its runs are done
 expect 20  [NIGHTPLAN] plan finished: 2 visited, 0 skipped
 expect 10  [NOTICE] Night plan finished
 expect 10  [BUTTON] STOP TONIGHT -> RUN TONIGHT
-absent 3   skipped:
+absent 3   [NIGHTPLAN] Kochab skipped
+absent 3   [NIGHTPLAN] Pherkad skipped
 shot   plan-done

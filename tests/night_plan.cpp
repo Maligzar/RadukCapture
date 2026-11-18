@@ -294,7 +294,7 @@ int main() {
     printf("\n13. The runner: wait, slew, settle, lock, runs, move on\n");
     {
         R r;
-        R::Config c;
+        R::Config c; c.afterLockSec = 0.0;
         Check(r.Start(twoVisits(), c, Jd(0)), "starts");
         R::Inputs in;
         in.nowJd = Jd(5);
@@ -344,7 +344,7 @@ int main() {
 
     printf("\n14. No lock: this target is skipped, the plan goes on\n");
     {
-        R r; R::Config c;
+        R r; R::Config c; c.afterLockSec = 0.0;
         r.Start(twoVisits(), c, Jd(10));
         R::Inputs in;
         in.nowJd = Jd(10); r.Tick(in);
@@ -362,7 +362,7 @@ int main() {
 
     printf("\n15. A slew that never ends stops the plan\n");
     {
-        R r; R::Config c;
+        R r; R::Config c; c.afterLockSec = 0.0;
         r.Start(twoVisits(), c, Jd(10));
         R::Inputs in; in.nowJd = Jd(10); r.Tick(in);
         in.slewing = true;
@@ -373,7 +373,7 @@ int main() {
 
     printf("\n16. A person stopping the runs stops the plan\n");
     {
-        R r; R::Config c;
+        R r; R::Config c; c.afterLockSec = 0.0;
         r.Start(twoVisits(), c, Jd(10));
         R::Inputs in; in.nowJd = Jd(10); r.Tick(in);
         in.nowJd = sec(10, 2); in.slewing = true; r.Tick(in);
@@ -387,7 +387,7 @@ int main() {
 
     printf("\n17. STOP during the runs closes them\n");
     {
-        R r; R::Config c;
+        R r; R::Config c; c.afterLockSec = 0.0;
         r.Start(twoVisits(), c, Jd(10));
         R::Inputs in; in.nowJd = Jd(10); r.Tick(in);
         in.nowJd = sec(10, 2); in.slewing = true; r.Tick(in);
@@ -404,7 +404,7 @@ int main() {
 
     printf("\n18. A busy mount: wait, and skip when the slot passes\n");
     {
-        R r; R::Config c;
+        R r; R::Config c; c.afterLockSec = 0.0;
         r.Start(twoVisits(), c, Jd(10));
         R::Inputs in; in.mountBusy = true;
         in.nowJd = Jd(12); Check(r.Tick(in).kind == A::None, "waits while a pass has the mount");
@@ -419,7 +419,7 @@ int main() {
         NightPlan p = twoVisits();
         p.visits.erase(p.visits.begin());
         p.busy = {{Jd(40), Jd(50), "ISS"}};
-        R r; R::Config c;
+        R r; R::Config c; c.afterLockSec = 0.0;
         r.Start(p, c, Jd(30));
         R::Inputs in; in.inWindow = true; in.nowJd = Jd(31);
         Check(r.Tick(in).kind == A::None, "in its window, but a pass comes before the slot: waits");
@@ -429,7 +429,7 @@ int main() {
 
     printf("\n20. A refused slew skips one target\n");
     {
-        R r; R::Config c;
+        R r; R::Config c; c.afterLockSec = 0.0;
         r.Start(twoVisits(), c, Jd(10));
         R::Inputs in; in.nowJd = Jd(10);
         Check(r.Tick(in).kind == A::Slew, "slew asked for");
@@ -437,6 +437,21 @@ int main() {
         Check(r.Running() && r.Index() == 1 && r.Skipped() == 1, "skipped; the next waits", r.Note());
         R empty; NightPlan none;
         Check(!empty.Start(none, c, Jd(0)) && empty.Reason() == "the plan has no visits", "an empty plan will not start");
+    }
+
+    printf("\n21. After the lock, RUNS waits for frames at the new size\n");
+    {
+        R r; R::Config c;              // afterLockSec 3 s, as the app has it
+        r.Start(twoVisits(), c, Jd(10));
+        R::Inputs in; in.nowJd = Jd(10); r.Tick(in);
+        in.nowJd = sec(10, 2); in.slewing = true; r.Tick(in);
+        in.nowJd = sec(10, 9); in.slewing = false; r.Tick(in);
+        in.nowJd = sec(10, 20); r.Tick(in);
+        in.locked = true; in.framesFlowing = false;
+        in.nowJd = sec(10, 30); Check(r.Tick(in).kind == A::None, "locked: no RUNS at once");
+        in.nowJd = sec(10, 40); Check(r.Tick(in).kind == A::None, "still no frame rate at the ROI: waits");
+        in.framesFlowing = true;
+        in.nowJd = sec(10, 41); Check(r.Tick(in).kind == A::StartRuns, "frames flowing, locked 3 s or more: RUNS");
     }
 
     printf("\n%s: %d failure(s)\n", g_fail ? "FAILED" : "PASSED", g_fail);
