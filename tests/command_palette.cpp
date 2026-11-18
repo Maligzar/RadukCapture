@@ -119,7 +119,8 @@ int main() {
         // phemurec (phase 141.1) starts a timed recording and locks the
         // camera settings, so it asks twice like the others.
         const std::set<std::string> mustGuard = {"autofocus", "focusin", "focusout", "tracking",
-                                                 "recall", "recalloff", "mosaic", "phemurec"};
+                                                 "recall", "recalloff", "mosaic", "phemurec",
+                                                 "moonmaprun"};   // phase 162
         int n = 0;
         bool ok = true;
         for (const Action& a : all) {

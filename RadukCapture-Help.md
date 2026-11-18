@@ -2943,6 +2943,50 @@ GoTo search too: type `Copernicus` and slew to `Moon - Copernicus`. There are
 sunrise there. The Moon and its features are pointed at from your site, so set
 the site first: without it a lunar slew can be a degree off.
 
+**The Moon map.** `Y` opens it. A Moon map is a project: the whole Moon, cut
+into four quadrants (NE, NW, SW, SE, with Mare Crisium's side as east) and
+each quadrant into sections, filled in over as many nights as it takes. When
+every section is captured the project turns green and says READY FOR MOSAIC,
+and the files to stitch are listed for you. Stitching is another program's
+job.
+
+- **NEW** starts a project, named for the date. The sections are sized for
+  the Moon profile's frame so that one fits at any camera angle: on the full
+  sensor at 0.203"/px that is 5 x 5 a quadrant, 88 on the disc.
+- **The colours:** green is captured. Bright amber is wanted and wholly in
+  sunlight now. Faint amber has the terminator across it. Dark is unlit or
+  past the limb tonight; another night will reach it.
+- **A section's name** counts from the disc's centre: `NE-A1` touches the
+  centre, the letter is the row away from the equator, the number the column
+  away from the central meridian.
+- **START** (or `Ctrl+Shift+Y`) captures every section that is wanted and in
+  sunlight, one after another: it slews, waits for the tube to settle, locks
+  on the surface with PLANET LOCK, focuses when a sweep is due, records one
+  run to the Moon profile's limit, and marks the section green. The same
+  button stops it, and so do RECORD and the emergency stop. A run cut short
+  or one that came back empty does not count.
+- **By hand:** click a section, press **GOTO**, and the next RECORD is filed
+  under that section and counted. **MARK** counts a section you captured
+  some other way; **CLEAR** forgets a section whose recording was poor.
+- **The files** go to `MoonMap_<project>` in the output folder, named
+  `Moon_<section>_...`. When the project is complete,
+  `<project>_mosaic.txt` in the `moonmaps` folder, beside `captures`, lists
+  the newest recording of
+  every section with the Sun's height, the colongitude and the libration it
+  was taken under.
+- **PREV** and **NEXT** move between projects. A project made every month or
+  two is how you see the Moon change in your own pictures.
+- **Dash** has the same map and buttons under MOON MAP.
+- **rig.ini:** `MoonMapSectionsPerSide` (0 sizes it for the frame),
+  `MoonMapLock`, `MoonMapRefocusEvery` (sections between focus sweeps, 10)
+  and `MoonMapSettleSec` (8).
+
+Sections taken on different nights are lit differently. A stitcher can blend
+that, but for a seamless mosaic capture as much as you can in one night near
+full Moon. And a section is where the mount pointed, not where a picture was
+recognised: with a poorly aligned mount the map can be shifted on the Moon.
+Check one section against an atlas before a long run.
+
 **Satellite passes.** The Passes tab in the GoTo panel lists the next 24 hours
 of passes from your site. UPDATE ELEMENTS fetches fresh orbits from CelesTrak.
 TRACK SELECTED PASS slews to where the window opens, waits, follows the
@@ -3289,6 +3333,7 @@ order.
 | 3.3.19 | 157.1, 157.2 | Nothing changes in the app. Every build now writes SER and FITS test recordings with the app's own writers and reads them back with readers that share none of its code (astropy for FITS, a SER reader written from the specification), checking every pixel, the header, the frame count against the file size, the time cards and the timestamps, and a SER from a run that crashed mid-recording. `tests
 | 3.3.20 | 157.0c | PLANET LOCK and `[CENTROID]` on a small ROI now work after a GoTo. On the Star profile's 640x480 a GoTo's pointing error left the star at the frame's edge, calibration refused it, and the first soak made 0 locks in 7. The sequence now switches to the whole sensor to find, calibrate and centre, then goes back to the profile's frame centred on the target once locked; also when the sequence ends any other way, and right before a recording starts, so a wide frame is never recorded. rig.ini `AcquireWide` (on), `AcquireWideMaxW`/`AcquireWideMaxH` (0: whole sensor). Dash's ROI row says `WIDE` while it lasts. A RESET part way through a sequence now ends it: it used to leave the sequence marked as running until the next acquire. Dash's older telemetry strip (TARGET, GAIN, ROI, ...) now shows: a misspelt flag had kept it hidden since the first release. A 30-minute soak made 4 locks in 4 cycles, none refused. The frame no longer changes during an autofocus sweep: `[RUNS]` waits for acquisition to end before its first sweep or run, and a lock that arrives mid-sweep goes back to the profile's frame when the sweep ends. The first 4-hour soak found 28 sweeps in 30 with the frame changed part way through. |
 un-soak.ps1` runs the emulator for hours through GoTo, lock, autofocus and runs, and fails on a leak (handles, memory, threads), a timestamp that does not move forward, or a frame lost without a reason. In the emulator, a GoTo to a star the emulator does not know by name (Kochab, Pherkad) now shows a star instead of Jupiter, and a star well out of focus is the doughnut an SCT makes, bright enough to find and focus on, where it used to fade to nothing; Mars has its dark markings and a south polar cap and turns at its own rate; Mercury, Venus and Mars are drawn at tonight's phase, lit from the Sun's side, so Venus is a crescent when it is one; and Mercury, Uranus and Neptune are drawn as themselves |
+| 3.3.21 | 162 | The Moon map (`Y`). A project maps the whole Moon by quadrant and section, sized so a section fits the frame at any camera angle (5 x 5 a quadrant, 88 sections, on this rig's full sensor), and fills in over as many nights as it takes: green is captured, amber is wanted and in sunlight now. START (`Ctrl+Shift+Y`) captures every wanted section in sunlight in turn, with the slew, PLANET LOCK on the surface, autofocus and RECORD the app already had; GOTO and RECORD do one by hand. When every section is green the project says READY FOR MOSAIC and lists the files, with the light each was taken in, for a stitching program. Dash has the same map under MOON MAP. rig.ini `MoonMapSectionsPerSide`, `MoonMapLock`, `MoonMapRefocusEvery`, `MoonMapSettleSec`. Not yet run on the Moon: the bench tests, the scenario and the Dash test pass in the emulator. |
 
 ---
 

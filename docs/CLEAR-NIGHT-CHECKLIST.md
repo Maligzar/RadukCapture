@@ -1365,3 +1365,20 @@ the bench already showed, so the night only has to confirm it. The plan is
     and note `critical_zone_steps`: phase 161.4 sizes the sweep from it.
     Check `CentralObstruction` on a well-defocused star: the dark hole's
     diameter over the disc's.
+60. **The Moon map on the real Moon** (162, added 2026-11-16). With the
+    site set and the mount aligned, press `Y`, then NEW, on the Moon
+    profile's frame. Read the `[MOONMAP]` line that sizes the grid. Pick
+    a section near the middle of the lit part and press GOTO: is the
+    frame on that part of the Moon? Compare what it shows with an atlas.
+    The offset from where it should be is the mount's pointing error, and
+    it has to be well under a section (3.4' on this rig) for a section's
+    name to mean anything; if it is not, align on a star close to the
+    Moon first and try again. Then START. For each section note from the
+    log: whether the surface locked or the run went ahead without a lock
+    (limb sections are the ones to watch), how long slew, settle and lock
+    took, and whether `MoonMapSettleSec` (8) is long enough for the tube
+    to stop ringing. Afterwards open three neighbouring sections'
+    recordings and check that they overlap. Sections captured on
+    different nights are under different light: stitch one night's
+    sections first. `MOON_MAP_PROVEN_ON_SKY` and
+    `MOON_MAP_RUN_PROVEN_ON_SKY` stay false until this has been done.

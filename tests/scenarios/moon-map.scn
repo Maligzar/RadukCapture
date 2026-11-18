@@ -1,0 +1,61 @@
+# Phase 162: the Moon map, from an empty project to READY FOR MOSAIC.
+#
+# One section a quadrant, so the map is the four quadrants and the run is
+# four slews: each one locks on the surface (phase 126), records the
+# Moon profile's 100 frames under the section's name, and turns green.
+# When the fourth is in, the project says READY FOR MOSAIC and a second
+# START has nothing to do.
+
+name    Moon map: four quadrants to ready
+timeout 900
+
+# A full Moon whatever the date, in the picture and in the map's own
+# reckoning of what is in sunlight.
+env     RADUK_EMU_LUNAR_PHASE=0.5
+env     RADUK_EMU_MOONMAP_FULL=1
+# Exposed to the surface, as surface-follow.scn does.
+env     RADUK_EMU_PEAK_DN=220
+rig     MoonMapSectionsPerSide=1
+rig     MoonMapRefocusEvery=0
+rig     MoonMapSettleSec=5
+# In focus: the profile's focuser position is the real rig's.
+profile moon.ini focuser position=168000
+profile moon.ini capture limit_value=100
+
+expect 30  [SCENARIO] Moon map
+wait   3
+press  MOONMAP:SHOW
+press  MOONMAP:NEW
+expect 10  [MOONMAP] new project
+expect 10  1 x 1 sections a quadrant, 4 on the disc
+press  MOONMAP:SELECT NE-A1
+shot   empty-map
+
+# By hand first: mark a section, see it counted, clear it again.
+press  MOONMAP:MARK
+expect 10  [MOONMAP] NE-A1 marked captured: 1 of 4 sections
+press  MOONMAP:CLEAR
+expect 10  [MOONMAP] NE-A1 cleared: 0 of 4 sections
+
+# The run. Rows from the north, so NW then NE, then SE and SW.
+press  MOONMAP:START
+expect 20  [MOONMAP] run started
+expect 20  [MOONMAP] section NW-A1 (1 of 4): slewing
+expect 120 [MOONMAP] section NW-A1: locking on the surface
+expect 240 [MOONMAP] section NW-A1: recording
+expect 30  Recording started:
+expect 120 [MOONMAP] section NW-A1 captured, 100 frames: 1 of 4 sections
+expect 20  [MOONMAP] section NE-A1 (2 of 4): slewing
+expect 360 [MOONMAP] section NE-A1 captured, 100 frames: 2 of 4 sections
+shot   half-map
+expect 360 [MOONMAP] section SE-A1 captured, 100 frames: 3 of 4 sections
+expect 360 [MOONMAP] section SW-A1 captured, 100 frames: 4 of 4 sections
+expect 20  READY FOR MOSAIC, files listed in
+expect 20  [MOONMAP] run ended: 4 captured
+expect 20  [NOTICE] Moon map: 4 of 4 sections - READY FOR MOSAIC
+shot   ready-map
+absent 5   [MOONMAP] section NW-A1 left for another try
+
+# Nothing left to do.
+press  MOONMAP:START
+expect 10  [MOONMAP] START refused: the project is complete

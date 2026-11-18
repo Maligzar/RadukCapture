@@ -2756,6 +2756,7 @@ private:
             return;
         }
         m_mount->GoToRADec(ra_h, dec_deg);
+        m_goToIssued = true;                                    // phase 162
         m_lastSlewing = true;
         m_slewWatch.Start((double)GetTickCount64() / 1000.0);   // phase 157.0b
         if (predicted) {
@@ -2767,9 +2768,34 @@ private:
                                            : "not applied (PointingMapApply=0)"));
             if (m_onLog) m_onLog(cb);
         }
+        // Phase 162: a Moon map steps the mount dozens of times, and the
+        // four framing lines are about a mosaic it is not making.
+        if (m_quietGoTo) return;
         ReportFraming(name);
         ReportLunarFeature(name);
     }
+
+public:
+    // ── Phase 162: a section of the Moon map ────────────────────
+    //
+    // A slew like any other to the Moon -- the Moon's profile and
+    // tracking rate, the pointing map, the cord-wrap veto, the stuck-slew
+    // watch, and acquisition armed when it lands -- to coordinates that
+    // are a place on the disc and not its centre. False with the reason
+    // when the slew did not go, which a sequence has to know.
+    bool RequestMoonSection(double raH, double decDeg, std::string& why) {
+        if (!m_mount || !m_mount->IsConnected()) { why = "no mount connected"; return false; }
+        if (m_mosaic.Running()) { why = "a mosaic is running"; return false; }
+        m_quietGoTo  = true;
+        m_goToIssued = false;
+        DoGoTo(raH, decDeg, "Moon");
+        m_quietGoTo = false;
+        if (!m_goToIssued) { why = "the slew was refused: cord wrap"; return false; }
+        return true;
+    }
+private:
+    bool m_quietGoTo  = false;
+    bool m_goToIssued = false;
 
     bool IsLunarFeature(const std::string& name) const {
         for (const auto& o : m_catalog.Objects())

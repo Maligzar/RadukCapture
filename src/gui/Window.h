@@ -49,6 +49,8 @@ public:
     void SetRGBAlignHandler(std::function<void()> h)          { m_onRGBAlign           = h; }
     void SetSkyMap2ToggleHandler(std::function<void()> h)     { m_onSkyMap2Toggle      = h; }  // Shift+M
     void SetMosaicToggleHandler(std::function<void()> h)      { m_onMosaicToggle       = h; }  // Ctrl+Shift+M
+    void SetMoonMapToggleHandler(std::function<void()> h)     { m_onMoonMapToggle      = h; }  // Y
+    void SetMoonMapRunHandler(std::function<void()> h)        { m_onMoonMapRun         = h; }  // Ctrl+Shift+Y
     void SetSatNudgeHandler(std::function<void(int)> h)       { m_onSatNudge           = h; }  // Ctrl+[ and Ctrl+]
     void SetObjectPanelToggleHandler(std::function<void()> h) { m_onObjectPanelToggle  = h; }  // Shift+I
     void SetObjectPanelFullscreenHandler(std::function<void()> h) { m_onObjectPanelFullscreen = h; }
@@ -258,6 +260,8 @@ private:
     std::function<void()>               m_onRGBAlign;
     std::function<void()>               m_onSkyMap2Toggle;
     std::function<void()>               m_onMosaicToggle;
+    std::function<void()>               m_onMoonMapToggle;
+    std::function<void()>               m_onMoonMapRun;
     std::function<void(int)>            m_onSatNudge;
     std::function<void()>               m_onObjectPanelToggle;
     std::function<void()>               m_onObjectPanelFullscreen;

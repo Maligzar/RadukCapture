@@ -75,6 +75,7 @@ inline const std::vector<Action>& All() {
         {"objectfull",  "Object panel fullscreen",  "info audience screen",                 "Ctrl+Shift+I", 'I', true,  true,  0, false},
         {"shareview",   "Share view",               "audience screen public caption",       "Shift+V",      'V', true,  false, 0, false},
         {"sharefull",   "Share view fullscreen",    "audience screen public",               "Ctrl+Shift+V", 'V', true,  true,  0, false},
+        {"moonmap",     "Moon map",                 "lunar quadrant section mosaic project coverage", "Y",  'Y', false, false, 0, false},
         {"help",        "Help",                     "keys shortcuts manual",                "?",            0,   false, false, L'?', false},
         {"assistant",   "Assistant",                "ai chat ask",                          "/",            0,   false, false, L'/', false},
         {"fullscreen",  "Fullscreen preview",       "maximise borderless",                  "F11",          vk::F11, false, false, 0, false},
@@ -111,6 +112,7 @@ inline const std::vector<Action>& All() {
         {"recall",      "Recall a capture's framing", "goto past capture return",           "Shift+G",      'G', true,  false, 0, true},
         {"recalloff",   "Recall the target's place in that frame", "offset nudge centre",   "Ctrl+Shift+G", 'G', true,  true,  0, true},
         {"mosaic",      "Mosaic: start or stop",    "panels tiles lunar sequence",          "Ctrl+Shift+M", 'M', true,  true,  0, true},
+        {"moonmaprun",  "Moon map: capture the sections in sunlight, or stop", "lunar quadrant section mosaic run sequence", "Ctrl+Shift+Y", 'Y', true, true, 0, true},
         {"phemurec",    "Record the next mutual event, or cancel it", "phemu imcce record light curve clock", "Shift+J", 'J', true, false, 0, true},
     };
     return a;

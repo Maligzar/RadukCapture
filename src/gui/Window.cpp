@@ -572,6 +572,20 @@ bool Window::HandleKeyDown(WPARAM wParam, LPARAM lParam) {
             }
             if (firstPress && m_onSkyMapToggle) m_onSkyMapToggle();
             return true;
+        case 'Y':
+            // Phase 162: the Moon map. Y shows the window; Ctrl+Shift+Y
+            // starts or stops a run over its sections, a chord for the
+            // reason the mosaic's is one: it moves the telescope for an
+            // hour with nobody's hand on it.
+            if (shift && ModCtrl()) {
+                if (firstPress && m_onMoonMapRun) m_onMoonMapRun();
+                return true;
+            }
+            if (!shift) {
+                if (firstPress && m_onMoonMapToggle) m_onMoonMapToggle();
+                return true;
+            }
+            return false;
         case 'F':
             if (shift) { if (m_onFocusCoarse) m_onFocusCoarse(100); }
             else       { if (m_onFocusFine)   m_onFocusFine(10);   }

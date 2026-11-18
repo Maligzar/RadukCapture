@@ -240,6 +240,15 @@ struct RigConfig {
     int         acquireWideMaxW = 0;
     int         acquireWideMaxH = 0;
 
+    // Phase 162: the Moon map. Sections along one side of a quadrant; 0
+    // sizes them for the frame, so one always fits at any camera angle.
+    int         moonMapSectionsPerSide = 0;
+    // Lock on the surface before each section's run, and a focus sweep
+    // every so many sections (0 never). Starting figures, not measured.
+    bool        moonMapLock         = true;
+    int         moonMapRefocusEvery = 10;
+    float       moonMapSettleSec    = 8.0f;
+
     // Phase 113: a sequence of runs. Starting figures, not measured ones.
     int         autorunRuns         = 10;
     float       autorunGapSec       = 15.0f;
@@ -543,6 +552,10 @@ struct RigConfig {
         wf("AutorunRefocusEvery", autorunRefocusEvery);
         wf("PointingMapApply", pointingMapApply);
         wf("AutorunMinAltDeg", autorunMinAltDeg);
+        wf("MoonMapSectionsPerSide", moonMapSectionsPerSide);
+        wf("MoonMapLock", moonMapLock ? 1 : 0);
+        wf("MoonMapRefocusEvery", moonMapRefocusEvery);
+        wf("MoonMapSettleSec", moonMapSettleSec);
         wf("AutorunSeeingPct", autorunSeeingPct);
         wf("AutorunSeeingHoldSec", autorunSeeingHoldSec);
         wf("AutorunPrimeDeferMin", autorunPrimeDeferMin);
@@ -758,6 +771,13 @@ private:
         cfg.pointingMapApply      = (int)rf("PointingMapApply", cfg.pointingMapApply);
         if (cfg.pointingMapApply < 0 || cfg.pointingMapApply > 2) cfg.pointingMapApply = 0;
         cfg.autorunMinAltDeg      = (float)rf("AutorunMinAltDeg", cfg.autorunMinAltDeg);
+        cfg.moonMapSectionsPerSide = (int)rf("MoonMapSectionsPerSide", cfg.moonMapSectionsPerSide);
+        if (cfg.moonMapSectionsPerSide < 0 || cfg.moonMapSectionsPerSide > 12) cfg.moonMapSectionsPerSide = 0;
+        cfg.moonMapLock           = rf("MoonMapLock", cfg.moonMapLock ? 1 : 0) != 0;
+        cfg.moonMapRefocusEvery   = (int)rf("MoonMapRefocusEvery", cfg.moonMapRefocusEvery);
+        if (cfg.moonMapRefocusEvery < 0) cfg.moonMapRefocusEvery = 0;
+        cfg.moonMapSettleSec      = (float)rf("MoonMapSettleSec", cfg.moonMapSettleSec);
+        if (cfg.moonMapSettleSec < 4.0f) cfg.moonMapSettleSec = 4.0f;   // outlasts the GoTo's own 3 s
         cfg.autorunSeeingPct      = (int)rf("AutorunSeeingPct", cfg.autorunSeeingPct);
         cfg.autorunSeeingHoldSec  = (float)rf("AutorunSeeingHoldSec", cfg.autorunSeeingHoldSec);
         cfg.autorunPrimeDeferMin  = (float)rf("AutorunPrimeDeferMin", cfg.autorunPrimeDeferMin);
