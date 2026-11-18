@@ -98,6 +98,11 @@ struct APEXTelemetry {
 
     // ── Planet lock / centroid tracking (Phase 5) ─────────────
     bool        planet_lock     = false;
+    // Phase 157.0c: the frame now, and whether an acquire has widened it.
+    // Dash's ROI cell read roi_w/roi_h for months and was never sent them.
+    int         roi_w           = 0;
+    int         roi_h           = 0;
+    bool        acquire_wide    = false;
     float       drift_ra_as     = 0.0f;   // arcseconds, + = East
     float       drift_dec_as    = 0.0f;   // arcseconds, + = South
 

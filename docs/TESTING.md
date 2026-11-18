@@ -46,7 +46,7 @@ In practice:
 `check_recordings.py --scan <folder>` checks any recordings without a manifest (structure and stamps, no pixels). The soak uses it; it works on a night's captures too.
 
 ### The soak (157.1)
-`tests\run-soak.ps1 [-Hours 4]`, on the imaging PC, by hand or nightly: too long for CI, and it drives the app's window. It generates a scenario of cycles (Kochab and Pherkad in turn: GoTo, LOCK, RUNS with autofocus and two runs; a lock refused is counted with its reason, not failed) and runs it in its own sandbox until the deadline, then closes the app. It samples handles, private bytes and threads every minute and fails on steady growth, on any recording the independent reader rejects (a stamp not after the one before), on any `unexplained` frames in a run's drop ledger, and on the cycle script failing early. Report: `reports\soak_<stamp>.txt`, samples beside it.
+`tests\run-soak.ps1 [-Hours 4]`, on the imaging PC, by hand or nightly: too long for CI, and it drives the app's window. It generates a scenario of cycles (Kochab and Pherkad in turn: GoTo, LOCK, RUNS with autofocus and two runs; a lock refused is counted with its reason, not failed) and runs it in its own sandbox until the deadline, then closes the app. It samples handles, private bytes and threads every minute and fails on steady growth, on any recording the independent reader rejects (a stamp not after the one before), on any `unexplained` frames in a run's drop ledger, on the cycle script failing early, and on the frame changing size during an autofocus sweep (157.0c: RUNS is pressed while acquisition is still running, so each cycle checks the sequence waits for it). Report: `reports\soak_<stamp>.txt`, samples beside it.
 
 ## 2. Dash tests: Playwright
 **Dash** (`RadukCaptureDashboard.html`) controls RadukCapture from a browser, over its WebSocket on port 8765. It is what you use outside, from a phone or a tablet at the scope. Playwright drives Dash the way a person does: it clicks Dash's own controls and reads what Dash shows back. So one test checks two things:
@@ -100,6 +100,7 @@ Results go to `tests\web\results\dash-results.json`. Phase 156's bundle picks th
 |---|---|---|
 | `offline.spec.js` | nothing running | Dash loads with no internet, no script errors, and no request leaves the PC |
 | `live.spec.js` (`@live`) | the app running | Dash connects with the token, live telemetry arrives, and START/STOP CAPTURE works from the browser |
+| `acquire-wide.spec.js` (`@live`) | the app running | Dash loads the Star profile (640x480), CENTROID widens the frame and the ROI row reads `WIDE`, RESET puts 640x480 back (157.0c) |
 
 ### Found by it already
 **Dash fetches a weather forecast from `api.open-meteo.com`.** It does this even with no site set, asking for latitude 0, longitude 0. That breaks rule 7, airplane mode. The Phase 151 audit missed it, because it checked Dash's files and not its requests. `offline.spec.js` fails on it until it is fixed: owed as 151.4, gate the fetch on `Offline` and a known site, or take the weather from Leoben.

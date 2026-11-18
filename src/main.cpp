@@ -74,6 +74,7 @@
 #include "core/MountProxy.h"   // phase 46: one mount pointer that never goes stale
 #include "core/HardwareLink.h" // phase 46: what the [HW] button shows and says
 #include "core/RoiFollower.h"
+#include "core/AcquireFrame.h"   // phase 157.0c
 #include "core/DashboardLaunch.h" // [DASH]: open the dashboard with its token
 #include "core/Scenario.h"        // Phase 125: --scenario, the app tests itself
 #include "core/TestProbe.h"
@@ -1919,6 +1920,11 @@ static int RunApp(bool useEmulator) {
     // The sequence's runs, its Jupiter note and its announcements are held
     // by core.arCtl (phase 153.3).
 
+    // Phase 157.0c: called right before every recording starts, so a frame
+    // widened for acquisition is never what gets recorded. Filled in below,
+    // beside applyFormat, which it needs and which is defined later.
+    std::function<void()> restoreBeforeRecording = []() {};
+
     gotoPanel.SetMosaicCapture(
         [&](int ordinal, int total) -> bool {
             if (capturer.IsRecording()) {
@@ -1938,6 +1944,7 @@ static int RunApp(bool useEmulator) {
                 mc.derotationStopSec = 0.0;
                 capturer.SetConfig(mc);
             }
+            restoreBeforeRecording();   // phase 157.0c
             if (!capturer.StartRecording(roiWidth, roiHeight, roiBits)) {
                 Log("[MOSAIC] StartRecording failed on panel %d\n", ordinal);
                 return false;
@@ -3827,6 +3834,50 @@ static int RunApp(bool useEmulator) {
         return true;
     };
 
+    // ── Phase 157.0c: find and calibrate wide, image small ───────
+    //
+    // An auto-acquire runs on a wide frame and the profile's frame comes
+    // back when it ends (core/AcquireFrame.h says when). On a 640x480 ROI a
+    // GoTo's pointing error left the target at the edge, calibration
+    // refused it, and the first soak made 0 locks in 7.
+    raduk::core::WideAcquire wideAcq;
+    auto wideIn = [&]() {
+        raduk::core::WideAcquire::In in;
+        const auto& rig = raduk::core::RigConfig::Get();
+        in.enabled   = rig.acquireWide;
+        in.wideMaxW  = rig.acquireWideMaxW;
+        in.wideMaxH  = rig.acquireWideMaxH;
+        in.acquiring = tracker.AutoAdvancing();
+        in.recording = capturer.IsRecording();
+        in.focusing  = core.afCtl.Busy();   // the frame holds still under a sweep
+        in.locked    = tracker.Stage() == raduk::core::AcquisitionStage::Locked;
+        in.centroidValid = tracker.LastCentroidValid();
+        in.centroidX = roiStartX + (int)tracker.LastCentroidX();   // ROI-relative to sensor
+        in.centroidY = roiStartY + (int)tracker.LastCentroidY();
+        in.roiW  = roiWidth;  in.roiH  = roiHeight;
+        in.roiCx = roiStartX + roiWidth / 2;
+        in.roiCy = roiStartY + roiHeight / 2;
+        in.sensorW = cam.MaxWidth();
+        in.sensorH = cam.MaxHeight();
+        return in;
+    };
+    auto applyWide = [&](const raduk::core::WideAcquire::Out& o) {
+        using Act = raduk::core::WideAcquire::Act;
+        if (o.act == Act::None) return;
+        if (o.act == Act::Forget) {
+            Log("[ACQUIRE] %s\n", o.why);
+            return;
+        }
+        const int fromW = roiWidth, fromH = roiHeight;
+        const char* tag = (o.act == Act::Widen) ? "acquire wide" : "acquire restore";
+        applyFormat(o.w, o.h, roiBits, o.cx, o.cy, tag);
+        if (o.act == Act::Widen) wideAcq.NoteApplied(roiWidth, roiHeight);
+        Log("[ACQUIRE] %s: %dx%d -> %dx%d\n", o.why, fromW, fromH, roiWidth, roiHeight);
+        slog.System("Acquire frame: %s (%dx%d)", o.why, roiWidth, roiHeight);
+    };
+    auto stepWide = [&]() { applyWide(wideAcq.Step(wideIn())); };
+    restoreBeforeRecording = [&]() { applyWide(wideAcq.BeforeRecording(wideIn())); };
+
     // startX/startY arrive ROI-RELATIVE (PreviewRenderer computes them
     // within the currently displayed frame) -- convert to sensor-absolute.
     preview.SetROIChangeCallback([&](int newW, int newH, int startX, int startY) {
@@ -4358,6 +4409,7 @@ static int RunApp(bool useEmulator) {
             // Phase 157.0: a long exposure is not a silent camera.
             core.recCtl.SetExpectedFrameSec(
                 cam.GetControlValue(ControlId::ExposureUs) / 1.0e6);
+            restoreBeforeRecording();   // phase 157.0c
             core.recCtl.Begin(roiWidth, roiHeight, roiBits, stopAtWindow);   // phase 153.2
         }
         // Immediately sync the button visual — don't wait for the 500ms readout tick.
@@ -5638,6 +5690,7 @@ static int RunApp(bool useEmulator) {
                 nextRecClock.confirmed = raduk::net::sntp::Confirmed(phemuRun.before) ? 1 : 0;
                 nextRecClock.offsetMs  = phemuRun.before.offsetSec * 1000.0;
             }
+            restoreBeforeRecording();   // phase 157.0c
             if (!capturer.StartRecording(roiWidth, roiHeight, roiBits)) {
                 phemuRestore("the recording would not start");
                 notifBar.NotifyError(L"Mutual event: the recording would not start");
@@ -5895,6 +5948,7 @@ static int RunApp(bool useEmulator) {
             Log("[ACQ] Auto-acquire started: searching\n");
             slog.Mount("Acquisition: auto (search -> calibrate -> centre -> lock)");
             notifBar.NotifyInfo(L"Acquiring planet - searching...");
+            stepWide();   // phase 157.0c: before the next Tick can calibrate
             return true;
         }
         Log("[ACQ] Cancelled — reset to Off\n");
@@ -5930,6 +5984,7 @@ static int RunApp(bool useEmulator) {
                 slog.Mount("Acquisition: auto (search -> calibrate -> centre -> lock)");
                 notifBar.NotifyInfo(L"Acquiring planet - searching...");
                 controls.SetPlanetLockState(true);
+                stepWide();   // phase 157.0c
             } else {
                 Log("[ACQ] Auto-acquire refused: %s\n", whyNot.c_str());
                 std::wstring w(whyNot.begin(), whyNot.end());
@@ -6398,6 +6453,7 @@ static int RunApp(bool useEmulator) {
             ai.targetSeen = lastAnalysis.valid && lastAnalysis.centroidValid;
             ai.altDeg     = preview.MountAltitude();
             ai.seeingOpen = seeing.Open(core.Clock().Now());
+            ai.acquiring  = tracker.AutoAdvancing();   // phase 157.0c
             if (core.arCtl.Jupiter())
                 ai.prime = jupiterDisc(raduk::sky::PreciseJdNow()).Prime();
             // A disk that will not answer is not a reason to stop.
@@ -6611,6 +6667,7 @@ static int RunApp(bool useEmulator) {
                 mc.limitTimeSec = 3600.0;
                 capturer.SetConfig(mc);
             }
+            if (!capturer.IsRecording()) restoreBeforeRecording();   // phase 157.0c
             if (!capturer.IsRecording() &&
                 capturer.StartRecording(roiWidth, roiHeight, roiBits)) {
                 usbMgr.SetCapturing(true);
@@ -6726,9 +6783,10 @@ static int RunApp(bool useEmulator) {
                 if (tracker.Stage() == raduk::core::AcquisitionStage::Off) {
                     tracker.SetMount(mount);
                     std::string whyNot;
-                    if (tracker.StartAutoAcquire(whyNot))
+                    if (tracker.StartAutoAcquire(whyNot)) {
                         Log("[WS] Remote centroid_start: auto-acquire\n");
-                    else
+                        stepWide();   // phase 157.0c
+                    } else
                         Log("[WS] Remote centroid_start refused: %s\n",
                             whyNot.c_str());
                 }
@@ -8050,6 +8108,7 @@ static int RunApp(bool useEmulator) {
             // Centroid tracker — dispatch callbacks on main thread
             if (tracker.Stage() != raduk::core::AcquisitionStage::Off)
                 tracker.Tick();
+                stepWide();   // phase 157.0c: back to the profile's frame when it ends
 
             // Camera — always update (never blocks)
             statusBar.SetCameraStats(
@@ -8684,6 +8743,9 @@ static int RunApp(bool useEmulator) {
                     telemetry.planet_lock  = (stage == raduk::core::AcquisitionStage::Centering ||
                                               stage == raduk::core::AcquisitionStage::Locked);
                     telemetry.drift_ra_as  = tracker.DriftRA();
+                    telemetry.roi_w        = roiWidth;          // 157.0c
+                    telemetry.roi_h        = roiHeight;
+                    telemetry.acquire_wide = wideAcq.Wide();
                     telemetry.drift_dec_as = tracker.DriftDec();
                 }
 

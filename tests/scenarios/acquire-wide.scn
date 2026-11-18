@@ -1,0 +1,25 @@
+# Phase 157.0c: find and calibrate on a wide frame, then return to the ROI.
+# The trial soak (2026-11-15) made 0 locks in 7 on a 640x480 ROI: the
+# GoTo's 45"/25" error left Kochab at y = 431 of 480 and calibration
+# refused it as near the edge. With AcquireWide on, acquisition widens
+# the frame, locks there, and goes back to the profile's 640x480,
+# centred on the star.
+name    Acquire wide: lock from a GoTo's error on a small ROI
+timeout 240
+
+profile star.ini focuser position=168000
+
+expect 30  [SCENARIO] Acquire wide
+wait   3
+goto   Kochab
+expect 30  [PROFILE] Created 'kochab.ini' for 'Kochab' from the Star profile
+expect 120 SEARCHING
+wait   3
+press  PLANET LOCK
+expect 15  [ACQUIRE] acquisition: wide frame to find and calibrate
+expect 90  Acquisition: Locked
+expect 15  [ACQUIRE] locked: the profile's frame, on the target
+expect 5   -> 640x480
+absent 3   near the edge
+wait   3
+shot   locked-roi

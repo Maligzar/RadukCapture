@@ -2742,6 +2742,29 @@ cause is tracking:
 Those two used to read identically, which mattered because they need opposite
 responses.
 
+**On a small ROI the sequence widens the frame first.** A profile's ROI (the
+Star profile's 640x480, say) is too small to find a target after a GoTo's
+pointing error, and too small for calibration's moves of a few hundred pixels:
+the target sat at the edge and calibration refused it. So when `[CENTROID]` or
+PLANET LOCK starts the sequence on a frame smaller than the sensor, it switches
+to the whole sensor, finds, calibrates and centres there, and goes back to the
+profile's frame, centred on the target, once it is locked. It also goes back
+when the sequence ends any other way (RESET, a failure), and right before any
+recording starts, so a wide frame is never recorded. Changing the frame by hand
+while it is wide leaves your frame as it is. The log says each switch
+(`[ACQUIRE]`), and Dash's ROI row reads `WIDE` while it lasts. rig.ini
+`AcquireWide=0` turns it off; `AcquireWideMaxW`/`AcquireWideMaxH` cap the wide
+frame (0, the default, is the whole sensor).
+
+**The frame never changes during an autofocus sweep.** A sweep compares
+sharpness from one frame to the next, so if the lock arrives mid-sweep, the
+return to the profile's frame waits until the sweep ends; a sequence started
+during a sweep waits to widen the same way. `[RUNS]` pressed while acquisition
+is still running waits for it to end (locked, or ended any other way) before
+its first sweep or run, and the log says so once (`[AUTORUN] waiting for
+acquisition`). If acquisition never ends, the sequence stops after 10 minutes
+with *"acquisition did not finish"*.
+
 `[ROI]` is stage 3 of that sequence, not a manual crop tool. To set an ROI by
 hand, **drag a box on the preview** instead.
 
@@ -2981,6 +3004,8 @@ real site is stored. Most of it is written for you.
 | `TelescopeName` | The telescope as files, records and the audience screen name it. Default `Celestron 8SE`. |
 | `CameraName` / `CameraWidth` / `CameraHeight` / `CameraPixelUm` / `CameraColor` | The last camera that connected, as it described itself. Written for you when a camera connects; they let start-up and the emulator know the sensor before one does. |
 | `GuideRateArcsecPerSec` | Assumed guide rate. Calibration measures the real one and warns if they disagree. |
+| `AcquireWide` | `1` (default): an auto-acquire started on a frame smaller than the sensor finds, calibrates and locks on a wide frame, then returns to the profile's frame centred on the target (see *Acquisition refuses to start*). `0` acquires on the frame as it is. |
+| `AcquireWideMaxW` / `AcquireWideMaxH` | The wide frame's largest size in pixels. `0` (default): the whole sensor. A smaller figure gives a faster frame on a slow USB link. |
 | `WrapLimitDeg` | Cumulative azimuth travel before the cord-wrap warning. |
 | `KeepOutStartDeg` / `KeepOutEndDeg` | Obstruction sector, clockwise from start to end. Equal values = none. |
 | `ObserverBearingDeg` | Mount to observer, degrees true. Used by the align helper. |
@@ -3262,6 +3287,7 @@ order.
 | 3.3.17 | Testing | Nothing changes in the app. `docs/TESTING.md` is the one guide to testing it: the bench tests, Dash tested in a browser with Playwright (offline, and live against the running app, on a desktop and a phone-sized screen), the scenarios, and the sky. Every control at the telescope is to be reachable from Dash and tested through it, and the tests run by themselves so Claude only reviews their results. The first Dash test found that Dash asks the internet for a weather forecast, owed as 151.4 |
 | 3.3.18 | profile per target, focus verdict | A GoTo or an ALIGN now switches the active profile to the target's own, and makes one when there is none (`profilesega.ini` for Vega), started from the Star profile for a star, DSO for a Messier/NGC/IC object, and otherwise the profile in use, with an empty note of its own. The status bar's `[name]`, the OUTPUT tab's profile and its notes therefore follow what the scope is pointed at; before, a GoTo to Vega kept Jupiter's. A lunar feature uses the Moon's profile. Profiles carry the camera they were made for (EDIT → Camera, offered the connected camera; blank means any), and a target with profiles for two cameras gets the one for the camera connected. Under the histogram, SHARP / PK / AV is replaced by a focus verdict: FOCUSED, SOFT or OUT against the live sharpness just after the last successful autofocus on this target, the figure as a percentage of that, and RUN AF when there is no reference yet. |
 | 3.3.19 | 157.1, 157.2 | Nothing changes in the app. Every build now writes SER and FITS test recordings with the app's own writers and reads them back with readers that share none of its code (astropy for FITS, a SER reader written from the specification), checking every pixel, the header, the frame count against the file size, the time cards and the timestamps, and a SER from a run that crashed mid-recording. `tests
+| 3.3.20 | 157.0c | PLANET LOCK and `[CENTROID]` on a small ROI now work after a GoTo. On the Star profile's 640x480 a GoTo's pointing error left the star at the frame's edge, calibration refused it, and the first soak made 0 locks in 7. The sequence now switches to the whole sensor to find, calibrate and centre, then goes back to the profile's frame centred on the target once locked; also when the sequence ends any other way, and right before a recording starts, so a wide frame is never recorded. rig.ini `AcquireWide` (on), `AcquireWideMaxW`/`AcquireWideMaxH` (0: whole sensor). Dash's ROI row says `WIDE` while it lasts. A RESET part way through a sequence now ends it: it used to leave the sequence marked as running until the next acquire. Dash's older telemetry strip (TARGET, GAIN, ROI, ...) now shows: a misspelt flag had kept it hidden since the first release. A 30-minute soak made 4 locks in 4 cycles, none refused. The frame no longer changes during an autofocus sweep: `[RUNS]` waits for acquisition to end before its first sweep or run, and a lock that arrives mid-sweep goes back to the profile's frame when the sweep ends. The first 4-hour soak found 28 sweeps in 30 with the frame changed part way through. |
 un-soak.ps1` runs the emulator for hours through GoTo, lock, autofocus and runs, and fails on a leak (handles, memory, threads), a timestamp that does not move forward, or a frame lost without a reason. In the emulator, a GoTo to a star the emulator does not know by name (Kochab, Pherkad) now shows a star instead of Jupiter, and a star well out of focus is the doughnut an SCT makes, bright enough to find and focus on, where it used to fade to nothing; Mars has its dark markings and a south polar cap and turns at its own rate; Mercury, Venus and Mars are drawn at tonight's phase, lit from the Sun's side, so Venus is a crescent when it is one; and Mercury, Uranus and Neptune are drawn as themselves |
 
 ---

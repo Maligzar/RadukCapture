@@ -233,6 +233,13 @@ struct RigConfig {
     bool        derotationStop = false;
     bool        winJuposNames  = true;
 
+    // Phase 157.0c: an auto-acquire (PLANET LOCK) finds and calibrates on a
+    // wide frame, then returns to the profile's frame once it ends. Max
+    // 0 means the whole sensor.
+    bool        acquireWide     = true;
+    int         acquireWideMaxW = 0;
+    int         acquireWideMaxH = 0;
+
     // Phase 113: a sequence of runs. Starting figures, not measured ones.
     int         autorunRuns         = 10;
     float       autorunGapSec       = 15.0f;
@@ -528,6 +535,9 @@ struct RigConfig {
         ws("RoiFollow", roiFollow ? "1" : "0");
         ws("DerotationStop", derotationStop ? "1" : "0");
         ws("WinJuposNames", winJuposNames ? "1" : "0");
+        ws("AcquireWide", acquireWide ? "1" : "0");
+        wf("AcquireWideMaxW", acquireWideMaxW);
+        wf("AcquireWideMaxH", acquireWideMaxH);
         wf("AutorunRuns", autorunRuns);
         wf("AutorunGapSec", autorunGapSec);
         wf("AutorunRefocusEvery", autorunRefocusEvery);
@@ -737,6 +747,11 @@ private:
         cfg.roiFollow             = rs("RoiFollow", cfg.roiFollow ? "1" : "0") == "1";
         cfg.derotationStop        = rs("DerotationStop", cfg.derotationStop ? "1" : "0") == "1";
         cfg.winJuposNames         = rs("WinJuposNames", cfg.winJuposNames ? "1" : "0") == "1";
+        cfg.acquireWide           = rs("AcquireWide", cfg.acquireWide ? "1" : "0") == "1";
+        cfg.acquireWideMaxW       = (int)rf("AcquireWideMaxW", cfg.acquireWideMaxW);
+        cfg.acquireWideMaxH       = (int)rf("AcquireWideMaxH", cfg.acquireWideMaxH);
+        if (cfg.acquireWideMaxW < 0) cfg.acquireWideMaxW = 0;
+        if (cfg.acquireWideMaxH < 0) cfg.acquireWideMaxH = 0;
         cfg.autorunRuns           = (int)rf("AutorunRuns", cfg.autorunRuns);
         cfg.autorunGapSec         = (float)rf("AutorunGapSec", cfg.autorunGapSec);
         cfg.autorunRefocusEvery   = (int)rf("AutorunRefocusEvery", cfg.autorunRefocusEvery);

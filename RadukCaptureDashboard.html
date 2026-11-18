@@ -2371,7 +2371,12 @@ function rcHandleData(data) {
     rcSetVal('rcWB',     (data.wb_red != null && data.wb_blue != null) ? `R:${data.wb_red} B:${data.wb_blue}` : '--');
     rcSetVal('rcUSB',    data.usb_bw != null ? data.usb_bw+'%' : '--');
     rcSetVal('rcTemp',   data.sensor_temp != null ? data.sensor_temp.toFixed(1)+'°C' : '--');
-    rcSetVal('rcROI',    data.width && data.height ? `${data.width}×${data.height}` : '--');
+    // Phase 157.0c: WIDE while an auto-acquire has widened the frame to
+    // find and calibrate; it goes back to the profile's frame on its own.
+    {
+      const w = data.roi_w || data.width, h = data.roi_h || data.height;
+      rcSetVal('rcROI', w && h ? `${w}×${h}${data.acquire_wide ? ' WIDE' : ''}` : '--');
+    }
     rcSetVal('rcBitDepth', data.bit_depth ? data.bit_depth+'-bit' : '--');
     // HUD
     rcSetVal('rcHudFPS',  data.fps != null ? data.fps.toFixed(1) : '--');
@@ -3338,7 +3343,7 @@ let wsManualDisconnect = false;
 const WS_SYNCED_FIELDS = [
   'gain','exposure_ms','fps','frames_captured','frames_dropped',
   'quality_pct','recording','target','filter','camera',
-  'roi_w','roi_h','bit_depth','debayer','flip_x','flip_y',
+  'roi_w','roi_h','acquire_wide','bit_depth','debayer','flip_x','flip_y',
   'gamma','brightness','wb_red','wb_blue','usb_speed',
   'ram_used_mb','rc_running','capture_file','session_events',
 ];
@@ -3488,7 +3493,10 @@ function wsApplyState(data) {
   wsLastStateTime = Date.now();
 
   const fcWasRunning = wsRCRunning;
-  wsFCRunning = !!data.rc_running;
+  // 2026-11-16: this assigned wsFCRunning (a name left from the FC -> RC
+  // rename), so wsRCRunning stayed false: the telemetry strip (TARGET, ROI,
+  // ...) never showed and "RadukCapture detected" was never logged.
+  wsRCRunning = !!data.rc_running;
   wsSetStatus(true, wsRCRunning, data.camera || null);
 
   // If FC just started, log it
@@ -3648,10 +3656,14 @@ function updateTelemetryGrid(data) {
     { label:'EXP',     val: data.exposure_ms !== undefined ? data.exposure_ms.toFixed(2)+'ms' : '--' },
     { label:'FPS',     val: data.fps       !== undefined ? parseFloat(data.fps).toFixed(1) : '--' },
     { label:'FRAMES',  val: data.frames_captured !== undefined ? data.frames_captured.toLocaleString() : '--' },
-    { label:'ROI',     val: data.roi_w && data.roi_h ? `${data.roi_w}×${data.roi_h}` : '--' },
+    // Phase 157.0c: the frame, and WIDE while an acquire has widened it to
+    // find and calibrate (it returns to the profile's frame on its own).
+    { label:'ROI',     id:'rcTelROI',
+      val: data.roi_w && data.roi_h
+           ? `${data.roi_w}×${data.roi_h}${data.acquire_wide ? ' WIDE' : ''}` : '--' },
   ];
   grid.innerHTML = items.map(i =>
-    `<div style="background:rgba(0,0,0,.3);padding:4px 6px;border-radius:2px">
+    `<div ${i.id ? `id="${i.id}" ` : ''}style="background:rgba(0,0,0,.3);padding:4px 6px;border-radius:2px">
        <div style="font-family:'Space Mono',monospace;font-size:8px;color:var(--d-text-dim)">${i.label}</div>
        <div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--d-accent)">${i.val}</div>
      </div>`

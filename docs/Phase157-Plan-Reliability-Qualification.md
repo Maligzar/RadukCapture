@@ -83,6 +83,30 @@ These are left to the phases that own them, not duplicated here:
     autorun.scn and motion.scn now pin the Jupiter disc they were written against (`RADUK_EMU_TARGET`), since they test their own mechanics; autorun passes that way, and motion still fails as described. guide-edge.scn and guide-jog.scn fail on "no button called 'FINE'"; their target never changed, so that failure is not from this work.
   - **Private bytes jump about 160 MB at the first recording, then hold.** That is a buffer kept, not a leak. The growth rule fits its slope to the later half of the samples so that a step like this does not fail the soak.
 
+## 157.0c, as built (2026-11-16, 3.3.20)
+- **What it does:** `core/AcquireFrame.h` (`WideAcquire`) widens the frame to the whole sensor (or `AcquireWideMaxW`/`H`) when an auto-acquire starts on a smaller one and nothing records; it puts the profile's frame back when the sequence ends (centred on the target when locked), right before any recording starts, and forgets if the frame is changed by hand. Wired at each start (the CENTROID button, PLANET LOCK's promote, Dash's `centroid_start`), on every main-loop pass, and before all four recording starts. Telemetry sends `roi_w`, `roi_h`, `acquire_wide`; Dash's ROI row reads `WIDE`.
+- **Checks:**
+  - `tests/acquire_frame.cpp`: the decisions.
+  - `tests/scenarios/acquire-wide.scn`: GoTo Kochab on the Star profile's 640x480 (the soak's failing case), PLANET LOCK. Passed: widened to 3840x2160, calibrated, locked, back to 640x480 centred on the star, no edge refusal.
+  - `tests/web/specs/acquire-wide.spec.js` (@live): Dash loads the Star profile, CENTROID shows `WIDE`, RESET restores 640x480. Desktop and phone pass.
+  - A 30-minute soak (`soak_20261116_163526`): 4 locks in 4 cycles, 0 refused (the first soak: 0 of 7). Each cycle widened, calibrated and returned to 640x480. Handles and threads flat, 0 unexplained frames.
+- **Found while checking it, fixed:**
+  - RESET did not end an auto-acquire: `Reset()` left the flag for `Tick()` to clear, and the main loop calls `Tick()` only while the stage is not Off. The wide frame stayed on after Dash's RESET. `Reset()` clears it; `tests/tracking_emulator.cpp` step 6 checks it.
+  - Dash's older telemetry strip never showed: `wsApplyState` assigned `wsFCRunning` (left from the FC to RC rename), not `wsRCRunning`. The WIDE label was first put there, where no one would see it; it is now on the remote panel's ROI row as well.
+- **Found, owed:**
+  - Dash's profile picker (`rcProfile`) relabels Dash only and never sends `load_profile` to the app, against the rule that every control is reachable from Dash. The Playwright spec sends `load_profile` through Dash's own `rcSendCmd`.
+  - On the emulator's start-up frame (the whole sensor, before any GoTo) the planet sits at (2655, 2155) of 3840x2160 and calibration refuses it at the edge. A GoTo is what the emulator expects first.
+  - That soak failed on two counts, neither from this change: astropy is not installed on StarMachine, so its 7 FITS recordings could not be read back; and private bytes rose +65.4 MB/h over the later half (limit 64) while the bench suite ran beside it, though the last quarter's median was only +5.8 MB on the first's. To be rerun alone, with astropy, ahead of the 4-hour soak.
+  - `tests/autofocus_saturn.cpp` takes 18 minutes (on CI as here) and prints through buffered `printf`, so a run watched from outside looks hung.
+- **The first 4-hour soak (`soak_20261116_184325`), FAIL, and what it found:**
+  - 30 locks made, 0 refused; 62 of 62 recordings pass the independent reader; handles and threads flat.
+  - **Autofocus ran across a frame change in 28 sweeps of 30.** The cycle waited a fixed 45 s after PLANET LOCK, then pressed RUNS. Acquisition on the 3840x2160 frame took longer, so the sweep started wide, and the lock put 640x480 back 10 to 70 s into it. The app allowed it from any path (AUTO FOCUS at the scope, RUNS, Dash).
+    - **Fixed:** `AutorunRunner` waits while acquisition runs (`Inputs::acquiring`, at most `acquireHoldSec`, 600 s, then fails "acquisition did not finish"), ahead of the target check because on the wide frame the target may not be found yet. `WideAcquire` holds both the widen and the restore while a sweep runs (`In::focusing`). `tests/autorun.cpp` and `tests/acquire_frame.cpp` check both.
+    - **The soak** now presses RUNS 3 s after PLANET LOCK, so every cycle exercises the wait, and fails on any `[ACQUIRE] ... WxH -> WxH` between Autorun's "focus before run" and the sweep's result. Run on the failed soak's log, it finds the 28.
+  - Private memory stepped up about 190 MB (first-quarter median 617.6 MB, last 814.3 MB; +105.3 MB/h over the later half). The baseline crept 12 MB over two hours, then at about minute 127 handles fell 1511 to 1424 and threads 184 to 170 with +24 MB, and at minute 133 to 135 it stepped a further 100 MB and held. Cause not yet found; to be judged on the rerun, with the overlap gone.
+  - 1 unexplained frame: a single timestamp gap in one of 62 runs. To be judged on the rerun.
+- **The 4-hour soak rerun with the fix (`soak_20261117_055136`), PASS:** 26 locks, 0 refused; 52 sweeps, 0 with the frame changed, and the sequence waited for acquisition 26 times; 51 of 51 recordings pass the independent reader; 0 unexplained frames. Private memory flat (-15.6 MB/h over the later half, quarter medians 471.8 and 479.9 MB; peaks to 1142 MB are the wide windows), handles and threads flat. Neither the memory step nor the unexplained frame came back. It ran from a worktree with `RADUK_DATA_ROOT` set to it, so its baseline (472 MB, 126 threads) is not directly comparable with the first try's (617 MB, 184 threads).
+
 ## Rules
 Phase 149's rules hold, and rule 7: nothing here needs the internet. CI's Python step installs astropy from PyPI at build time, which is CI's network, not the app's.
 

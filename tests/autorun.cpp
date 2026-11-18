@@ -43,6 +43,7 @@ struct Rig {
     bool     disk       = true;
     bool     seeing     = true;
     bool     prime      = false;
+    bool     acquiring  = false;
 
     bool     recording = false;
     bool     focusing  = false;
@@ -77,6 +78,7 @@ struct Rig {
             in.diskHasRoom = disk;
             in.seeingOpen  = seeing;
             in.prime       = prime;
+            in.acquiring   = acquiring;
         }
         switch (ar.Tick(now, in)) {
         case AR::Action::StartRun:
@@ -372,6 +374,48 @@ static void TestSeeingHold() {
         Check(r.runsStarted == 1, "the next run is waiting too");
         Check(r.ar.SeeingGaveUp() == 0 && r.ar.Running(),
               "a later wait gets its own limit");
+    }
+}
+
+// Phase 157.0c, found by the 4-hour soak: RUNS pressed while acquisition
+// was on its wide frame started a sweep, and the lock put the profile's
+// frame back under it, 28 times in 30.
+static void TestWaitsForAcquisition() {
+    printf("waiting for acquisition to end\n");
+    {
+        Rig r;
+        r.acquiring  = true;
+        r.targetSeen = false;     // not found yet on the wide frame
+        r.ar.Start(r.Config(), r.now);
+        r.RunFor(r.Config().holdLimitSec + 30.0);
+        Check(r.sweeps == 0 && r.runsStarted == 0, "no sweep and no run while acquiring");
+        Check(r.ar.HoldingForAcquisition(), "and it says so");
+        Check(r.ar.Running(), "and an unseen target is not counted against it");
+        r.acquiring = false; r.targetSeen = true;
+        r.RunFor(3.0);
+        Check(r.sweeps == 1 && !r.ar.HoldingForAcquisition(), "the sweep starts when it ends");
+        r.RunOut();
+        Check(r.ar.State() == AR::Phase::Complete && r.runsStarted == 4, "and the runs follow");
+    }
+    {
+        Rig r;
+        auto c = r.Config(); c.refocusEvery = 0;
+        r.acquiring = true;
+        r.ar.Start(c, r.now);
+        r.RunFor(30.0);
+        Check(r.runsStarted == 0, "a run with no sweep due waits too");
+        r.acquiring = false;
+        r.RunFor(3.0);
+        Check(r.runsStarted == 1, "and starts when it ends");
+    }
+    {
+        Rig r;
+        auto c = r.Config(); c.acquireHoldSec = 60.0;
+        r.acquiring = true;
+        r.ar.Start(c, r.now);
+        r.RunFor(70.0);
+        Check(r.ar.State() == AR::Phase::Failed && r.ar.Reason() == "acquisition did not finish",
+              "an acquisition that never ends is a failure, not a hang");
     }
 }
 
@@ -675,6 +719,7 @@ int main() {
     TestDisk();
     TestTargetLost();
     TestSeeingHold();
+    TestWaitsForAcquisition();
     TestRefusedRun();
     TestCameraDied();
     TestFocus();

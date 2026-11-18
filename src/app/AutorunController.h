@@ -78,6 +78,7 @@ public:
         m_results.clear();
         m_lastPath.clear();
         m_wasHolding = false;
+        m_wasHoldingAcq = false;
         m_wasDeferring = false;
         m_runNote.clear();
         return runner.Start(c, nowSec);
@@ -155,6 +156,13 @@ public:
             if (m_wasHolding) Notify(ToastLevel::Info, "Sequence is waiting for the seeing");
         }
 
+        // Phase 157.0c: say once when the sequence waits for acquisition.
+        if (runner.HoldingForAcquisition() != m_wasHoldingAcq) {
+            m_wasHoldingAcq = runner.HoldingForAcquisition();
+            Line(m_wasHoldingAcq ? "[AUTORUN] waiting for acquisition to end before focus or a run\n"
+                                 : "[AUTORUN] acquisition has ended: going on\n");
+        }
+
         // Phase 144: say once when a sweep is put off, and when it is due.
         if (runner.DeferringFocus() != m_wasDeferring) {
             m_wasDeferring = runner.DeferringFocus();
@@ -226,6 +234,7 @@ private:
     bool              m_pressing = false;
     bool              m_shown = false;
     bool              m_wasHolding = false;
+    bool m_wasHoldingAcq = false;   // phase 157.0c
     bool              m_wasDeferring = false;
     bool              m_jupiter = false;
     std::atomic<bool> m_focusFailed{false};

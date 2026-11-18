@@ -1621,6 +1621,11 @@ paths pass fault injection, and one unattended sky run completes.
    640x480 a recalibration left the star almost off screen with tracking
    unable to centre it. Then a full 4-hour soak on the imaging PC, then
    157.3, the report.
+   **157.0c written 2026-11-16 (3.3.20)**: `WideAcquire`, its scenario and
+   Dash spec; a 30-minute soak made 4 locks in 4 cycles, none refused. Also
+   fixed: RESET left an auto-acquire marked running, and Dash's telemetry
+   strip never showed. Owed: Dash's profile picker never reaches the app;
+   the soak rerun alone with astropy installed, then the 4-hour one.
    **Emulator targets, 2026-11-15 (3.3.19), asked for by the owner while
    watching the soak:** an unnamed star draws as a white star, not Jupiter;
    Mars has markings and a cap; Mercury, Venus and Mars show tonight's phase.

@@ -60,6 +60,7 @@ $Tests = @(
     @{ Name = "autorun_controller"; Sources = @() }
     @{ Name = "emu_fault";         Sources = @() }
     @{ Name = "slew_watch";        Sources = @() }
+    @{ Name = "acquire_frame";     Sources = @() }
     @{ Name = "fault_injection";   Sources = @("src\core\CaptureManager.cpp", "src\core\WriteBuffer.cpp", "src\core\SERWriter.cpp", "src\core\FITSWriter.cpp") }
     @{ Name = "app_headless";      Sources = @("src\core\CaptureManager.cpp", "src\core\WriteBuffer.cpp", "src\core\SERWriter.cpp", "src\core\FITSWriter.cpp") }
     @{ Name = "imaging_train";     Sources = @() }

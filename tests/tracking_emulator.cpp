@@ -183,6 +183,17 @@ static void RunModel(bool nexstar) {
         Check(lost, "the main thread is told to reset");
         r.t.Reset();
     }
+
+    printf("  6. a RESET part way through ends the sequence\n");
+    {
+        // 157.0c: main.cpp calls Tick only while the stage is not Off, so
+        // Reset itself must end it; a stale flag kept the wide acquire
+        // frame on after Dash's RESET.
+        const bool fourth = r.t.StartAutoAcquire(why);
+        Check(fourth && r.t.AutoAdvancing(), "auto-acquire starts", why);
+        r.t.Reset();
+        Check(!r.t.AutoAdvancing(), "Reset ends the auto-acquire sequence");
+    }
     r.t.Reset();
     r.Stop();
     r.m.Disconnect();

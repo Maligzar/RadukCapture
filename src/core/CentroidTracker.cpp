@@ -102,6 +102,11 @@ void CentroidTracker::StartLocked() {
 
 void CentroidTracker::Reset() {
     m_stage.store(AcquisitionStage::Off);
+    // 2026-11-16 (157.0c): the sequence ends here. Tick used to clear it on
+    // seeing Off, but the main loop calls Tick only while the stage is not
+    // Off, so after a RESET AutoAdvancing() stayed true and the wide
+    // acquire frame was never put back.
+    m_autoAdvance.store(false);
     _StopThread();
     {
         IMount* mnt = nullptr;
