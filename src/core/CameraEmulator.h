@@ -18,6 +18,7 @@
 #define NOMINMAX  // keep windows.h min/max macros away from std::min/max
 #endif
 #include "EmuFault.h"   // phase 157.0
+#include "CameraSettingsCache.h"
 #include "ThreadName.h"
 #include <windows.h>
 #include <timeapi.h>
@@ -272,6 +273,8 @@ public:
         m_info.BayerPattern = ASI_BAYER_RG;
         m_info.PixelSize = 2.0;
         m_isOpen = true;
+        m_handleDead = false;
+        m_settings.Clear();
         // Open at the full sensor, like the real camera does. The app's
         // own startup default is 3840x2160 and was being silently
         // clamped here, so the emulator reported a 1280x960 camera and
@@ -287,6 +290,7 @@ public:
         if (!m_isOpen) return;
         StopVideoCapture();
         m_isOpen = false;
+        m_settings.Clear();
         raduk::core::CoreLog("[CameraEmulator] Closed\n");
     }
 
@@ -338,6 +342,7 @@ public:
         m_reqOriginX.store((m_info.MaxWidth  - w) / 2);
         m_reqOriginY.store((m_info.MaxHeight - h) / 2);
         m_binning = binning; m_imgType = imgType;
+        m_settings.Region(w, h, binning, (int)imgType);
         if (changed || width > EMU_MAX_ROI_W || height > EMU_MAX_ROI_H)
             raduk::core::CoreLog("[CameraEmulator] SetROI %dx%d -> %dx%d %s\n",
                    width, height, w, h,
@@ -361,7 +366,8 @@ public:
         return std::pow(10.0f, (m_gain - 100) / 200.0f) * (m_exposureUs / 8000.0f);
     }
 
-    bool SetControl(ASI_CONTROL_TYPE type, long value, bool /*autoMode*/ = false) {
+    bool SetControl(ASI_CONTROL_TYPE type, long value, bool autoMode = false) {
+        m_settings.Control((int)type, value, autoMode);
         switch (type) {
             case ASI_GAIN:             m_gain = (int)value; break;
             case ASI_EXPOSURE:         m_exposureUs = value; break;
@@ -422,18 +428,20 @@ public:
 
     // ── Convenience setters ────────────────────────────────────
 
-    void SetGain(int gain) override               { m_gain = gain; }
-    void SetExposure(double ms) override { m_exposureUs = (long)(ms * 1000.0); }
-    void SetGamma(int gamma)             { m_gamma = gamma; }
-    void SetWhiteBalance(int r, int b)   { m_wbR = r; m_wbB = b; }
+    // Through SetControl, as the real ASICamera's are, so a replug's
+    // replay (CameraSettingsCache) sees them.
+    void SetGain(int gain) override      { SetControl(ASI_GAIN, gain); }
+    void SetExposure(double ms) override { SetControl(ASI_EXPOSURE, (long)(ms * 1000.0)); }
+    void SetGamma(int gamma)             { SetControl(ASI_GAMMA, gamma); }
+    void SetWhiteBalance(int r, int b)   { SetControl(ASI_WB_R, r); SetControl(ASI_WB_B, b); }
     // These are the setters callers actually use; SetControl is the other
     // door to the same state. Both were empty here, so the emulator kept
     // no record of either and GetControl answered 0 -- which the Phase 88
     // session restore then wrote to rig.ini as the last known bandwidth.
     // Their effect still is not simulated, and does not need to be; what
     // matters is that reading back returns what was set.
-    void SetUSBBandwidth(int pct)        { m_usbBandwidth = pct; }
-    void SetHighSpeedMode(bool en)       { m_highSpeed = en; }
+    void SetUSBBandwidth(int pct)        { SetControl(ASI_BANDWIDTHOVERLOAD, pct); }
+    void SetHighSpeedMode(bool en)       { SetControl(ASI_HIGH_SPEED_MODE, en ? 1 : 0); }
     void SetFlip(ASI_FLIP_STATUS /*f*/)         {}
     // Phase 107: a real window on the sensor. A no-op until now, which
     // left ROI following with nothing to move. The new origin reaches
@@ -442,6 +450,7 @@ public:
     // follower has to survive.
     bool SetStartPos(int x, int y) override {
         m_reqOriginX.store(x); m_reqOriginY.store(y);
+        m_settings.Start(x, y);
         return true;
     }
     bool GetStartPos(int& x, int& y) const override {
@@ -899,18 +908,57 @@ public:
     // injection for testing the recovery path: set RADUK_EMU_REMOVE_AFTER_S=N
     // and the "camera" disappears N seconds into capture (CAMERA_REMOVED,
     // immediate return like the SDK) for 10 seconds, then replugs.
+    //
+    // As the real SDK does, an unplug kills the handle for good: once the
+    // window has been seen, the camera answers CAMERA_CLOSED after it is
+    // back, until it is closed and opened again (Reconnect). Before, the
+    // old handle simply worked again, which is how a recovery that could
+    // never revive a real unplugged camera passed every test.
     bool GetVideoFrameEx(uint8_t* buffer, int bufferSize, int timeoutMs,
                          ASI_ERROR_CODE& err) {
-        if (InRemovedWindow()) { err = ASI_ERROR_CAMERA_REMOVED; return false; }
+        if (InRemovedWindow()) {
+            m_handleDead = true;
+            err = ASI_ERROR_CAMERA_REMOVED; return false;
+        }
+        if (m_handleDead) { err = ASI_ERROR_CAMERA_CLOSED; return false; }
         bool ok = GetVideoFrame(buffer, bufferSize, timeoutMs);
         err = ok ? ASI_SUCCESS : ASI_ERROR_TIMEOUT;
         return ok;
     }
 
     bool RestartCapture() override {
-        // Emulated §6.3 recovery: succeeds unless the camera is currently
-        // "unplugged" by the injection window.
-        return m_isCapturing && !InRemovedWindow();
+        // Emulated §6.3 recovery: a stop/start on the same handle, which
+        // clears a wedge and nothing more. A dead handle stays dead.
+        return m_isCapturing && !InRemovedWindow() && !m_handleDead;
+    }
+
+    // The real ASICamera's sequence, through this class's own Close and
+    // Open: the camera is not there while unplugged, and comes back at
+    // its defaults (full sensor) until the cache is replayed onto it.
+    bool Reconnect() override {
+        if (!m_isOpen) return false;
+        if (InRemovedWindow()) return false;   // not enumerated while unplugged
+        const bool wasCapturing = m_isCapturing;
+        const CameraSettingsSnapshot s = m_settings.Get();
+        // The injection runs on the clock of the first start; a restart
+        // must not re-arm it or move it.
+        const auto  start      = m_captureStart;
+        const float removeAt   = m_removeAfterS;
+        const bool  dropArmed  = m_dropArmed;
+        const EmuFault drop    = m_drop;
+        Close();
+        if (!Open(0)) return false;
+        const bool restored = ReplaySettings(s,
+            [this](int w, int h, int b, int t) { return SetROI(w, h, b, (ASI_IMG_TYPE)t); },
+            [this](int x, int y)               { return SetStartPos(x, y); },
+            [this](int id, long v, bool a)     { return SetControl((ASI_CONTROL_TYPE)id, v, a); });
+        raduk::core::CoreLog("[CameraEmulator] Re-opened after a USB drop, %zu settings "
+                             "restored%s\n", s.controls.size(), restored ? "" : ", some refused");
+        if (!wasCapturing) return true;
+        if (!StartVideoCapture()) return false;
+        m_captureStart = start; m_removeAfterS = removeAt;
+        m_dropArmed = dropArmed; m_drop = drop;
+        return true;
     }
 
     bool GetVideoFrame(uint8_t* buffer, int bufferSize, int timeoutMs) {
@@ -2093,6 +2141,10 @@ private:
 
     bool     m_dropArmed = false;   // phase 157.0
     EmuFault m_drop;
+
+    // An unplug was seen on this handle; only Close + Open clears it.
+    std::atomic<bool>   m_handleDead{false};
+    CameraSettingsCache m_settings;   // replayed by Reconnect
 
     bool InRemovedWindow() const {
         if (!m_isCapturing) return false;

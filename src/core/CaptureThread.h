@@ -26,6 +26,7 @@ struct CaptureStats {
     // Phase 58 (review C4 / Architecture §6.3)
     std::atomic<uint32_t> restarts{0};        // pipeline-wedge auto-resets
     std::atomic<bool>     cameraFault{false}; // camera removed / unrecovered
+    std::atomic<uint32_t> reconnects{0};      // re-opened after an unplug
 };
 
 class CaptureThread {

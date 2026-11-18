@@ -8481,8 +8481,8 @@ static int RunApp(bool useEmulator) {
                         slog.Camera("FAULT: frames stopped — auto-recovery running");
                     } else {
                         Log("[CAMERA] Recovered — frames flowing again\n");
-                        slog.Camera("Recovered after fault (%u restarts)",
-                                    stats.restarts.load());
+                        slog.Camera("Recovered after fault (%u restarts, %u re-opened after unplug)",
+                                    stats.restarts.load(), stats.reconnects.load());
                     }
                 }
             }
