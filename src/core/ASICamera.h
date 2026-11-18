@@ -109,6 +109,7 @@ public:
     }
     CameraInfo Describe() const override { return asimap::Describe(m_info); }
     float      GetTemperatureC() const override { return Temperature(); }
+    DeviceIdentity Identity() const override;   // phase 157.3
 
 private:
     int                             m_cameraId = -1;

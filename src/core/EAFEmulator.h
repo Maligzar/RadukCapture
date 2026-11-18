@@ -284,6 +284,12 @@ public:
     // ── Info ───────────────────────────────────────────────────
 
     int FocuserId() const override { return 0; }
+    DeviceIdentity Identity() const override {   // phase 157.3
+        DeviceIdentity d;
+        d.model = "ZWO EAF [EMU]";
+        d.firmware = d.sdk = "emulated";
+        return d;
+    }
 
 private:
     // Motor simulation: moves position toward target at ~1000 steps/sec

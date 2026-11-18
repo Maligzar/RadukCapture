@@ -45,6 +45,7 @@
 
 #include <cstdint>
 #include <string>
+#include "DeviceIdentity.h"
 
 namespace raduk::core {
 
@@ -169,6 +170,14 @@ public:
     virtual int        GetDroppedFrames() const = 0;
     virtual float      GetTemperatureC() const = 0;
     virtual int        CameraId() const = 0;
+
+    // Phase 157.3: model, firmware, SDK and serial for the session log
+    // and docs/QUALIFICATION.md. What the SDK cannot tell stays empty.
+    virtual DeviceIdentity Identity() const {
+        DeviceIdentity d;
+        d.model = Describe().name;
+        return d;
+    }
 };
 
 // ── Free helpers, so callers need no vendor header ─────────────

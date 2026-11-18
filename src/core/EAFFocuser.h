@@ -51,6 +51,7 @@ public:
     bool TryGetPosition(int& position) const override;
     int  GetPosition() const override;
     int  GetMaxPosition() const override { return m_info.MaxStep; }
+    DeviceIdentity Identity() const override;   // phase 157.3
 
     void SetReverse(bool reversed) override;
     void SetBacklash(int steps) override;
