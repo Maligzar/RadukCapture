@@ -249,6 +249,22 @@ struct RigConfig {
     int         moonMapRefocusEvery = 10;
     float       moonMapSettleSec    = 8.0f;
 
+    // Phase 163: the Tonight tab's night plan for planets and stars. Each
+    // ticked target gets one visit in GOOD (45-60) or PRIME (60+): an
+    // overhead of slew + lock + focus, then this much imaging. The Sun
+    // limit is off at 90 (daylight allowed); the Sun distance is safety.
+    // Starting figures, not measured.
+    float       nightPlanVisitMin     = 20.0f;
+    float       nightPlanMinVisitMin  = 5.0f;
+    float       nightPlanSettleSec    = 20.0f;   // after a slew; the slew itself at SatSlewDegPerSec
+    float       nightPlanLockSec      = 180.0f;
+    float       nightPlanFocusSec     = 120.0f;
+    float       nightPlanSunMaxDeg    = 90.0f;
+    float       nightPlanSunAvoidDeg  = 30.0f;
+    float       nightPlanPassMarginSec = 120.0f;
+    // Plan only this many hours from now; 0 plans to astronomical dawn.
+    float       nightPlanHours         = 0.0f;
+
     // Phase 113: a sequence of runs. Starting figures, not measured ones.
     int         autorunRuns         = 10;
     float       autorunGapSec       = 15.0f;
@@ -556,6 +572,15 @@ struct RigConfig {
         wf("MoonMapLock", moonMapLock ? 1 : 0);
         wf("MoonMapRefocusEvery", moonMapRefocusEvery);
         wf("MoonMapSettleSec", moonMapSettleSec);
+        wf("NightPlanVisitMin", nightPlanVisitMin);
+        wf("NightPlanMinVisitMin", nightPlanMinVisitMin);
+        wf("NightPlanSettleSec", nightPlanSettleSec);
+        wf("NightPlanLockSec", nightPlanLockSec);
+        wf("NightPlanFocusSec", nightPlanFocusSec);
+        wf("NightPlanSunMaxDeg", nightPlanSunMaxDeg);
+        wf("NightPlanSunAvoidDeg", nightPlanSunAvoidDeg);
+        wf("NightPlanPassMarginSec", nightPlanPassMarginSec);
+        wf("NightPlanHours", nightPlanHours);
         wf("AutorunSeeingPct", autorunSeeingPct);
         wf("AutorunSeeingHoldSec", autorunSeeingHoldSec);
         wf("AutorunPrimeDeferMin", autorunPrimeDeferMin);
@@ -778,6 +803,19 @@ private:
         if (cfg.moonMapRefocusEvery < 0) cfg.moonMapRefocusEvery = 0;
         cfg.moonMapSettleSec      = (float)rf("MoonMapSettleSec", cfg.moonMapSettleSec);
         if (cfg.moonMapSettleSec < 4.0f) cfg.moonMapSettleSec = 4.0f;   // outlasts the GoTo's own 3 s
+        auto clampF = [](float v, float lo, float hi, float dflt) {
+            return (v >= lo && v <= hi) ? v : dflt;   // NaN fails both
+        };
+        cfg.nightPlanVisitMin    = clampF((float)rf("NightPlanVisitMin", cfg.nightPlanVisitMin), 2.0f, 240.0f, 20.0f);
+        cfg.nightPlanMinVisitMin = clampF((float)rf("NightPlanMinVisitMin", cfg.nightPlanMinVisitMin), 1.0f, 240.0f, 5.0f);
+        if (cfg.nightPlanMinVisitMin > cfg.nightPlanVisitMin) cfg.nightPlanMinVisitMin = cfg.nightPlanVisitMin;
+        cfg.nightPlanSettleSec   = clampF((float)rf("NightPlanSettleSec", cfg.nightPlanSettleSec), 0.0f, 600.0f, 20.0f);
+        cfg.nightPlanLockSec     = clampF((float)rf("NightPlanLockSec", cfg.nightPlanLockSec), 0.0f, 1800.0f, 180.0f);
+        cfg.nightPlanFocusSec    = clampF((float)rf("NightPlanFocusSec", cfg.nightPlanFocusSec), 0.0f, 1800.0f, 120.0f);
+        cfg.nightPlanSunMaxDeg   = clampF((float)rf("NightPlanSunMaxDeg", cfg.nightPlanSunMaxDeg), -90.0f, 90.0f, 90.0f);
+        cfg.nightPlanSunAvoidDeg = clampF((float)rf("NightPlanSunAvoidDeg", cfg.nightPlanSunAvoidDeg), 10.0f, 90.0f, 30.0f);
+        cfg.nightPlanPassMarginSec = clampF((float)rf("NightPlanPassMarginSec", cfg.nightPlanPassMarginSec), 0.0f, 1800.0f, 120.0f);
+        cfg.nightPlanHours       = clampF((float)rf("NightPlanHours", cfg.nightPlanHours), 0.0f, 24.0f, 0.0f);
         cfg.autorunSeeingPct      = (int)rf("AutorunSeeingPct", cfg.autorunSeeingPct);
         cfg.autorunSeeingHoldSec  = (float)rf("AutorunSeeingHoldSec", cfg.autorunSeeingHoldSec);
         cfg.autorunPrimeDeferMin  = (float)rf("AutorunPrimeDeferMin", cfg.autorunPrimeDeferMin);

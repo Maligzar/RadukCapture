@@ -108,6 +108,7 @@
 #include "gui/PlayerWindow.h"     // [PLAY]: look through a SER recording
 #include "gui/TemperatureWindow.h"
 #include "gui/MoonMapWindow.h"    // phase 162: the Moon by quadrant and section
+#include "app/NightPlanController.h"   // phase 163: a night of planets and stars
 #include "gui/StatusWindow.h"
 #include "gui/ConfirmToast.h"
 #include "gui/ADCAlignWindow.h"
@@ -966,6 +967,9 @@ static int RunApp(bool useEmulator) {
     // a sequence; its hooks are set where the lock, autofocus and RECORD
     // it drives all exist.
     raduk::app::MoonMapController moonMap(mainUi);
+    // Phase 163: the Tonight tab's night plan for planets and stars. Its
+    // hooks are set beside the Moon map's, for the same reason.
+    raduk::app::NightPlanController nightPlan(mainUi);
     // A recording made for a section is filed under the section: by a
     // run, or by a person who went to one with the map's GOTO.
     struct MoonRec {
@@ -5060,6 +5064,7 @@ static int RunApp(bool useEmulator) {
         gotoPanel.StopSatellite("emergency stop");
         autorun.Abort("emergency stop");
         moonMap.Stop("emergency stop");   // phase 162
+        nightPlan.Stop("emergency stop"); // phase 163
         if (capturer.IsRecording()) {
             capturer.StopRecording(false);  // emergency stop - do not auto-stack
             usbMgr.SetCapturing(false);
@@ -6482,21 +6487,28 @@ static int RunApp(bool useEmulator) {
     //
     // One press, where the mosaic wants a chord, because this never moves
     // the mount. It stops on the same press.
-    toolbar.SetRunsCallback([&]() {
+    // Phase 163: the start of a sequence, apart from the button, so the
+    // night plan starts exactly what RUNS starts. False with the reason.
+    std::function<bool(std::string&)> startRuns = [&](std::string& why) -> bool {
         const double nowSec = std::chrono::duration<double>(
             std::chrono::steady_clock::now().time_since_epoch()).count();
-        if (autorun.Running()) {
-            autorun.Abort("stopped by the operator");
-            return;
-        }
         if (capturer.IsRecording() || gotoPanel.MosaicRunning() ||
             core.afCtl.Busy() || moonMap.runner.Running()) {
-            notifBar.NotifyWarn(L"Finish what is running first");
-            return;
+            why = "finish what is running first";
+            return false;
         }
         const auto& rig = raduk::core::RigConfig::Get();
         workOutDerotWindow(controls.GetFrameType());
 
+        // Phase 163, found by its scenario: just after a lock the frame
+        // has gone from the whole sensor to the ROI and there is no frame
+        // rate yet. A frame-limited run then has no length; it fell back
+        // to the derotation window, which for a star is endless, and the
+        // disk check refused it as "no room on the capture disk".
+        if (controls.GetLimitByFrames() && capture.Stats().fps.load() <= 0.0) {
+            why = "no frame rate yet, so no run length: wait for frames";
+            return false;
+        }
         raduk::core::AutorunRunner::Config c;
         c.runs         = rig.autorunRuns;
         c.gapSec       = rig.autorunGapSec;
@@ -6513,10 +6525,8 @@ static int RunApp(bool useEmulator) {
             capture.Stats().fps.load());
 
         if (!core.arCtl.Start(c, nowSec, onJupiter, rig.autorunSeeingPct / 100.0)) {
-            wchar_t msg[128];
-            swprintf(msg, 128, L"Runs not started: %hs", autorun.Reason().c_str());
-            notifBar.NotifyWarn(msg);
-            return;
+            why = autorun.Reason();
+            return false;
         }
         Log("[AUTORUN] start: %d runs of %.0f s, gap %.0f s, focus every %d, "
             "floor %.0f deg, seeing bar %d%%\n", c.runs, c.runSec, c.gapSec,
@@ -6533,6 +6543,22 @@ static int RunApp(bool useEmulator) {
         swprintf(msg, 128, L"Sequence: %d runs of %.1f min", c.runs,
                  c.runSec / 60.0);
         notifBar.NotifyInfo(msg);
+        return true;
+    };
+    toolbar.SetRunsCallback([&]() {
+        if (autorun.Running()) {
+            autorun.Abort("stopped by the operator");
+            return;
+        }
+        std::string why;
+        if (startRuns(why)) return;
+        if (why == "finish what is running first") {
+            notifBar.NotifyWarn(L"Finish what is running first");
+            return;
+        }
+        wchar_t msg[128];
+        swprintf(msg, 128, L"Runs not started: %hs", why.c_str());
+        notifBar.NotifyWarn(msg);
     });
 
     // Phase 153.3: the sequence's wiring is AppCore's AutorunController;
@@ -6684,6 +6710,165 @@ static int RunApp(bool useEmulator) {
             Log("[MOONMAP] project '%s': %s\n", moonMap.Active().Name().c_str(),
                 moonMap.Active().Summary().c_str());
     }
+
+    // ── Phase 163: the night plan for planets and stars ──────
+    //
+    // Nothing new here either: the GoTo is the panel's by name, which
+    // loads the target's profile; the lock is PLANET LOCK's; the runs are
+    // the RUNS button's. The controller puts them in time order.
+    // The plan's settings, from rig.ini, for PLAN and for CONTINUE's re-plan.
+    auto nightPlanOptions = []() {
+        const auto& rig = raduk::core::RigConfig::Get();
+        raduk::core::NightPlanOptions o;
+        o.visitMin      = rig.nightPlanVisitMin;
+        o.minVisitMin   = rig.nightPlanMinVisitMin;
+        o.slewDegPerSec = rig.satSlewDegPerSec;   // the mount's GoTo rate, as for passes
+        o.settleSec     = rig.nightPlanSettleSec;
+        o.lockSec       = rig.nightPlanLockSec;
+        o.focusSec      = rig.nightPlanFocusSec;
+        o.sunMaxAltDeg  = rig.nightPlanSunMaxDeg;
+        o.sunAvoidDeg   = rig.nightPlanSunAvoidDeg;
+        o.passMarginSec = rig.nightPlanPassMarginSec;
+        return o;
+    };
+    {
+        raduk::app::NightPlanHooks h;
+        h.jdNow  = []() { return raduk::sky::PreciseJdNow(); };
+        h.altNow = [&](const std::string& n) { return gotoPanel.ComputedAltNow(n); };
+        h.slew = [&](const std::string& name, std::string& why) {
+            // The correction thread steers this same mount.
+            tracker.Reset();
+            controls.SetPlanetLockState(false);
+            controls.SetSkyMapLocked(false);
+            if (!gotoPanel.RequestGoToNamed(name, why)) return false;
+            slog.Mount("Night plan: slewing to %s", name.c_str());
+            return true;
+        };
+        h.mountSlewing = [&]() { return mount && mount->IsSlewing(); };
+        h.startLock = [&](std::string& why) {
+            using S = raduk::core::AcquisitionStage;
+            tracker.SetMount(mount);
+            bool ok = true;
+            if (tracker.Stage() == S::Searching && !tracker.AutoAdvancing())
+                ok = tracker.PromoteToAutoAcquire(why);
+            else if (tracker.Stage() == S::Off)
+                ok = tracker.StartAutoAcquire(why);
+            if (!ok) return false;
+            slog.Mount("Night plan: acquisition (search -> calibrate -> centre -> lock)");
+            controls.SetPlanetLockState(true);
+            stepWide();
+            return true;
+        };
+        h.locked = [&]() { return tracker.Stage() == raduk::core::AcquisitionStage::Locked; };
+        h.dropLock = [&]() {
+            if (tracker.Stage() == raduk::core::AcquisitionStage::Off) return;
+            tracker.Reset();
+            controls.SetPlanetLockState(false);
+            controls.SetSkyMapLocked(false);
+        };
+        h.startRuns   = [&](std::string& why) { return startRuns(why); };
+        h.runsRunning = [&]() { return autorun.Running(); };
+        h.framesFlowing = [&]() { return capture.Stats().fps.load() > 0.0; };
+        h.stopRuns    = [&](const char* why) { if (autorun.Running()) autorun.Abort(why); };
+        h.runsAborted = [&]() { return autorun.State() == raduk::core::AutorunRunner::Phase::Aborted; };
+        h.runsReason  = [&]() { return autorun.Reason(); };
+        h.mountBusy = [&]() -> std::string {
+            if (gotoPanel.Satellites().Tracking()) return "a satellite pass has the mount";
+            if (gotoPanel.MosaicRunning())         return "a mosaic is running";
+            if (moonMap.runner.Running())          return "the Moon map is running";
+            if (autorun.Running())                 return "a sequence of runs is going";
+            if (capturer.IsRecording())            return "a recording is going";
+            if (core.afCtl.Busy())                 return "autofocus is running";
+            return std::string();
+        };
+        h.clock   = [](double jd) { return raduk::gui::GoToPanel::LocalClock(jd); };
+        h.session = [&](const std::string& t) { slog.Capture("%s", t.c_str()); };
+        h.notify  = [&](raduk::app::ToastLevel l, const std::string& u8) {
+            if (l == raduk::app::ToastLevel::Info) notifBar.NotifyInfo(raduk::core::ToWide(u8));
+            else                                   notifBar.NotifyWarn(raduk::core::ToWide(u8));
+        };
+        h.changed = [&]() { gotoPanel.RefreshNightPlan(); };
+        // Phase 163b: CONTINUE plans what is left from the sky as it is then.
+        h.ticked = [&]() { return gotoPanel.NightTicked(); };
+        h.replan = [&](const std::vector<std::string>& names) {
+            return gotoPanel.BuildNightPlanFor(names, nightPlanOptions(),
+                                               raduk::core::RigConfig::Get().nightPlanHours);
+        };
+        nightPlan.SetHooks(std::move(h));
+        gotoPanel.SetNightPlanModel(&nightPlan);
+    }
+
+    // Every way of asking the night plan for something -- the Tonight
+    // tab's ticks and buttons, Dash, a scenario -- comes through here.
+    //   TICK <name>, UNTICK <name>, CLEAR, PLAN, RUN (or stop), STOP,
+    //   PAUSE, CONTINUE (phase 163b)
+    std::function<void(const std::string&, const std::string&)> nightPlanCommand =
+        [&](const std::string& cmdIn, const std::string& argIn) {
+        std::string cmd = cmdIn;
+        for (auto& ch : cmd) ch = (char)toupper((unsigned char)ch);
+        std::string arg = argIn;
+        while (!arg.empty() && (arg.back() == ' ' || arg.back() == '\r')) arg.pop_back();
+        while (!arg.empty() && arg.front() == ' ') arg.erase(arg.begin());
+        auto refuse = [&](const std::string& why) {
+            Log("[NIGHTPLAN] %s refused: %s\n", cmd.c_str(), why.c_str());
+            notifBar.NotifyWarn(raduk::core::ToWide("Night plan: " + why));
+            gotoPanel.RefreshNightPlan();
+        };
+        const auto& rig = raduk::core::RigConfig::Get();
+        if (cmd == "TICK" || cmd == "UNTICK") {
+            // While paused the ticks are free: CONTINUE plans with them.
+            if (nightPlan.runner.Running() && !nightPlan.Paused()) {
+                gotoPanel.SetNightTick(arg, gotoPanel.IsNightTicked(arg));   // put the box back
+                return refuse("the plan is running: STOP it first");
+            }
+            if (!gotoPanel.SetNightTick(arg, cmd == "TICK"))
+                return refuse("no object called '" + arg + "'");
+            Log("[NIGHTPLAN] %s %s: %d ticked\n", cmd == "TICK" ? "ticked" : "unticked",
+                gotoPanel.CatalogName(arg).c_str(), (int)gotoPanel.NightTicked().size());
+        } else if (cmd == "CLEAR") {
+            if (nightPlan.runner.Running()) return refuse("the plan is running: STOP it first");
+            gotoPanel.ClearNightTicks();
+            nightPlan.ClearPlan();
+            Log("[NIGHTPLAN] ticks and plan cleared\n");
+        } else if (cmd == "PLAN") {
+            if (nightPlan.Paused()) return refuse("the plan is paused: CONTINUE plans the rest again");
+            if (nightPlan.runner.Running()) return refuse("the plan is running: STOP it first");
+            const auto names = gotoPanel.NightTicked();
+            if (names.empty()) return refuse("tick some planets or stars first");
+            nightPlan.SetPlan(gotoPanel.BuildNightPlanFor(names, nightPlanOptions(), rig.nightPlanHours));
+            const auto& p = nightPlan.Plan();
+            wchar_t msg[160];
+            swprintf(msg, 160, L"Night plan: %d visits, %d not planned", (int)p.visits.size(),
+                     (int)p.skipped.size());
+            notifBar.NotifyInfo(msg);
+        } else if (cmd == "RUN" || cmd == "START") {
+            if (nightPlan.runner.Running()) { nightPlan.Stop("stopped by the operator"); return; }
+            raduk::core::NightPlanRunner::Config c;
+            // Centring can take up to about 5 minutes in the afternoon.
+            c.lockLimitSec = (std::max)(300.0, (double)rig.nightPlanLockSec);
+            c.minVisitSec  = rig.nightPlanMinVisitMin * 60.0;
+            std::string why;
+            if (!nightPlan.Start(c, why)) return refuse(why);
+        } else if (cmd == "STOP") {
+            if (!nightPlan.runner.Running()) return refuse("the plan is not running");
+            nightPlan.Stop("stopped by the operator");
+        } else if (cmd == "PAUSE" || cmd == "CONTINUE" || cmd == "RESUME") {
+            // One button: PAUSE when running, CONTINUE when paused.
+            std::string why;
+            const bool cont = cmd != "PAUSE" || nightPlan.Paused();
+            if (cmd == "PAUSE" && nightPlan.Paused()) {
+                if (!nightPlan.Continue(why)) return refuse(why);
+            } else if (cont) {
+                if (!nightPlan.Continue(why)) return refuse(why);
+            } else if (!nightPlan.Pause(why)) {
+                return refuse(why);
+            }
+        } else {
+            return refuse("no command '" + cmd + "'");
+        }
+        gotoPanel.RefreshNightPlan();
+    };
+    gotoPanel.SetNightPlanCommand(nightPlanCommand);
 
     // Every way of asking the map for something -- its window's buttons, a
     // click on a section, Dash, the keyboard, a scenario -- comes through
@@ -7198,6 +7383,13 @@ static int RunApp(bool useEmulator) {
                 Log("[WS] Remote moonmap: %s\n", rc.arg.c_str());
                 moonMapCommand(rc.arg.substr(0, sp),
                                sp == std::string::npos ? std::string() : rc.arg.substr(sp + 1));
+            } else if (rc.cmd == "nightplan") {
+                // Phase 163: "TICK Jupiter", "PLAN", "RUN", "STOP", ...
+                // The same commands the Tonight tab's ticks and buttons send.
+                const size_t sp = rc.arg.find(' ');
+                Log("[WS] Remote nightplan: %s\n", rc.arg.c_str());
+                nightPlanCommand(rc.arg.substr(0, sp),
+                                 sp == std::string::npos ? std::string() : rc.arg.substr(sp + 1));
             }
         }
     });
@@ -7407,6 +7599,7 @@ static int RunApp(bool useEmulator) {
             // Leave nothing running, then close the way EXIT does. The
             // recording has to be stopped first, because exiting while
             // recording asks a question nobody is there to answer.
+            nightPlan.Stop("scenario finished");   // phase 163
             if (autorun.Running()) autorun.Abort("scenario finished");
             moonMap.Stop("scenario finished");
             if (capturer.IsRecording()) capturer.StopRecording(false);
@@ -8422,6 +8615,7 @@ static int RunApp(bool useEmulator) {
                 // Phase 162: the Moon map's run, on the same tick.
                 moonMap.Tick(nowSec, capturer.IsRecording(), core.afCtl.Busy(),
                              capturer.FramesRecorded());
+                nightPlan.Tick();   // phase 163
                 // A hand recording of a section the map's GOTO went to.
                 if (moonRec.donePending) {
                     moonRec.donePending = false;
@@ -9081,6 +9275,35 @@ static int RunApp(bool useEmulator) {
                 telemetry.output_dir   = cfg.outputDir;
                 telemetry.file_prefix  = cfg.filePrefix;
                 telemetry.limit_frames = cfg.limitFrames;
+
+                // Phase 163: the night plan, for Dash. Rows are
+                // "slew|runs|target|why|state", one a visit or a target
+                // not planned, joined by ';'.
+                {
+                    auto join = [](const std::vector<std::string>& v) {
+                        std::string out;
+                        for (const auto& x : v) { if (!out.empty()) out += '|'; out += x; }
+                        return out;
+                    };
+                    telemetry.nightplan_running    = nightPlan.runner.Running();
+                    telemetry.nightplan_state      = nightPlan.StateLine();
+                    telemetry.nightplan_target     = nightPlan.CurrentTarget();
+                    telemetry.nightplan_ticked     = join(gotoPanel.NightTicked());
+                    telemetry.nightplan_candidates = join(gotoPanel.NightCandidates());
+                    telemetry.nightplan_paused     = nightPlan.Paused();   // 163b
+                    std::string rows;
+                    // ';' and '|' are the separators: none may be inside a field.
+                    auto field = [](std::string t) {
+                        for (auto& ch : t) if (ch == ';' || ch == '|') ch = ',';
+                        return t;
+                    };
+                    for (const auto& r : nightPlan.Rows()) {
+                        if (!rows.empty()) rows += ';';
+                        rows += field(r.slew) + "|" + field(r.runs) + "|" + field(r.name) + "|" +
+                                field(r.why) + "|" + field(r.state);
+                    }
+                    telemetry.nightplan_rows = rows;
+                }
 
                 // Phase 162: the Moon map, for Dash.
                 telemetry.moonmap_name.clear();
