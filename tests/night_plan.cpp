@@ -89,7 +89,8 @@ static double LowestIn(const Curve& c, double a, double b) {
 int main() {
     printf("Night plan for planets and stars (phase 163)\n\n");
     NightPlanOptions o;            // 20 min visits, 6.5 min overhead -> 7 minutes
-    const double overheadMin = std::ceil(o.OverheadSec() / 60.0);
+    // No start position: the first slew is allowed the longest.
+    const double overheadMin = std::ceil(o.OverheadSec(NightPlanOptions::LONGEST_SLEW_DEG) / 60.0);
 
     printf("1. A target outside GOOD and PRIME is never scheduled\n");
     {
@@ -140,7 +141,7 @@ int main() {
         Check(apart, "each slew starts after the visit before it ends");
         bool gap = true;
         for (size_t i = 1; i < p.visits.size(); ++i)
-            if ((p.visits[i].imageJd - p.visits[i - 1].endJd) * 1440.0 < overheadMin - 0.01) gap = false;
+            if ((p.visits[i].imageJd - p.visits[i - 1].endJd) * 1440.0 < std::ceil(o.OverheadSec(p.visits[i].slewDeg) / 60.0) - 0.01) gap = false;
         Check(gap, "and the gap before each first run holds the whole overhead");
         Check(p.TotalPrimeMin() == 60, "all 60 minutes are PRIME", std::to_string(p.TotalPrimeMin()));
     }
@@ -557,6 +558,80 @@ int main() {
         Check(ui.Saw("plan finished: 0 visited, 0 skipped (every ticked target is visited)") ||
               ui.Saw("plan finished: 0 visited, 0 skipped"), "and says so");
         Check(!ctl.Continue(why), "CONTINUE when not paused is refused", why);
+    }
+
+    // ── Phase 163b: the slew from where the tube is ──────────
+    // Targets fixed in the sky, in PRIME all along, at chosen azimuths.
+    // The rate is 2.4 deg/s; settle, lock and focus are 320 s more.
+    auto fixedAt = [](std::vector<std::pair<double, double>> altAz) {
+        return NightSampler([altAz](int t, double) {
+            NightSample s;
+            s.altDeg = altAz[(size_t)t].first;
+            s.azDeg  = altAz[(size_t)t].second;
+            s.sunAltDeg = -30.0;
+            return s;
+        });
+    };
+    printf("\n24. The first slew is from where the tube is now\n");
+    {
+        NightPlanOptions near = o;
+        near.haveStart = true; near.startAltDeg = 70.0; near.startAzDeg = 10.0;
+        const auto a = BuildNightPlan(Names({"A"}), fixedAt({{70.0, 0.0}}), Jd(0), Jd(300), {}, near);
+        NightPlanOptions far = near;
+        far.startAzDeg = 190.0;
+        const auto b = BuildNightPlan(Names({"A"}), fixedAt({{70.0, 0.0}}), Jd(0), Jd(300), {}, far);
+        Check(a.visits.size() == 1 && std::fabs(a.visits[0].slewDeg - 10.0) < 0.01 &&
+              a.visits[0].slewFrom == "where the tube is", "10 deg away: a 10 deg slew from where the tube is",
+              a.visits.empty() ? "" : a.visits[0].Why());
+        Check(b.visits.size() == 1 && std::fabs(b.visits[0].slewDeg - 170.0) < 0.01,
+              "170 deg away the short way round: 170 deg", b.visits.empty() ? "" : b.visits[0].Why());
+        // 4 s + 320 s is 6 minutes; 71 s + 320 s is 7.
+        Check(a.visits.size() == 1 && std::fabs(Min(a.visits[0].imageJd) - 6.0) < 0.01,
+              "the near one's runs start 6 min in", a.visits.empty() ? "" : std::to_string(Min(a.visits[0].imageJd)));
+        Check(b.visits.size() == 1 && std::fabs(Min(b.visits[0].imageJd) - 7.0) < 0.01,
+              "the far one's 7 min in", b.visits.empty() ? "" : std::to_string(Min(b.visits[0].imageJd)));
+        const auto c = BuildNightPlan(Names({"A"}), fixedAt({{70.0, 0.0}}), Jd(0), Jd(300), {}, o);
+        Check(c.visits.size() == 1 && c.visits[0].slewDeg == 180.0 &&
+              !c.visits[0].slewKnown && c.visits[0].slewFrom == "no mount position",
+              "with no position for the tube, the longest slew is allowed", c.visits.empty() ? "" : c.visits[0].Why());
+    }
+
+    printf("\n25. Between visits, the slew is from the target before\n");
+    {
+        NightPlanOptions st = o;
+        st.haveStart = true; st.startAltDeg = 70.0; st.startAzDeg = 0.0;
+        // A and B are side by side, C is across the sky. Each wants 20 min.
+        const auto p = BuildNightPlan(Names({"A", "B", "C"}),
+                                      fixedAt({{70.0, 0.0}, {70.0, 5.0}, {70.0, 180.0}}), Jd(0), Jd(300), {}, st);
+        Check(p.visits.size() == 3, "all three placed", std::to_string(p.visits.size()));
+        bool fits = true;
+        std::string detail;
+        for (size_t i = 1; i < p.visits.size(); ++i) {
+            const auto& v = p.visits[i];
+            const double gap = Min(v.imageJd) - Min(p.visits[i - 1].endJd);
+            if (v.slewFrom != p.visits[i - 1].name) fits = false;
+            if (gap + 1e-6 < std::ceil(st.OverheadSec(v.slewDeg) / 60.0)) fits = false;
+            detail += v.name + " from " + v.slewFrom + " " + std::to_string((int)v.slewDeg) + " deg; ";
+        }
+        Check(fits, "each slews from the one before, with the time its slew needs", detail);
+        double total = 0.0;
+        for (const auto& v : p.visits) total += v.slewDeg;
+        Check(total <= 185.0 + 1e-6, "and the order does not cross the sky twice", std::to_string(total));
+    }
+
+    printf("\n26. A pass between two visits: the tube could be anywhere\n");
+    {
+        NightPlanOptions st = o;
+        st.haveStart = true; st.startAltDeg = 70.0; st.startAzDeg = 0.0;
+        std::vector<NightBusy> pass = {{Jd(40), Jd(46), "ISS"}};
+        // A takes the start; B cannot go before the pass, so it follows it.
+        NightPlanOptions one = st;
+        const auto p = BuildNightPlan(Names({"A", "B"}), fixedAt({{70.0, 0.0}, {70.0, 2.0}}),
+                                      Jd(0), Jd(300), pass, one);
+        const NightVisit* after = nullptr;
+        for (const auto& v : p.visits) if (Min(v.slewJd) >= 48.0 - 1e-6) after = &v;
+        Check(after && after->slewDeg == 180.0 && !after->slewKnown && after->slewFrom == "after a pass",
+              "the visit after it is allowed the longest slew", after ? after->Why() : "none after the pass");
     }
 
     printf("\n%s: %d failure(s)\n", g_fail ? "FAILED" : "PASSED", g_fail);

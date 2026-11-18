@@ -48,11 +48,24 @@ by day, and the emulator scenario runs in the afternoon. Two rules guard it:
 Each target wants one **visit**: the overhead of getting there, then a stretch
 of imaging.
 
-1. **Overhead.** Slew, lock and focus, as one fixed block before the imaging:
-   `NightPlanSlewSec` (90) + `NightPlanLockSec` (180) + `NightPlanFocusSec`
-   (120) = 6.5 minutes. The overhead may fall while the target is still
-   climbing to 45°, so the first run can start as the window opens. It may
-   not overlap another visit or a pass.
+1. **Overhead.** Slew, settle, lock and focus, as one block before the
+   imaging. The slew is worked out from where the tube will be (163b):
+   - from the visit before it in time, the target where that visit ends;
+   - for the first visit, the mount's position when PLAN or CONTINUE is
+     pressed;
+   - with no mount position, or with a ticked pass in between (the pass
+     leaves the tube anywhere), the longest slew, 180°.
+
+   The slew takes the larger of the azimuth change (the short way round)
+   and the altitude change, at `SatSlewDegPerSec` (2.4°/s, the same rate
+   the satellite plan uses). Then `NightPlanSettleSec` (20) +
+   `NightPlanLockSec` (180) + `NightPlanFocusSec` (120). So a visit beside
+   the last one has about 5.5 minutes before its first run; one across the
+   sky about 6.5. Rounded up to whole minutes. The overhead may fall while
+   the target is still climbing to 45°, so the first run can start as the
+   window opens. It may not overlap another visit or a pass. Placing a
+   visit before another also checks that the next one's slew from it still
+   fits.
 2. **Imaging.** `NightPlanVisitMin` (20) minutes, all of it with the target
    at 45° or more, every minute of it allowed by the Sun rules. Never past
    the end of the window.
@@ -141,9 +154,10 @@ slew availability."
 - Nothing left, or nothing that fits a window: the plan ends and says why.
 - The list keeps what was done above the new plan. STOP works while paused.
 
-Slew time is the fixed overhead (`NightPlanSlewSec`), the same as for the
-first plan, not worked out from where the tube is pointing. 90 s is a
-starting figure, not measured on this mount.
+Slews are worked out from where the tube is, as in rule 1: CONTINUE takes
+the mount's position at that moment for the first slew. 2.4°/s is the
+satellite plan's figure, not measured for GoTo on this mount, and the cord
+may send the azimuth axis the long way round, which this does not know.
 
 ## Where it lives
 

@@ -3009,8 +3009,12 @@ whole plan. Every target uses the same camera settings.
 stars you want and press PLAN TONIGHT. Each gets one visit while it is in GOOD
 (45 to 60 degrees) or PRIME (60 degrees and up), worked out from its position
 over the night, not from the mount. PRIME is preferred and GOOD is the
-fallback. A visit is 6.5 minutes to slew, lock and focus, then 20 minutes of
-imaging. Visits never overlap, and passes ticked on the Passes tab are kept
+fallback. Before each visit comes time to slew, settle, lock and focus. The
+slew is worked out from where the tube will be: the target before it, or for
+the first visit where the mount points now. It is the bigger of the azimuth
+and altitude moves at `SatSlewDegPerSec`, so a visit next to the last one gets
+about 5.5 minutes and one across the sky about 6.5. After a pass, or with no
+mount, it allows the longest slew. Then 20 minutes of imaging. Visits never overlap, and passes ticked on the Passes tab are kept
 clear, with 2 minutes either side. The plan below the buttons says, for each
 target, when it slews, when its runs start and end, which window, how many
 minutes of each, and its peak height. A target left out says why: it never
@@ -3033,8 +3037,8 @@ mount are left as they are, so you can stay on a target as long as you like,
 or do something else. You can tick and untick targets while paused. CONTINUE
 then keeps what is done (the target you paused on counts, if its runs had
 started), and plans every ticked target not yet visited again from now, by
-the same rules: the windows from the sky as it is then, and time to slew,
-lock and focus before each visit. The list keeps what is done above the new
+the same rules: the windows from the sky as it is then, and time to slew
+from where the tube is then, lock and focus before each visit. The list keeps what is done above the new
 plan.
 
 The plan runs from now to astronomical dawn, or `NightPlanHours` from now if
@@ -3042,7 +3046,7 @@ that is sooner. Daylight is allowed by default, for bright planets and stars;
 set `NightPlanSunMaxDeg` to -12, say, for dark sky only. Whatever that is set
 to, a target is never visited while the Sun is up and within 30 degrees of it
 (`NightPlanSunAvoidDeg`, 10 at the least). Other rig.ini keys:
-`NightPlanVisitMin`, `NightPlanMinVisitMin`, `NightPlanSlewSec`,
+`NightPlanVisitMin`, `NightPlanMinVisitMin`, `NightPlanSettleSec`,
 `NightPlanLockSec`, `NightPlanFocusSec`, `NightPlanPassMarginSec`. Dash has the
 same controls under NIGHT PLAN. Not yet tried on the sky: it is checked on the
 bench and on two stars in the emulator.
@@ -3379,7 +3383,7 @@ un-soak.ps1` runs the emulator for hours through GoTo, lock, autofocus and runs,
 | 3.3.21 | 162 | The Moon map (`Y`). A project maps the whole Moon by quadrant and section, sized so a section fits the frame at any camera angle (5 x 5 a quadrant, 88 sections, on this rig's full sensor), and fills in over as many nights as it takes: green is captured, amber is wanted and in sunlight now. START (`Ctrl+Shift+Y`) captures every wanted section in sunlight in turn, with the slew, PLANET LOCK on the surface, autofocus and RECORD the app already had; GOTO and RECORD do one by hand. When every section is green the project says READY FOR MOSAIC and lists the files, with the light each was taken in, for a stitching program. Dash has the same map under MOON MAP. rig.ini `MoonMapSectionsPerSide`, `MoonMapLock`, `MoonMapRefocusEvery`, `MoonMapSettleSec`. Not yet run on the Moon: the bench tests, the scenario and the Dash test pass in the emulator. |
 | 3.3.22 | 157.3 | At connect, the session log now names each device: an `Identity:` line with model, firmware, SDK and serial for the camera, the focuser and the mount (the EAF's firmware, the NexStar hand control's version; ZWO cameras do not report a firmware version, so it reads "not reported"). `docs/QUALIFICATION.md` lists the configurations actually run, with measured figures only, each with its date and source. So far: the ASI678MC (SDK 1.41), Celestron 8SE and EAF (SDK 1.7.7) on 2026-11-07, where three Uranus runs held 51.1 and 37.0 fps (exposure-limited) with no frame dropped and no gap in 20,374 frames; and the emulator's write path and soaks. The camera's full-sensor rate over USB, autofocus repeatability, pointing error and firmware versions are marked not yet measured. |
 | 3.3.23 | 162b | The Moon map has buttons: MOON on the left rail, under GOTO, and MOON MAP beside GOTO SELECTED on the GoTo panel. Before, only `Y` and the command palette opened it. The rail's buttons are 50 px tall instead of 56, so eleven fit. |
-| 3.3.24 | 163 | A night plan for planets and stars, on the GoTo panel's Tonight tab. Tick targets and press PLAN TONIGHT: each gets one visit while it is in GOOD (45-60 degrees) or PRIME (60 and up), PRIME first, worked out from its computed position over the night, with time to slew, lock and focus before it, never overlapping another visit or a pass ticked on the Passes tab. The plan says when and why for each target, and why any was left out. RUN TONIGHT takes them in turn: GoTo with the target's profile, PLANET LOCK, then RUNS; it moves on when the runs are done or the visit's time is up. PAUSE holds the plan, to stay longer on a target or change the ticks; CONTINUE plans what is left again from now. No lock in 5 minutes skips a target; STOP TONIGHT, the emergency stop, or a person stopping the runs stops the plan. Never within 30 degrees of a risen Sun. Dash has the same controls under NIGHT PLAN. rig.ini `NightPlanVisitMin`, `NightPlanMinVisitMin`, `NightPlanSlewSec`, `NightPlanLockSec`, `NightPlanFocusSec`, `NightPlanSunMaxDeg`, `NightPlanSunAvoidDeg`, `NightPlanPassMarginSec`, `NightPlanHours`. Not yet tried on the sky. |
+| 3.3.24 | 163 | A night plan for planets and stars, on the GoTo panel's Tonight tab. Tick targets and press PLAN TONIGHT: each gets one visit while it is in GOOD (45-60 degrees) or PRIME (60 and up), PRIME first, worked out from its computed position over the night, with time to slew (from where the tube will be), lock and focus before it, never overlapping another visit or a pass ticked on the Passes tab. The plan says when and why for each target, and why any was left out. RUN TONIGHT takes them in turn: GoTo with the target's profile, PLANET LOCK, then RUNS; it moves on when the runs are done or the visit's time is up. PAUSE holds the plan, to stay longer on a target or change the ticks; CONTINUE plans what is left again from now. No lock in 5 minutes skips a target; STOP TONIGHT, the emergency stop, or a person stopping the runs stops the plan. Never within 30 degrees of a risen Sun. Dash has the same controls under NIGHT PLAN. rig.ini `NightPlanVisitMin`, `NightPlanMinVisitMin`, `NightPlanSettleSec`, `NightPlanLockSec`, `NightPlanFocusSec`, `NightPlanSunMaxDeg`, `NightPlanSunAvoidDeg`, `NightPlanPassMarginSec`, `NightPlanHours`. Not yet tried on the sky. |
 
 ---
 

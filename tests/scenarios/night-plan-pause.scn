@@ -19,7 +19,7 @@ rig     AutorunMinAltDeg=10
 rig     NightPlanHours=1
 rig     NightPlanVisitMin=15
 rig     NightPlanMinVisitMin=3
-rig     NightPlanSlewSec=30
+rig     NightPlanSettleSec=10
 rig     NightPlanLockSec=300
 rig     NightPlanFocusSec=0
 

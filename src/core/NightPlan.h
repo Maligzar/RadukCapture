@@ -57,6 +57,7 @@ namespace raduk::core {
 // Where a target is at one moment, and where the Sun is.
 struct NightSample {
     double altDeg    = -90.0;
+    double azDeg     = 0.0;     // phase 163b: for the slew to it
     double sunAltDeg = -90.0;
     double sunSepDeg = 180.0;   // target to Sun
 };
@@ -65,15 +66,32 @@ struct NightPlanOptions {
     double stepMin       = 1.0;
     double visitMin      = 20.0;   // imaging wanted a visit
     double minVisitMin   = 5.0;    // the shortest worth a slew
-    double slewSec       = 90.0;
+    // Phase 163b: the slew is worked out from where the tube will be: the
+    // angle to go at the mount's GoTo rate (SatSlewDegPerSec), the longer
+    // axis setting it, azimuth the short way; then the settle, the lock
+    // and the focus.
+    double slewDegPerSec = 2.4;
+    double settleSec     = 20.0;
     double lockSec       = 180.0;
     double focusSec      = 120.0;
+    // Where the tube is when the plan starts. Without it, and after a
+    // pass, the slew is allowed the longest there can be.
+    bool   haveStart     = false;
+    double startAltDeg   = 0.0, startAzDeg = 0.0;
     double sunMaxAltDeg  = 90.0;   // 90: daylight allowed
     double sunAvoidDeg   = 30.0;   // never this close to a risen Sun
     double passMarginSec = 120.0;  // either side of a ticked pass
     int    exhaustiveMax = 6;      // try every order up to this many targets
 
-    double OverheadSec() const { return slewSec + lockSec + focusSec; }
+    double FixedSec() const { return settleSec + lockSec + focusSec; }
+    double Rate() const { return slewDegPerSec > 0.1 ? slewDegPerSec : 0.1; }
+    static double SlewDeg(double fromAlt, double fromAz, double toAlt, double toAz) {
+        const double dAz = std::fabs(std::fmod(toAz - fromAz + 540.0, 360.0) - 180.0);
+        return (std::max)(dAz, std::fabs(toAlt - fromAlt));
+    }
+    static constexpr double LONGEST_SLEW_DEG = 180.0;
+    // The whole overhead before a visit, for a slew of this many degrees.
+    double OverheadSec(double slewDeg) const { return slewDeg / Rate() + FixedSec(); }
 };
 
 inline constexpr double NIGHT_GOOD_DEG  = 45.0;
@@ -104,6 +122,11 @@ struct NightVisit {
     double      peakAltDeg = 0.0; // during the imaging
     double      wantedMin  = 0.0;
     bool        shortened  = false;
+    // Phase 163b: the slew planned before it, and from where.
+    double      slewDeg    = 0.0;
+    double      slewSec    = 0.0;
+    std::string slewFrom;          // a target's name, "where the tube is", or why it is not known
+    bool        slewKnown  = false;
 
     SkyWindow Window() const { return primeMin > 0 ? SkyWindow::Prime : SkyWindow::Good; }
     int  ImagingMin() const { return primeMin + goodMin; }
@@ -121,6 +144,13 @@ struct NightVisit {
         std::string s = b;
         if (shortened) {
             std::snprintf(b, sizeof(b), " (shortened from %.0f min)", wantedMin);
+            s += b;
+        }
+        if (!slewFrom.empty()) {
+            if (slewKnown)
+                std::snprintf(b, sizeof(b), ", slew %.0f deg from %s, %.0f s", slewDeg, slewFrom.c_str(), slewSec);
+            else
+                std::snprintf(b, sizeof(b), ", slew allowed %.0f s, the longest (%s)", slewSec, slewFrom.c_str());
             s += b;
         }
         return s;
@@ -149,6 +179,7 @@ namespace nightplan_detail {
 struct Track {
     std::vector<char>   usable, prime;   // per minute
     std::vector<double> alt;             // per sample, minutes + 1
+    std::vector<double> az;
     int    usableCount = 0;
     int    altGoodCount = 0;             // at 45 or more, Sun aside
     double peak = -90.0;
@@ -156,15 +187,49 @@ struct Track {
 
 struct Placement {
     bool ok = false;
-    int  imageAt = 0, len = 0, prime = 0;
+    int  imageAt = 0, len = 0, prime = 0, overhead = 0;
 };
 
-// The best place for one target, given the minutes already taken.
-inline Placement Place(const Track& t, const std::vector<char>& taken,
-                       int overhead, int vmax, int vmin) {
+// A visit already on the timeline: its slew starts at slewAt.
+struct Placed { int target = -1, slewAt = 0, imageAt = 0, len = 0; };
+
+inline bool AnyIn(const std::vector<char>& v, int a, int b) {
+    for (int k = (std::max)(a, 0); k < b && k < (int)v.size(); ++k) if (v[k]) return true;
+    return false;
+}
+
+// Where the tube is coming from for a visit whose imaging starts at
+// `imageAt`: the visit before it in time, or the start, or nowhere known
+// (a pass in between, or no start position). Returns the degrees to slew.
+inline double SlewInto(int ti, int imageAt, const std::vector<Track>& tracks,
+                       const std::vector<Placed>& placed, const std::vector<char>& blocked,
+                       const NightPlanOptions& o, int* fromTarget, bool* known) {
+    const Placed* pred = nullptr;
+    for (const auto& p : placed)
+        if (p.imageAt + p.len <= imageAt && (!pred || p.imageAt + p.len > pred->imageAt + pred->len))
+            pred = &p;
+    const int from = pred ? pred->imageAt + pred->len : 0;
+    *fromTarget = pred ? pred->target : -1;
+    *known = !AnyIn(blocked, from, imageAt) && (pred || o.haveStart);
+    if (!*known) return NightPlanOptions::LONGEST_SLEW_DEG;
+    const Track& t = tracks[(size_t)ti];
+    const double fromAlt = pred ? tracks[(size_t)pred->target].alt[(size_t)from] : o.startAltDeg;
+    const double fromAz  = pred ? tracks[(size_t)pred->target].az[(size_t)from]  : o.startAzDeg;
+    return NightPlanOptions::SlewDeg(fromAlt, fromAz, t.alt[(size_t)imageAt], t.az[(size_t)imageAt]);
+}
+
+inline int StepsFor(double sec, double stepMin) {
+    return (int)std::ceil(sec / 60.0 / stepMin - 1e-9);
+}
+
+// The best place for one target, given the minutes already taken and the
+// visits around it: its own slew from the one before, and the next one's
+// slew from it, both have to fit.
+inline Placement Place(int ti, const std::vector<Track>& tracks, const std::vector<char>& taken,
+                       const std::vector<char>& blocked, const std::vector<Placed>& placed,
+                       const NightPlanOptions& o, double stepMin, int vmax, int vmin) {
+    const Track& t = tracks[(size_t)ti];
     const int m = (int)taken.size();
-    // Contiguous free-and-usable minutes from each minute on, and free
-    // minutes from each minute on.
     std::vector<int> run(m + 1, 0), freeRun(m + 1, 0);
     for (int k = m - 1; k >= 0; --k) {
         freeRun[k] = taken[k] ? 0 : freeRun[k + 1] + 1;
@@ -174,17 +239,32 @@ inline Placement Place(const Track& t, const std::vector<char>& taken,
     for (int k = 0; k < m; ++k) primeSum[k + 1] = primeSum[k] + (t.prime[k] ? 1 : 0);
 
     Placement best;
-    for (int i = overhead; i < m; ++i) {
+    for (int i = 1; i < m; ++i) {
         if (run[i] == 0) continue;
-        if (overhead > 0 && freeRun[i - overhead] < overhead) continue;
         const int len = (std::min)(run[i], vmax);
         if (len < vmin) continue;
+        int from = -1;
+        bool known = false;
+        const double deg = SlewInto(ti, i, tracks, placed, blocked, o, &from, &known);
+        const int ov = StepsFor(o.OverheadSec(deg), stepMin);
+        if (i - ov < 0 || freeRun[i - ov] < ov) continue;
+        // The next visit's slew is now from here.
+        const Placed* next = nullptr;
+        for (const auto& p : placed)
+            if (p.slewAt >= i + len && (!next || p.slewAt < next->slewAt)) next = &p;
+        if (next && !AnyIn(blocked, i + len, next->imageAt)) {
+            const Track& nt = tracks[(size_t)next->target];
+            const double d = NightPlanOptions::SlewDeg(t.alt[(size_t)(i + len)], t.az[(size_t)(i + len)],
+                                                       nt.alt[(size_t)next->imageAt], nt.az[(size_t)next->imageAt]);
+            if (next->imageAt - (i + len) < StepsFor(o.OverheadSec(d), stepMin)) continue;
+        }
         const int pr = primeSum[i + len] - primeSum[i];
         if (!best.ok || len > best.len || (len == best.len && pr > best.prime)) {
             best.ok = true;
             best.imageAt = i;
             best.len = len;
             best.prime = pr;
+            best.overhead = ov;
         }
     }
     return best;
@@ -216,7 +296,7 @@ inline NightPlan BuildNightPlan(const std::vector<NightTarget>& targets,
 
     const double step = (o.stepMin > 0.0 ? o.stepMin : 1.0) / 1440.0;
     const int m = endJd > startJd ? (int)std::floor((endJd - startJd) / step) : 0;
-    const int overhead = (int)std::ceil(o.OverheadSec() / 60.0 / (step * 1440.0) - 1e-9);
+    const double stepMin = step * 1440.0;
     const int vmax = (std::max)(1, (int)std::lround(o.visitMin / (step * 1440.0)));
     const int vmin = (std::max)(1, (std::min)(vmax, (int)std::ceil(o.minVisitMin / (step * 1440.0) - 1e-9)));
 
@@ -248,10 +328,12 @@ inline NightPlan BuildNightPlan(const std::vector<NightTarget>& targets,
         t.usable.assign(m, 0);
         t.prime.assign(m, 0);
         t.alt.resize(m + 1);
+        t.az.resize(m + 1);
         std::vector<char> sunGood(m + 1, 1);
         for (int k = 0; k <= m; ++k) {
             const NightSample s = sample(ti, startJd + k * step);
             t.alt[k] = s.altDeg;
+            t.az[k]  = s.azDeg;
             sunGood[k] = sunOk(s) ? 1 : 0;
             if (s.altDeg > t.peak) t.peak = s.altDeg;
         }
@@ -283,11 +365,14 @@ inline NightPlan BuildNightPlan(const std::vector<NightTarget>& targets,
     auto placeAll = [&](const std::vector<int>& order, std::vector<NightVisit>* out) {
         Score sc;
         std::vector<char> taken = blocked;
+        std::vector<Placed> placed;
         for (int ti : order) {
             const Track& t = tracks[ti];
-            const Placement p = Place(t, taken, overhead, vmax, vmin);
+            const Placement p = Place(ti, tracks, taken, blocked, placed, o, stepMin, vmax, vmin);
             if (!p.ok) continue;
+            const int overhead = p.overhead;
             for (int k = p.imageAt - overhead; k < p.imageAt + p.len; ++k) taken[k] = 1;
+            placed.push_back({ti, p.imageAt - overhead, p.imageAt, p.len});
             ++sc.placed;
             sc.prime += p.prime;
             sc.imaging += p.len;
@@ -330,6 +415,27 @@ inline NightPlan BuildNightPlan(const std::vector<NightTarget>& targets,
     placeAll(bestOrder, &plan.visits);
     std::sort(plan.visits.begin(), plan.visits.end(),
               [](const NightVisit& a, const NightVisit& b) { return a.slewJd < b.slewJd; });
+
+    // Each visit's slew, from the one before it in time. Worked out again
+    // here because a visit placed later may have gone in between.
+    {
+        std::vector<Placed> all;
+        for (const auto& v : plan.visits)
+            all.push_back({v.target, (int)std::lround((v.slewJd - startJd) / step),
+                           (int)std::lround((v.imageJd - startJd) / step),
+                           (int)std::lround((v.endJd - v.imageJd) / step)});
+        for (size_t i = 0; i < plan.visits.size(); ++i) {
+            int from = -1;
+            bool known = false;
+            auto& v = plan.visits[i];
+            v.slewDeg = SlewInto(v.target, all[i].imageAt, tracks, all, blocked, o, &from, &known);
+            v.slewSec = v.slewDeg / o.Rate();
+            v.slewKnown = known;
+            v.slewFrom = !known ? (from >= 0 || o.haveStart ? std::string("after a pass")
+                                                            : std::string("no mount position"))
+                       : from >= 0 ? targets[(size_t)from].name : std::string("where the tube is");
+        }
+    }
 
     for (int ti : candidates) {
         bool placed = false;

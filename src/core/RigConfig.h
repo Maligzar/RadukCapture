@@ -256,7 +256,7 @@ struct RigConfig {
     // Starting figures, not measured.
     float       nightPlanVisitMin     = 20.0f;
     float       nightPlanMinVisitMin  = 5.0f;
-    float       nightPlanSlewSec      = 90.0f;
+    float       nightPlanSettleSec    = 20.0f;   // after a slew; the slew itself at SatSlewDegPerSec
     float       nightPlanLockSec      = 180.0f;
     float       nightPlanFocusSec     = 120.0f;
     float       nightPlanSunMaxDeg    = 90.0f;
@@ -574,7 +574,7 @@ struct RigConfig {
         wf("MoonMapSettleSec", moonMapSettleSec);
         wf("NightPlanVisitMin", nightPlanVisitMin);
         wf("NightPlanMinVisitMin", nightPlanMinVisitMin);
-        wf("NightPlanSlewSec", nightPlanSlewSec);
+        wf("NightPlanSettleSec", nightPlanSettleSec);
         wf("NightPlanLockSec", nightPlanLockSec);
         wf("NightPlanFocusSec", nightPlanFocusSec);
         wf("NightPlanSunMaxDeg", nightPlanSunMaxDeg);
@@ -809,7 +809,7 @@ private:
         cfg.nightPlanVisitMin    = clampF((float)rf("NightPlanVisitMin", cfg.nightPlanVisitMin), 2.0f, 240.0f, 20.0f);
         cfg.nightPlanMinVisitMin = clampF((float)rf("NightPlanMinVisitMin", cfg.nightPlanMinVisitMin), 1.0f, 240.0f, 5.0f);
         if (cfg.nightPlanMinVisitMin > cfg.nightPlanVisitMin) cfg.nightPlanMinVisitMin = cfg.nightPlanVisitMin;
-        cfg.nightPlanSlewSec     = clampF((float)rf("NightPlanSlewSec", cfg.nightPlanSlewSec), 0.0f, 900.0f, 90.0f);
+        cfg.nightPlanSettleSec   = clampF((float)rf("NightPlanSettleSec", cfg.nightPlanSettleSec), 0.0f, 600.0f, 20.0f);
         cfg.nightPlanLockSec     = clampF((float)rf("NightPlanLockSec", cfg.nightPlanLockSec), 0.0f, 1800.0f, 180.0f);
         cfg.nightPlanFocusSec    = clampF((float)rf("NightPlanFocusSec", cfg.nightPlanFocusSec), 0.0f, 1800.0f, 120.0f);
         cfg.nightPlanSunMaxDeg   = clampF((float)rf("NightPlanSunMaxDeg", cfg.nightPlanSunMaxDeg), -90.0f, 90.0f, 90.0f);

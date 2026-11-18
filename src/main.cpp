@@ -6722,7 +6722,8 @@ static int RunApp(bool useEmulator) {
         raduk::core::NightPlanOptions o;
         o.visitMin      = rig.nightPlanVisitMin;
         o.minVisitMin   = rig.nightPlanMinVisitMin;
-        o.slewSec       = rig.nightPlanSlewSec;
+        o.slewDegPerSec = rig.satSlewDegPerSec;   // the mount's GoTo rate, as for passes
+        o.settleSec     = rig.nightPlanSettleSec;
         o.lockSec       = rig.nightPlanLockSec;
         o.focusSec      = rig.nightPlanFocusSec;
         o.sunMaxAltDeg  = rig.nightPlanSunMaxDeg;
@@ -9291,9 +9292,15 @@ static int RunApp(bool useEmulator) {
                     telemetry.nightplan_candidates = join(gotoPanel.NightCandidates());
                     telemetry.nightplan_paused     = nightPlan.Paused();   // 163b
                     std::string rows;
+                    // ';' and '|' are the separators: none may be inside a field.
+                    auto field = [](std::string t) {
+                        for (auto& ch : t) if (ch == ';' || ch == '|') ch = ',';
+                        return t;
+                    };
                     for (const auto& r : nightPlan.Rows()) {
                         if (!rows.empty()) rows += ';';
-                        rows += r.slew + "|" + r.runs + "|" + r.name + "|" + r.why + "|" + r.state;
+                        rows += field(r.slew) + "|" + field(r.runs) + "|" + field(r.name) + "|" +
+                                field(r.why) + "|" + field(r.state);
                     }
                     telemetry.nightplan_rows = rows;
                 }

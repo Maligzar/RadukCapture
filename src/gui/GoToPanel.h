@@ -1998,6 +1998,13 @@ public:
             if (!o || !PositionAt(*o, jd, ra, dec)) return s;
             const double lst = LSTFromJD(jd);
             s.altDeg = SkyObjectCatalog::CalcAlt(ra, dec, lst, m_lat);
+            // Azimuth from north through east, for the slew to it (163b).
+            {
+                const double ha = (lst - ra) * 15.0 * d2r, de = dec * d2r, la = m_lat * d2r;
+                const double az = std::atan2(-std::cos(de) * std::sin(ha),
+                                             std::sin(de) * std::cos(la) - std::cos(de) * std::sin(la) * std::cos(ha));
+                s.azDeg = std::fmod(az / d2r + 360.0, 360.0);
+            }
             double sra = 0, sdec = 0;
             SunRADec(jd, sra, sdec);
             s.sunAltDeg = SkyObjectCatalog::CalcAlt(sra, sdec, lst, m_lat);
@@ -2015,7 +2022,17 @@ public:
         const double now = PreciseJdNow();
         double end = NightPlanEndJd();
         if (maxHours > 0.0 && now + maxHours / 24.0 < end) end = now + maxHours / 24.0;
-        return raduk::core::BuildNightPlan(targets, sampler, now, end, busy, opt);
+        // Phase 163b: the first slew is from where the tube is now. With
+        // no mount it is allowed the longest there can be.
+        raduk::core::NightPlanOptions o = opt;
+        if (m_mount && m_mount->IsConnected()) {
+            double ra = 0.0, dec = 0.0;
+            if (m_mount->GetRADec(ra, dec)) {
+                raduk::core::RADecToAltAzNow(ra, dec, o.startAltDeg, o.startAzDeg);
+                o.haveStart = true;
+            }
+        }
+        return raduk::core::BuildNightPlan(targets, sampler, now, end, busy, o);
     }
 
     // "21:40", local time.
