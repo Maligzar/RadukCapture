@@ -1,0 +1,23 @@
+# Phase 162b: the Moon map opens from a button.
+#
+# The owner could not find the Moon map: it opened only with Y and the
+# command palette. It now has MOON on the left rail, under GOTO, and
+# MOON MAP beside GOTO SELECTED on the GoTo panel. Each press opens or
+# closes it.
+
+name    Moon map: the buttons open it
+timeout 120
+
+expect 30  [SCENARIO] Moon map
+wait   3
+press  MOON
+expect 10  [MOONMAP] map shown
+shot   rail-opened
+press  MOON
+expect 10  [MOONMAP] map hidden
+press  GOTO:TAB GOTO
+press  GOTO:MOON MAP
+expect 10  [MOONMAP] map shown
+shot   goto-opened
+press  GOTO:MOON MAP
+expect 10  [MOONMAP] map hidden

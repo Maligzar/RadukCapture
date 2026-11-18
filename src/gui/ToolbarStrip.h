@@ -181,6 +181,8 @@ public:
     void SetDashCallback    (std::function<void()> cb) { m_onDash     = cb; }
     // Phase 124: every session's figures, built and opened as a page.
     void SetStatsCallback   (std::function<void()> cb) { m_onStats    = cb; }
+    // Phase 162b: opens or closes the Moon map, as Y does.
+    void SetMoonCallback    (std::function<void()> cb) { m_onMoon     = cb; }
     // Phase 125: press a button by its resting label, as a scenario does.
     bool PressByLabel(const std::wstring& name) {
         auto match = [&](const ToolbarItem& d) { return _wcsicmp(d.label, name.c_str()) == 0; };
@@ -304,6 +306,7 @@ public:
             case ID_TB_HW:       if (m_onHardware) m_onHardware(); return true;
             case ID_TB_DASH:     if (m_onDash)     m_onDash();     return true;
             case ID_TB_STATS:    if (m_onStats)    m_onStats();    return true;
+            case ID_TB_MOON:     if (m_onMoon)     m_onMoon();     return true;
             case ID_TB_STACK:    if (m_onStack)    m_onStack();    return true;
             case ID_TB_FOLLOW:   if (m_onFollow)   m_onFollow();   return true;
             case ID_TB_DEROT:    if (m_onDerot)    m_onDerot();    return true;
@@ -536,6 +539,7 @@ private:
     std::function<void()> m_onHardware;
     std::function<void()> m_onDash;
     std::function<void()> m_onStats;
+    std::function<void()> m_onMoon;   // phase 162b
     std::function<void()> m_onStack;
     std::function<void()> m_onFollow;
     std::function<void()> m_onDerot;

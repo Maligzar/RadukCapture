@@ -6807,10 +6807,16 @@ static int RunApp(bool useEmulator) {
         moonMapWindow.Refresh();
     };
     moonMapWindow.SetCommand(moonMapCommand);
-    window.SetMoonMapToggleHandler([&]() {
+    auto doMoonMapToggle = [&]() {
         moonMap.RefreshSky();
         moonMapWindow.Toggle();
-    });
+        Log("[MOONMAP] map %s\n", moonMapWindow.IsVisible() ? "shown" : "hidden");
+    };
+    window.SetMoonMapToggleHandler(doMoonMapToggle);
+    // Phase 162b: and MOON on the left rail and MOON MAP on the GoTo
+    // panel, since Y and the palette were the only ways in.
+    toolbar.SetMoonCallback(doMoonMapToggle);
+    gotoPanel.SetMoonMapCallback(doMoonMapToggle);
     window.SetMoonMapRunHandler([&]() { moonMapCommand("START", ""); });
     auto lastMoonMapSky = std::chrono::steady_clock::now();
 
