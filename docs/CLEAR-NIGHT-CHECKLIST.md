@@ -1303,7 +1303,10 @@ the bench already showed, so the night only has to confirm it. The plan is
     side. The best of the four sets the floor and ceiling of the band.
     Before starting, look at the corrector plate with a torch: dew there
     dims and softens everything, and the 2026-11-07 fade (F13) was never
-    explained.
+    explained. **Repeat it on at least three nights whose `SEEING` lines
+    differ** (Phase 164, added 2026-11-17): whether the best rung moves
+    with the seeing decides whether the exposure should follow the night
+    or stay a fixed band.
 
 56. **A stalled camera recovers in about 1.5 s** (135.3, added 2026-11-12).
     The capture loop now restarts the camera when no frame has arrived for
