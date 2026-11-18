@@ -98,7 +98,11 @@ A visit, in order:
    skips the target. Nothing is recorded on a target that would drift out of
    a planetary ROI.
 4. **RUNS**: the same sequence as the RUNS button, with that target's
-   profile loaded: focus, then runs, waiting for acquisition to end.
+   profile loaded: focus, then runs, waiting for acquisition to end. It
+   starts 3 s after the lock, once frames flow at the profile's ROI: the
+   frame has just shrunk from the whole sensor, and until then there is no
+   frame rate and so no run length. (Found by the scenario: without the
+   wait, RUNS was refused as "no room on the capture disk".)
 5. **Move on** when the runs are done or the visit's planned end comes,
    whichever is first. At the planned end the sequence is stopped and the
    file in progress is closed.
