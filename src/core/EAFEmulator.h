@@ -40,20 +40,82 @@ public:
         return 1;
     }
 
+    // Phase 157.0e: what the "device" itself holds, apart from any one
+    // open handle. With a position record set (SetPositionMemory: the app,
+    // and fault_injection's eaf-drop), a real EAF keeps its number while
+    // the app closes and re-opens it, so the emulator does too, for the
+    // life of the process, starting from the record (the EAF kept its
+    // number overnight). Without one, every open starts at kHome, which
+    // the bench tests rely on (focuser_safety, af_overshoot,
+    // focus_calibration open several focusers in one process).
+    // RADUK_EMU_FAULT=eaf-drop@T[+D]: at T s after the first open the
+    // focuser is unplugged and every read on the open handle fails, as
+    // the SDK's do; D s later it is back, at kDropPosition (owners report
+    // an EAF reading about 4761 after a power loss), for a Reconnect to
+    // find. Without D it never comes back.
+    static constexpr int kDropPosition = 4761;
+    // Where this rig's focuser lives. The 8SE with the EAF comes to focus
+    // around 150-175k - a measured run landed at 168187 - so the old 50000
+    // was nowhere near reality.
+    static constexpr int kHome = 166500;
+    struct Device {
+        bool init = false;
+        int  position = 166500;
+        bool dropArmed = false;
+        EmuFault drop;
+        std::chrono::steady_clock::time_point t0{};
+        bool dropped = false;   // its number has been lost (power loss)
+    };
+    static Device& Dev() { static Device d; return d; }
+    // Seconds since the first open, for the drop fault's clock.
+    static double DevSec() {
+        return std::chrono::duration<double>(std::chrono::steady_clock::now() - Dev().t0).count();
+    }
+    // Unplugged right now (inside the drop window)?
+    static bool DevUnplugged() {
+        const Device& d = Dev();
+        return d.dropArmed && d.drop.InEffect(DevSec());
+    }
+
     bool Open(int /*index*/) override {
         if (m_isOpen) return false;
-        // Start where this rig's focuser actually lives. The 8SE with the
-        // EAF comes to focus around 150-175k - a measured run landed at
-        // 168187 - so the old 50000 was nowhere near reality and made
-        // every emulated focus figure meaningless to compare against a
-        // real night's log.
-        m_position = 166500;
-        m_ledger.Good(166500);
-        m_excursionFrom = 166500; m_excursion = 0;
-        m_target   = 166500;
-        m_optic    = 166500.0;
+        Device& dev = Dev();
+        const bool remembers = !m_trust.Path().empty();
+        if (remembers && !dev.init) {
+            dev.init = true;
+            FocuserMemory rec;
+            dev.position = m_trust.Saved(rec) ? rec.position : kHome;
+        }
+        // Armed by the first open that sees it, its clock starting there.
+        if (!dev.dropArmed && ActiveEmuFault("eaf-drop", dev.drop)) {
+            dev.dropArmed = true;
+            dev.dropped = false;
+            dev.t0 = std::chrono::steady_clock::now();
+            raduk::core::CoreLog("[EAFEmulator] drop injection armed at t+%.0fs\n", dev.drop.startSec);
+        }
+        if (DevUnplugged()) {
+            raduk::core::CoreLog("[EAFEmulator] Open: no focuser (unplugged)\n");
+            return false;
+        }
+        int start = remembers ? dev.position : kHome;
+        if (dev.dropArmed && DevSec() >= dev.drop.startSec && !dev.dropped) {
+            dev.dropped = true;   // it was unplugged: the number is lost
+            dev.position = kDropPosition;
+            start = kDropPosition;
+        }
+        m_position = start;
+        m_ledger.Good(start);
+        m_excursionFrom = start; m_excursion = 0;
+        m_target   = start;
+        m_optic    = (double)start;
+        m_handleDead = false;
+        m_openedSec = DevSec();
         m_isOpen   = true;
         m_moving   = false;
+        // Phase 157.0e: the number against the record, before any move.
+        const TrustVerdict v = m_trust.OnOpen("", start, GetMaxPosition());
+        if (!Trusting(v))
+            raduk::core::CoreLog("[EAFEmulator] position NOT TRUSTED: %s\n", m_trust.Problem().c_str());
         // Phase 157.0: RADUK_EMU_FAULT=eaf-stall@T stops the motor at T s.
         m_stallArmed = ActiveEmuFault("eaf-stall", m_stall);
         m_openedAt = std::chrono::steady_clock::now();
@@ -67,11 +129,66 @@ public:
 
     void Close() override {
         if (!m_isOpen) return;
+        if (!m_handleDead.load() && !DevUnplugged()) {
+            int at = 0;
+            if (TryGetPosition(at)) m_trust.OnArrived(at);   // 157.0e
+        }
         m_isOpen = false;
         m_moving = false;
         if (m_motorThread.joinable()) m_motorThread.join();
+        if (!m_handleDead.load() && !m_trust.Path().empty())
+            Dev().position = m_position.load();   // the device keeps its number
         raduk::core::CoreLog("[EAFEmulator] Closed\n");
     }
+
+    // ── Phase 157.0e (FocuserTrust.h) ─────────────────────────
+    void SetPositionMemory(const std::string& path) override { m_trust.SetPath(path); }
+    bool PositionTrusted() const override { return m_trust.Trusted(); }
+    std::string TrustProblem() const override { return m_trust.Problem(); }
+    bool AcceptReportedPosition() override {
+        std::lock_guard<std::recursive_mutex> cmd(m_cmd);
+        int at = 0;
+        if (!TryGetPosition(at)) return false;
+        m_trust.Accept(at);
+        raduk::core::CoreLog("[EAFEmulator] position %d accepted by the owner\n", at);
+        return true;
+    }
+    // EAFResetPostion: the number changes, the motor does not turn.
+    bool RestoreSavedPosition() override {
+        std::lock_guard<std::recursive_mutex> cmd(m_cmd);
+        const int saved = m_trust.SavedPosition();
+        if (!m_isOpen || m_handleDead.load() || saved < 0 || IsMoving()) return false;
+        {
+            // The emulator's mirror follows the number (a real one did not
+            // move at all), so putting the number back puts the image back.
+            std::lock_guard<std::mutex> lk(m_mutex);
+            m_position.store(saved);
+            m_target = saved;
+            m_optic.store((double)saved);
+            m_excursionFrom.store(saved);
+        }
+        Dev().position = saved;
+        m_ledger.Good(saved);
+        m_trust.Restored(saved);
+        raduk::core::CoreLog("[EAFEmulator] position set back to %d by the owner\n", saved);
+        return true;
+    }
+    // Close the dead handle, open again; no motion.
+    bool Reconnect() override {
+        std::lock_guard<std::recursive_mutex> cmd(m_cmd);
+        if (m_isOpen) {
+            m_isOpen = false;
+            m_moving = false;
+            if (m_motorThread.joinable()) m_motorThread.join();
+        }
+        m_approach.Cancel();
+        m_ledger.Idle();
+        const bool ok = Open(0);
+        raduk::core::CoreLog("[EAFEmulator] Reconnect: %s\n", ok ? "open again" : "no focuser");
+        return ok;
+    }
+    // A test's view of the record.
+    int SavedPosition() const { return m_trust.SavedPosition(); }
 
     bool IsOpen() const override { return m_isOpen; }
 
@@ -125,12 +242,19 @@ public:
     int  MaxExcursion() const    { return m_excursion.load(); }
 
 private:
-    bool Command(int position, bool oneSided, bool pastGuard, const unsigned* sequence = nullptr) {
+    bool Command(int position, bool oneSided, bool pastGuard, const unsigned* sequence = nullptr,
+                 bool relative = false) {
         std::lock_guard<std::recursive_mutex> cmd(m_cmd);
         if (!m_isOpen) { m_ledger.Refuse(MoveRefusal::NotOpen, 0, position, 0); return false; }
         if (sequence && *sequence != m_stopGen.load()) {
             m_ledger.Refuse(MoveRefusal::Stopped, 0, position, 0);
             raduk::core::CoreLog("[EAFEmulator] move to %d dropped: a stop was asked for\n", position);
+            return false;
+        }
+        // Phase 157.0e: an absolute number means nothing until the position is confirmed.
+        if (!relative && !m_trust.Trusted()) {
+            m_ledger.Refuse(MoveRefusal::Untrusted, 0, position, 0);
+            raduk::core::CoreLog("[EAFEmulator] move to %d refused: %s\n", position, m_trust.Problem().c_str());
             return false;
         }
         int from = 0;
@@ -158,6 +282,10 @@ private:
 
     // The "device": one motor command.
     bool Leg(int position) {
+        if (HandleDead()) {   // phase 157.0e: unplugged
+            raduk::core::CoreLog("[EAFEmulator] MoveTo %d failed: the focuser is gone\n", position);
+            return false;
+        }
         int left = m_refuseMoves.load();
         while (left > 0 && !m_refuseMoves.compare_exchange_weak(left, left - 1)) {}
         if (left > 0) {
@@ -187,7 +315,7 @@ public:
                                  m_ledger.LastRefusalText().c_str());
             return false;
         }
-        return MoveTo(RelativeBase(target, position) + steps);
+        return Command(RelativeBase(target, position) + steps, true, false, nullptr, true);
     }
 
     bool Stop() override {
@@ -237,12 +365,15 @@ public:
             m_ledger.Leg(next);
             return true;
         }
+        const bool hadMove = m_ledger.Target() >= 0;
         m_ledger.Idle();
+        if (hadMove) m_trust.OnArrived(at);   // phase 157.0e: the record follows every completed move
         return false;
     }
 
     bool TryGetPosition(int& position) const override {
         if (!m_isOpen) return false;
+        if (HandleDead()) { m_ledger.ReadFailed(); return false; }   // phase 157.0e
         int left = m_failReads.load();
         while (left > 0 && !m_failReads.compare_exchange_weak(left, left - 1)) {}
         if (left > 0) { m_ledger.ReadFailed(); return false; }
@@ -296,6 +427,10 @@ private:
     void MotorLoop() {
         const int STEPS_PER_TICK = 10;   // steps moved per millisecond tick
         while (m_isOpen) {
+            if (HandleDead()) {   // phase 157.0e: no device, no motor
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                continue;
+            }
             {
                 std::lock_guard<std::mutex> lk(m_mutex);
                 int pos = m_position.load();
@@ -349,6 +484,20 @@ private:
     std::chrono::steady_clock::time_point m_startAt{};
     std::thread         m_motorThread;
     std::atomic<int>    m_tempTick{0};
+    // Phase 157.0e: the record, and an unplugged handle that stays dead.
+    mutable PositionTrust m_trust;
+    mutable std::atomic<bool> m_handleDead{false};
+    double m_openedSec = 0.0;
+    bool HandleDead() const {
+        if (m_handleDead.load()) return true;
+        const Device& d = Dev();
+        if (d.dropArmed && m_openedSec < d.drop.startSec && DevSec() >= d.drop.startSec) {   // unplugged since this handle opened
+            m_handleDead.store(true);
+            raduk::core::CoreLog("[EAFEmulator] the focuser was unplugged (injected)\n");
+            return true;
+        }
+        return false;
+    }
     // Phase 157.0: fault injection.
     bool     m_stallArmed = false;
     EmuFault m_stall;

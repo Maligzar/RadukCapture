@@ -1009,6 +1009,10 @@ bool ControlPanel::HandleCommand(WPARAM wParam, LPARAM lParam) {
                 // second press and then makes the move.
                 if (m_focuser->MoveTo(pos)) {
                     FocusMoveSaid(true);
+                } else if (m_focuser->LastRefusalKind() == raduk::core::MoveRefusal::Untrusted &&
+                           m_trustPrompt && m_trustPrompt()) {
+                    // Phase 157.0e: asked and answered; now the number means something.
+                    FocusMoveSaid(m_focuser->MoveTo(pos));
                 } else if (m_focuser->LastRefusalKind() == raduk::core::MoveRefusal::TooFar) {
                     if (m_farFocusMove.Confirmed(pos, (double)GetTickCount64() / 1000.0)) {
                         FocusMoveSaid(m_focuser->MoveToFar(pos));

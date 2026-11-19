@@ -225,6 +225,9 @@ public:
     // cb(true) = start autofocus; cb(false) = abort
     void SetAutofocusCallback(std::function<void(bool)> cb) { m_onAutofocus = cb; }
     void SetCalibrateFocusCallback(std::function<void()> cb) { m_onCalibrateFocus = cb; }   // 161.3
+    // Phase 157.0e: GO TO refused because the position is in doubt asks the
+    // owner (returns whether it is trusted afterwards).
+    void SetFocuserTrustPrompt(std::function<bool()> cb) { m_trustPrompt = std::move(cb); }
     // Mount controller button — clicked to show/reposition the floating panel
     void SetMountCtrlCallback(std::function<void()> cb) { m_onMountCtrl = cb; }
     // Phase 67: "cables dressed" zeroes the cord-wrap total. It is the
@@ -793,6 +796,7 @@ private:
     // Phase 161.0a: a focuser move that was refused says so on the focus
     // status line, and a move past the travel guard is asked for twice.
     raduk::core::FarMoveConfirm m_farFocusMove;
+    std::function<bool()> m_trustPrompt;   // phase 157.0e
     void FocusMoveSaid(bool moved) {
         if (moved || !m_focuser) return;
         SetAutofocusStatus((L"Focuser did not move: " +

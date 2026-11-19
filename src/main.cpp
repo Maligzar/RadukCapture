@@ -1078,6 +1078,11 @@ static int RunApp(bool useEmulator) {
 
     // ── EAF ────────────────────────────────────────────────────
     auto& focuser   = core.focuser;     // phase 153.0: owned by AppCore
+    // Phase 157.0e: the last position, saved after every completed move
+    // and checked on every open (FocuserTrust.h). Set before any Open.
+    focuser.SetPositionMemory(raduk::core::Paths::Data() + "\\focuser_position.ini");
+    raduk::core::FocuserRecovery focuserRecovery;   // when to re-open after an unplug
+    bool focuserLost = false;                        // reads failed; re-opening
     auto& autofocus = core.autofocus;
     // Up here because the observation record states its mode.
     auto& ae        = core.ae;
@@ -2671,6 +2676,46 @@ static int RunApp(bool useEmulator) {
     });
     Log("[INIT] Notification bar ready\n");
 
+    // Phase 157.0e: a focuser whose number disagrees with the saved one.
+    // Said, never synced silently, and not asked in a dialog here: a
+    // modal at connect would stop the frame loop, and an unattended run
+    // with it. The owner answers when pressing AUTO FOCUS, CALIBRATE or
+    // GO TO (askFocuserTrust), or from Dash (focuser_trust).
+    auto announceFocuserTrust = [&](const char* when) {
+        if (!focuser.IsOpen() || focuser.PositionTrusted()) return;
+        const std::string why = focuser.TrustProblem();
+        Log("[FOCUS] %s: position NOT TRUSTED: %s\n", when, why.c_str());
+        slog.Focuser("Position not trusted (%s): %s", when, why.c_str());
+        notifBar.NotifyWarn(L"Focuser: " + raduk::core::ToWide(why) +
+                            L". Press AUTO FOCUS or GO TO to answer");
+        window.SetNotifBarHeight(notifBar.Height());
+    };
+    // True when the position is trusted afterwards.
+    auto askFocuserTrust = [&]() -> bool {
+        if (!focuser.IsOpen() || focuser.PositionTrusted()) return true;
+        const std::wstring msg =
+            L"The focuser's number does not match the one saved when it was last used:\n\n" +
+            raduk::core::ToWide(focuser.TrustProblem()) +
+            L"\n\nYes: put the saved number back (nothing moves)."
+            L"\nNo: the focuser's number is right; keep it."
+            L"\nCancel: decide later (automatic focus moves stay refused).";
+        const int c = MessageBoxW(window.Handle(), msg.c_str(), L"RadukCapture \u2014 Focuser position",
+                                  MB_YESNOCANCEL | MB_ICONWARNING | MB_DEFBUTTON3);
+        if (c == IDYES || c == IDNO) {
+            const bool ok = c == IDYES ? focuser.RestoreSavedPosition() : focuser.AcceptReportedPosition();
+            const int at = focuser.GetPosition();
+            Log("[FOCUS] owner: %s -> %s (position %d)\n", c == IDYES ? "put the saved number back" : "keep the focuser's number",
+                ok ? "done" : "FAILED", at);
+            slog.Focuser("Position %s by the owner: %d%s", c == IDYES ? "set back" : "accepted", at, ok ? "" : " (failed)");
+            if (ok) notifBar.NotifyInfo(L"Focuser position confirmed: " + std::to_wstring(at));
+            else    notifBar.NotifyWarn(L"Focuser position could not be confirmed: see the log");
+            window.SetNotifBarHeight(notifBar.Height());
+        }
+        return focuser.PositionTrusted();
+    };
+    announceFocuserTrust("at startup");
+    controls.SetFocuserTrustPrompt(askFocuserTrust);
+
     // Which card drives the preview. The rig runs five screens off two
     // GPUs, and the live preview presents through whichever adapter
     // drives the screen it is on; on the other card every frame costs a
@@ -4086,6 +4131,8 @@ static int RunApp(bool useEmulator) {
             if (focuser.IsOpen()) {
                 Log("[HW] EAF: pos=%d\n", focuser.GetPosition());
                 logIdentity('F', focuser.Identity());
+                focuserLost = false;
+                announceFocuserTrust("after connecting");   // 157.0e
             }
             else
                 Log("[HW] EAF: not found\n");
@@ -4133,6 +4180,7 @@ static int RunApp(bool useEmulator) {
         mountProxy.ClearBackend();
 
         if (focuser.IsOpen()) focuser.Close();
+        focuserLost = false;   // 157.0e: the owner disconnected it; nothing to recover
 
         if (cam.IsOpen()) {
             capture.Stop();     // before the camera, always
@@ -4790,6 +4838,7 @@ static int RunApp(bool useEmulator) {
     // Button callback — toggles start/abort
     // Phase 139.3's NOT NOW / press-twice lives in the controller.
     controls.SetAutofocusCallback([&](bool start) {
+        if (start && !core.afCtl.Busy()) askFocuserTrust();   // 157.0e; refused with the reason if not answered
         core.afCtl.Press(start, afReady.ready, afReady.why);
     });
     // Phase 161.3: Ctrl+click on AUTO FOCUS, or the remote command.
@@ -4802,7 +4851,10 @@ static int RunApp(bool useEmulator) {
         Log("[CAL] Focuser calibration asked for\n");
         core.afCtl.StartCalibration();
     };
-    controls.SetCalibrateFocusCallback(calibrateFocus);
+    controls.SetCalibrateFocusCallback([&]() {
+        if (!core.afCtl.Busy()) askFocuserTrust();   // 157.0e
+        calibrateFocus();
+    });
 
     // MOUNT CTRL button in panel - shows floating controller at default position
     controls.SetMountCtrlCallback([&]() {
@@ -7270,6 +7322,18 @@ static int RunApp(bool useEmulator) {
                     if (!focuser.MoveRelative(steps))   // 161.0a
                         Log("[WS] move_eaf_rel refused: %s\n", focuser.LastRefusal().c_str());
                 }
+            } else if (rc.cmd == "focuser_trust") {
+                // Phase 157.0e: the owner's answer from Dash. "restore" puts
+                // the saved number back, "accept" keeps the focuser's. No motion.
+                if (focuser.IsOpen() && !focuser.PositionTrusted() &&
+                    (rc.arg == "restore" || rc.arg == "accept")) {
+                    const bool restore = rc.arg == "restore";
+                    const bool ok = restore ? focuser.RestoreSavedPosition() : focuser.AcceptReportedPosition();
+                    Log("[WS] Remote focuser_trust %s: %s, pos=%d\n", rc.arg.c_str(), ok ? "done" : "FAILED",
+                        focuser.GetPosition());
+                    slog.Focuser("APEX: position %s: %d%s", restore ? "set back" : "accepted",
+                                 focuser.GetPosition(), ok ? "" : " (failed)");
+                }
             } else if (rc.cmd == "autofocus_abort") {
                 if (core.afCtl.Busy()) {
                     abortAutofocus();
@@ -8529,6 +8593,40 @@ static int RunApp(bool useEmulator) {
                 // Phase 161.0b: the second leg of a one-sided move is
                 // commanded here, every 500 ms, whoever else is asking.
                 if (focuser.IsOpen()) focuser.Service();
+                // Phase 157.0e: reads failing for 2 s mean the focuser was
+                // unplugged; re-open it every 3 s (close, find by serial,
+                // open) and judge its number again. No move is ever made.
+                {
+                    const double nowS = core.Clock().Now();
+                    bool tryNow = false;
+                    if (focuser.IsOpen()) {
+                        int fp = 0;
+                        tryNow = focuserRecovery.OnRead(focuser.TryGetPosition(fp), nowS);
+                    } else if (focuserLost) {
+                        tryNow = focuserRecovery.OnRead(false, nowS);
+                    }
+                    if (tryNow && !core.afCtl.Busy()) {
+                        if (!focuserLost) {
+                            Log("[FOCUS] the focuser stopped answering: re-opening it\n");
+                            slog.Focuser("Stopped answering: re-opening");
+                            notifBar.NotifyWarn(L"Focuser: not answering, trying to reconnect");
+                            window.SetNotifBarHeight(notifBar.Height());
+                        }
+                        focuserLost = true;
+                        if (focuser.Reconnect()) {
+                            focuserLost = false;
+                            focuserRecovery.Reset();
+                            configureFocuser();
+                            Log("[FOCUS] reconnected, pos=%d\n", focuser.GetPosition());
+                            slog.Focuser("Reconnected at %d", focuser.GetPosition());
+                            logIdentity('F', focuser.Identity());
+                            if (focuser.PositionTrusted())
+                                notifBar.NotifyInfo(L"Focuser reconnected at " + std::to_wstring(focuser.GetPosition()));
+                            announceFocuserTrust("after a reconnect");
+                            window.SetNotifBarHeight(notifBar.Height());
+                        }
+                    }
+                }
                 ri.focuserMoving = focuser.IsOpen() && focuser.IsMoving();
                 ri.afRunning     = core.afCtl.Busy();
                 ri.recording     = capturer.IsRecording();

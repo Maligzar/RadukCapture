@@ -66,6 +66,7 @@ enum class MoveRefusal {
     Device,            // the focuser itself refused the command
     StoppedShort,      // it stopped, but not where it was sent
     Stopped,           // phase 161.0b: a stop was asked for since this sequence began
+    Untrusted,         // phase 157.0e: the position disagrees with the saved one, not yet confirmed
 };
 
 inline const char* DescribeRefusal(MoveRefusal r) {
@@ -78,6 +79,7 @@ inline const char* DescribeRefusal(MoveRefusal r) {
         case MoveRefusal::Device:          return "the focuser refused the command";
         case MoveRefusal::StoppedShort:    return "the focuser stopped short of its target";
         case MoveRefusal::Stopped:         return "a stop was asked for";
+        case MoveRefusal::Untrusted:       return "the focuser's position is not trusted until it is confirmed";
     }
     return "?";
 }
