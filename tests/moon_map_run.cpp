@@ -389,11 +389,66 @@ int main() {
         Check(n.c.runner.State() == Runner::Phase::Failed && n.c.Active().Captured() == 0,
               "a recording that will not start ends it, with nothing credited", n.c.runner.Reason());
 
-        // Two projects: the newest is active, and PREV goes back.
+        // Two projects: the new one is active, and PREV only looks back.
         n.recordOk = true;
         Check(n.c.NewProject("Later", 2, why) && n.c.ProjectCount() == 2 && n.c.Active().Name() == "Later", "a second project is the active one");
-        Check(n.c.Step(-1) && n.c.Active().Name() == "By hand", "PREV shows the earlier one");
-        Check(n.c.Step(1) && n.c.Active().Name() == "Later", "and NEXT comes back");
+        Check(n.c.Step(-1) && n.c.Shown().Name() == "By hand" && n.c.Active().Name() == "Later",
+              "PREV shows the earlier one without making it active");
+        Check(n.c.Step(1) && !n.c.ViewingArchive() && n.c.Shown().Name() == "Later", "and NEXT comes back");
+    }
+
+    printf("\n11. One long project: it resumes, and only NEW changes it (162c)\n");
+    {
+        Night n(dir, true);
+        std::string why;
+        n.c.NewProject("First map", 2, why);
+        Check(n.c.NightNumber() == 1, "an empty map is on its first night");
+        Check(!n.c.NewNeedsConfirm(), "and NEW on it needs no confirmation: nothing would be set aside");
+        n.c.Mark("NE-A1");
+        Check(n.c.NightNumber() == 1 && n.c.Active().Nights() == 1, "a capture tonight keeps it night 1");
+        n.jd += 1.0;
+        Check(n.c.NightNumber() == 2, "the next evening is night 2");
+        n.c.Mark("NE-A2");
+        n.jd += 0.1;
+        n.c.Mark("NW-A1");
+        Check(n.c.Active().Nights() == 2, "captures hours apart are one night, a day apart two", std::to_string(n.c.Active().Nights()));
+        Check(n.c.NewNeedsConfirm(), "now NEW must be confirmed");
+
+        n.jd += 2.0;
+        Check(n.c.NewProject("Second map", 2, why) && n.c.Active().Name() == "Second map", "a second map is made (CONFIRM's path)", why);
+        Check(n.c.Step(-1) && n.c.ViewingArchive() && n.c.Shown().Name() == "First map", "the first is in the archive");
+        Check(!n.Start(why) && why.find("archived") != std::string::npos, "START is refused while it is shown", why);
+        Check(!n.c.GoTo("NE-A1", why) && why.find("archived") != std::string::npos, "so is GOTO", why);
+        Check(!n.c.Mark("SW-A1") && !n.c.Clear("NE-A1"), "and MARK and CLEAR");
+        Check(n.c.Shown().IsCaptured("NE-A1") && !n.c.Active().IsCaptured("SW-A1"), "and nothing changed in either map");
+        n.c.Select("NE-A1");
+        Check(n.c.Selected() == "NE-A1", "a section of the archived map can be picked, to look at");
+        Check(n.c.ViewActive() && !n.c.ViewingArchive() && n.c.Selected().empty(), "BACK returns to the active map");
+        Check(!n.c.ViewActive(), "and BACK there does nothing");
+
+        // Reopen after the FIRST map's file is rewritten (newer on disk):
+        // the active map is still the second.
+        { std::ofstream touch(dir / "First_map.moonmap", std::ios::app); touch << "# touched\n"; }
+        Night again(dir, false);
+        Check(again.c.Active().Name() == "Second map", "reopening carries on with the active map, not the newest file",
+              again.c.Active().Name());
+        Check(again.c.ProjectCount() == 2 && !again.c.ViewingArchive(), "and opens on it, not on the archive");
+        Check(fs::exists(dir / MoonMapController::kActiveFile), "the active map is named in a file of its own");
+
+        // Without that file (a folder from before 162c) the newest file is the guess.
+        fs::remove(dir / MoonMapController::kActiveFile);
+        Night old(dir, false);
+        Check(old.c.Active().Name() == "First map", "without it, the map last written to is active", old.c.Active().Name());
+
+        // A NEW made by mistake and discarded hands back the map it was pressed over.
+        old.c.NewProject("Oops", 2, why);
+        Check(old.c.DiscardEmpty(why) && old.c.Active().Name() == "First map", "DISCARD returns to the map before NEW", why);
+
+        // Arming: the controller holds it until something takes it back.
+        old.c.ArmNew();
+        Check(old.c.NewArmed(), "NEW can be armed");
+        old.c.DisarmNew();
+        Check(!old.c.NewArmed() && old.c.Active().Name() == "First map", "and disarmed with nothing changed");
     }
 
     std::error_code ec;

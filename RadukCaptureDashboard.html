@@ -1216,9 +1216,7 @@ body { background:var(--d-void); color:var(--d-text); font-family:'Barlow Conden
           <button class="rc-ctrl-btn red"   id="rcMoonClear" onclick="rcSendCmd('moonmap','CLEAR')" title="Forget the picked section's captures">CLEAR</button>
         </div>
         <div class="rc-btn-row" style="padding:0">
-          <button class="rc-ctrl-btn amber" id="rcMoonNew"  onclick="rcSendCmd('moonmap','NEW')"  title="Start a new project, sized for the Moon profile's frame">NEW</button>
-          <button class="rc-ctrl-btn cyan"  id="rcMoonPrev" onclick="rcSendCmd('moonmap','PREV')" title="The earlier project">« PREV</button>
-          <button class="rc-ctrl-btn cyan"  id="rcMoonNext" onclick="rcSendCmd('moonmap','NEXT')" title="The later project">NEXT »</button>
+          <button class="rc-ctrl-btn amber" id="rcMoonNew"  onclick="rcMoonNew()" title="Start a new map, sized for the Moon profile's frame. The current one is kept">NEW PROJECT</button>
         </div>
       </div>
 
@@ -2575,6 +2573,21 @@ function rcMoonSections(n) {
     out.push({ id: (north ? 'N' : 'S') + (east ? 'E' : 'W') + '-' + String.fromCharCode(65 + row) + (col + 1), gr, gc });
   }
   return out;
+}
+
+// Phase 162c: the map is one long project, and a new one is started only
+// on purpose. When the current map holds captures the app asks for
+// CONFIRM, so Dash asks here and sends both.
+function rcMoonNew() {
+  const name = (document.getElementById('rcMoonName') || {}).textContent || '';
+  const count = (document.getElementById('rcMoonCount') || {}).textContent || '';
+  if (name && name !== '--' && name !== 'NO PROJECT' && !/^0 \//.test(count)) {
+    if (!confirm(`Start a new map? '${name}' (${count}) is kept in the archive.`)) return;
+    rcSendCmd('moonmap', 'NEW');
+    rcSendCmd('moonmap', 'CONFIRM');
+    return;
+  }
+  rcSendCmd('moonmap', 'NEW');
 }
 
 let rcMoonKey = '';

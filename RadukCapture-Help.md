@@ -2951,9 +2951,16 @@ every section is captured the project turns green and says READY FOR MOSAIC,
 and the files to stitch are listed for you. Stitching is another program's
 job.
 
-- **NEW** starts a project, named for the date. The sections are sized for
-  the Moon profile's frame so that one fits at any camera angle: on the full
-  sensor at 0.203"/px that is 5 x 5 a quadrant, 88 on the disc.
+- **One project at a time, until it is done.** Opening the map always opens
+  the project you are working on, where the last night left it. The line
+  under its name says which night of it tonight is, how many sections are
+  captured and how many are ready now. Only **NEW PROJECT** (top right)
+  changes the project.
+- **NEW PROJECT** starts a project, named for the date. When the current map
+  holds captures it asks first: START NEW MAP, or KEEP GOING (or Esc). The
+  old map is kept in the archive. The sections are sized for the Moon
+  profile's frame so that one fits at any camera angle: on the full sensor
+  at 0.203"/px that is 5 x 5 a quadrant, 88 on the disc.
 - **The colours:** green is captured. Bright amber is wanted and wholly in
   sunlight now. Faint amber has the terminator across it. Dark is unlit or
   past the limb tonight; another night will reach it.
@@ -2975,9 +2982,13 @@ job.
   the newest recording of
   every section with the Sun's height, the colongitude and the libration it
   was taken under.
-- **PREV** and **NEXT** move between projects. A project made every month or
-  two is how you see the Moon change in your own pictures.
-- **Dash** has the same map and buttons under MOON MAP.
+- **The archive:** the arrows beside NEW PROJECT show earlier maps. An
+  archived map is only looked at: START, GOTO, MARK and CLEAR are refused
+  on it, and **BACK** (or closing the map) returns to the one you are
+  working on. A project made every month or two is how you see the Moon
+  change in your own pictures.
+- **Dash** has the same map and buttons under MOON MAP; its NEW PROJECT asks
+  before it sets a map with captures aside.
 - **rig.ini:** `MoonMapSectionsPerSide` (0 sizes it for the frame),
   `MoonMapLock`, `MoonMapRefocusEvery` (sections between focus sweeps, 10)
   and `MoonMapSettleSec` (8).
@@ -3387,7 +3398,8 @@ un-soak.ps1` runs the emulator for hours through GoTo, lock, autofocus and runs,
 | 3.3.25 | 157.0 (camera replug) | A camera whose USB cable is pulled and plugged back in now comes back by itself, at the format, gain and exposure it had. Before, the capture loop retried a stop and start on the old connection every second, which cannot revive an unplugged ZWO camera: its handle is dead. Now it closes it, finds the same camera again by model and serial (it may come back under a new ID), opens it and replays every setting. The emulator's camera now dies on an unplug the way the SDK's does, so `fault_injection camera-blip` proves the re-open; `camera_replug` tests the replay. Clear-night item 61 checks it on the real camera. |
 | 3.3.26 | 154.0a | Dash without the access token can watch and stop, nothing else. With `WsLanOpen=1`, a device on the home network could connect with no token and send every command, and nothing checked which web page opened the connection, so any page in any browser on the network could try to drive the mount. Now a tokenless client gets the telemetry and the preview and may send only STOP (mount, recording, autofocus, the Moon map, the night plan); anything else is refused, and Dash says to enter the token. A browser page from the internet is not admitted at all. With the token, nothing changes. Also in this release: the plans from the 2026-11-17 review (157.0d, 157.0e, Phase 164, the assistant's advise-only rule). |
 | 3.3.27 | 157.0d | A disk that falls behind during a recording is now said while it happens: the first frame the write buffer cannot take puts "Frames dropped: the disk is not keeping up with the camera" on the bar, once a run, and the run goes on. Before, it was said only at the end, as "reduce USB BW or exposure", which blamed the wrong thing: these drops are the disk's, and USB drops are counted separately in the run's record. Closing the app while recording ends the run through the same code as every other stop, so the SER's header counts its frames, the observation record is written, and nothing is stacked. In the emulator, `RADUK_EMU_FAULT=disk-slow@T+D` makes every write take 200 ms for D seconds from T seconds into each run. `fault_injection` has three new groups: `disk-slow-fits` (a 60-frame run loses nothing), `disk-slow-overflow` (74 frames lost, all 74 counted, 0 gaps unexplained) and `quit-mid-run`. |
-| 3.3.28 | 157.0e | The focuser's position is remembered and checked. It is saved to `data\focuser_position.ini` after every completed move and when the focuser closes, and compared on every open. ZWO EAFs are reported losing their number over a power loss (reading 1000 against 13785, or 0, 2 or about 4761); when the number disagrees with the saved one by more than 5 steps, or the focuser's range changed, the bar says so with both numbers, and every absolute move is refused (GO TO, a profile's focus position, autofocus, a refocus, CALIBRATE) until you answer. Pressing AUTO FOCUS, CALIBRATE or GO TO asks: Yes puts the saved number back (EAFResetPostion; nothing moves), No keeps the focuser's number, Cancel decides later. Dash shows a POSITION IN DOUBT card in the EAF panel with both numbers and the same two answers, PUT BACK and KEEP. Relative steps (the jog buttons) still work, because a step means the same whatever the number. A focuser that stops answering is re-opened by itself, by serial, after 2 s and every 3 s, and its number judged again; nothing moves as part of it. In the emulator, `RADUK_EMU_FAULT=eaf-drop@T+D` unplugs the focuser at T s and brings it back D s later at 4761. |
+| 3.3.29 | 162c | The Moon map is one long project. Opening it always carries on with the project you are working on, which is now remembered (`moonmaps\active.txt`) instead of guessed from the newest file, and the line under its name says which night of it tonight is, how many sections are captured and how many are ready now. The main row is only what a night needs: GOTO, MARK, CLEAR, START. NEW PROJECT, at the top, asks first when the current map holds captures (START NEW MAP or KEEP GOING); the old map goes to the archive. The arrows beside it show earlier maps without making them current: on an archived map START, GOTO, MARK and CLEAR are refused, and BACK or closing the map returns. Dash's NEW PROJECT asks the same, and its PREV and NEXT are gone, since Dash always shows the current map. Gated by `moon_map_run` section 11 and `tests/scenarios/moon-map-resume.scn`. |
+| 3.3.30 | 157.0e | The focuser's position is remembered and checked. It is saved to `data\focuser_position.ini` after every completed move and when the focuser closes, and compared on every open. ZWO EAFs are reported losing their number over a power loss (reading 1000 against 13785, or 0, 2 or about 4761); when the number disagrees with the saved one by more than 5 steps, or the focuser's range changed, the bar says so with both numbers, and every absolute move is refused (GO TO, a profile's focus position, autofocus, a refocus, CALIBRATE) until you answer. Pressing AUTO FOCUS, CALIBRATE or GO TO asks: Yes puts the saved number back (EAFResetPostion; nothing moves), No keeps the focuser's number, Cancel decides later. Dash shows a POSITION IN DOUBT card in the EAF panel with both numbers and the same two answers, PUT BACK and KEEP. Relative steps (the jog buttons) still work, because a step means the same whatever the number. A focuser that stops answering is re-opened by itself, by serial, after 2 s and every 3 s, and its number judged again; nothing moves as part of it. In the emulator, `RADUK_EMU_FAULT=eaf-drop@T+D` unplugs the focuser at T s and brings it back D s later at 4761. |
 
 ---
 

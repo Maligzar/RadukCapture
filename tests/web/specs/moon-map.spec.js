@@ -19,6 +19,8 @@ test.describe('@live Dash: the Moon map', () => {
     await expect(name).not.toHaveText('--', { timeout: 20_000 });   // telemetry has arrived
     const before = (await name.textContent()).trim();
 
+    // Phase 162c: when the active map holds captures, NEW PROJECT asks first.
+    page.on('dialog', d => d.accept());
     await page.locator('#rcMoonNew').click();
     await expect(count).toHaveText(/^0 \/ \d+$/, { timeout: 15_000 });
     await expect(name).not.toHaveText(before);

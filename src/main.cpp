@@ -6925,6 +6925,7 @@ static int RunApp(bool useEmulator) {
     // Every way of asking the map for something -- its window's buttons, a
     // click on a section, Dash, the keyboard, a scenario -- comes through
     // here, so each has one implementation and one refusal.
+    std::string moonMapNewName;   // phase 162c: the name NEW was given, kept for CONFIRM
     std::function<void(const std::string&, const std::string&)> moonMapCommand =
         [&](const std::string& cmd, const std::string& arg) {
         const auto& rig = raduk::core::RigConfig::Get();
@@ -6935,9 +6936,37 @@ static int RunApp(bool useEmulator) {
         };
         std::string why;
 
+        // Phase 162c: NEW on a map with captures is armed, and only CONFIRM
+        // makes the new project. Any other command takes the NEW back.
+        if (cmd != "NEW" && cmd != "CONFIRM" && moonMap.NewArmed()) {
+            moonMap.DisarmNew();
+            Log("[MOONMAP] NEW taken back: carrying on with '%s'\n", moonMap.Active().Name().c_str());
+            if (cmd == "CANCEL") { moonMapWindow.Refresh(); return; }
+        }
+        // An archived map is only looked at.
+        if ((cmd == "GOTO" || cmd == "MARK" || cmd == "CLEAR" || cmd == "START") && moonMap.ViewingArchive())
+            return refuse(moonMap.ArchiveRefusal());
+
         if (cmd == "SELECT") {
             moonMap.Select(arg);
-        } else if (cmd == "NEW") {
+        } else if (cmd == "CANCEL") {
+            // Nothing was armed: nothing to take back.
+        } else if (cmd == "BACK") {
+            if (!moonMap.ViewActive()) return refuse("the active map is already shown");
+        } else if (cmd == "NEW" && (moonMap.runner.Running() || (moonMap.NewNeedsConfirm() && !moonMap.NewArmed()))) {
+            if (moonMap.runner.Running()) return refuse("a map run is going");
+            moonMap.ViewActive();
+            moonMapNewName = arg;
+            moonMap.ArmNew();
+            Log("[MOONMAP] NEW asks to be confirmed: '%s' holds %d of %d sections and is kept in the archive\n",
+                moonMap.Active().Name().c_str(), moonMap.Active().Captured(), moonMap.Active().Total());
+        } else if (cmd == "CONFIRM" && !moonMap.NewArmed()) {
+            return refuse("nothing to confirm");
+        } else if (cmd == "NEW" || cmd == "CONFIRM") {
+            const std::string name = cmd == "CONFIRM" ? moonMapNewName : arg;
+            const std::string& arg = name;   // the name asked for with NEW, if any
+            moonMap.DisarmNew();
+            moonMap.ViewActive();
             if (moonMap.runner.Running()) return refuse("a map run is going");
             // Sized for the frame the Moon is RECORDED on, which is its
             // profile's and may not be the one on screen now.
@@ -6973,6 +7002,7 @@ static int RunApp(bool useEmulator) {
                      moonMap.Active().Total());
             notifBar.NotifyInfo(msg);
         } else if (cmd == "PREV" || cmd == "NEXT") {
+            if (moonMap.runner.Running()) return refuse("a map run is going");
             if (!moonMap.Step(cmd == "NEXT" ? 1 : -1)) return refuse("there is no other project to show");
         } else if (cmd == "DISCARD") {
             // An empty project only: one made by mistake, or by a test.
@@ -7044,10 +7074,26 @@ static int RunApp(bool useEmulator) {
         moonMapWindow.Refresh();
     };
     moonMapWindow.SetCommand(moonMapCommand);
+    // Phase 162c: opening the map always opens the active project, where
+    // the last session left it, and says so.
+    auto moonMapResumeLine = [&]() {
+        if (!moonMap.HasProject()) {
+            Log("[MOONMAP] no project yet: NEW PROJECT starts one\n");
+            return;
+        }
+        const auto& p = moonMap.Active();
+        if (p.Complete())
+            Log("[MOONMAP] '%s' is complete: READY FOR MOSAIC; NEW PROJECT starts the next map\n", p.Name().c_str());
+        else
+            Log("[MOONMAP] carrying on with '%s': night %d, %d of %d captured, %d ready now\n",
+                p.Name().c_str(), moonMap.NightNumber(), p.Captured(), p.Total(), moonMap.CapturableNow());
+    };
     auto doMoonMapToggle = [&]() {
         moonMap.RefreshSky();
+        if (!moonMapWindow.IsVisible()) { moonMap.ViewActive(); moonMap.DisarmNew(); }
         moonMapWindow.Toggle();
         Log("[MOONMAP] map %s\n", moonMapWindow.IsVisible() ? "shown" : "hidden");
+        if (moonMapWindow.IsVisible()) moonMapResumeLine();
     };
     window.SetMoonMapToggleHandler(doMoonMapToggle);
     // Phase 162b: and MOON on the left rail and MOON MAP on the GoTo
@@ -7567,7 +7613,9 @@ static int RunApp(bool useEmulator) {
             // Phase 162: the Moon map window's buttons, and a section.
             if (a.arg == "MOONMAP:SHOW") {
                 moonMap.RefreshSky();
+                if (!moonMapWindow.IsVisible()) { moonMap.ViewActive(); moonMap.DisarmNew(); }
                 moonMapWindow.Show();
+                moonMapResumeLine();
                 break;
             }
             if (a.arg.rfind("MOONMAP:", 0) == 0) {
