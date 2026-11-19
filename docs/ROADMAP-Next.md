@@ -1718,6 +1718,15 @@ checked against the eye (clear-night items 1, 37, 55, 57 and 58).
     CALIBRATE FOCUS; its run on the sky is clear-night item 59.
     Model: **Fable** for 161.3, 161.4 and 161.5a (the noise gate);
     **Opus** for 161.5b (the region, the green option) and 161.6.
+25c. **162c to 162g (row 62), the Moon map as a project of many months**
+    (the owner, 2026-11-18). Opening the map resumes the active project
+    until it is complete, and only a confirmed NEW PROJECT starts another;
+    the LRO WAC imagery and the IAU gazetteer kept in `data/`; tonight's
+    lit Moon under the grid, with the owner's own captures as its tiles;
+    tonight's suggestion, a journal, milestones and a card per section;
+    the Sky map's Moon tied to the map both ways. Plan in
+    [`Phase162-Plan-Moon-Map-Long-Project.md`](Phase162-Plan-Moon-Map-Long-Project.md).
+    Placed in 3.5 for now; the owner may move it.
 26. **Phases 147 and 148 (rows 47, 48)**: AVI, then TIFF.
 27. **149.5 and 149.6 (row 49)**: the ZWO filter wheel, then RGB sequencing
     on a mono camera.
