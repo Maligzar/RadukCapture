@@ -31,6 +31,9 @@
 #include "../core/CaptureManager.h"
 #include "../core/PixelFormat.h"
 #include "../core/SeeingMonitor.h"
+#ifdef RADUK_EMULATOR
+#include "../core/EmuFault.h"
+#endif
 
 #include "AutofocusController.h"
 #include "AutorunController.h"
@@ -91,6 +94,35 @@ public:
     // A fresh analysis, for the coarse sweep's score (1000/HFD).
     void FeedAutofocusAnalysis(const raduk::core::AnalysisResult& last, bool fresh) {
         AutofocusFeed::Sharpness(autofocus, View(last), fresh);
+    }
+
+    // ── Phase 157.0d: the faults that belong to no one device ────
+    // RADUK_EMU_FAULT=disk-slow@T[+D]: from T seconds into every run, for
+    // D seconds (or the rest of it), the writer takes kSlowDiskMsPerFrame
+    // over each frame. 200 ms is 5 frames a second, well under the
+    // emulator's 20 or more, so the write buffer fills. Emulator build only:
+    // the hardware build has no faults to read.
+    static constexpr int kSlowDiskMsPerFrame = 200;
+    void ApplyEmuFaults() {
+#ifdef RADUK_EMULATOR
+        raduk::core::EmuFault f;
+        if (raduk::core::ActiveEmuFault("disk-slow", f))
+            capturer.SetSlowWrite(f.startSec, f.durationSec, kSlowDiskMsPerFrame);
+        else
+            capturer.ClearSlowWrite();
+#endif
+    }
+
+    // ── Phase 157.0d: the app is closing ─────────────────────────
+    // The first step of shutdown, and the only one that touches the
+    // recording: unhook the recorder from the capture thread (capture is
+    // declared before capturer, so a sink left set would point at a
+    // destroyed manager), then end any run through the one way a run
+    // ends. Not a normal finish, so nothing is stacked; the frames so far
+    // are drained, the SER header counts them, and the record is written.
+    void StopForExit() {
+        capture.SetFrameSink(nullptr);
+        recCtl.End(false, "the app is closing");
     }
 
     static FrameView View(const raduk::core::FrameSlot* f) {

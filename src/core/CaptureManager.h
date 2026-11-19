@@ -69,7 +69,11 @@ struct CaptureConfig {
     LimitType   limitType   = LimitType::Frames;
     uint32_t    limitFrames = 1000;
     double      limitTimeSec = 60.0;
-    int         writeBufferSlots = 512;
+    // Phase 157.0d: the most write-buffer slots a run may take, 0 for no
+    // cap (PlanWriteBufferSlots decides). Replaces writeBufferSlots, which
+    // was set to 512 and read by nothing. Tests use it to fill a buffer
+    // in seconds rather than minutes.
+    int         writeBufferCap = 0;
     CaptureFormat format = CaptureFormat::SER;
     // Phase 108. Stop a run this far in, whatever the other limit says.
     // 0 never stops. Set per run, because it depends on the target.
@@ -241,6 +245,18 @@ public:
     void SetWriterOverride(ICaptureWriter* w) { m_writerOverride = w; }
     void SetFreeSpaceProbe(std::function<uint64_t(const std::string&)> f) { m_freeSpace = std::move(f); }
 
+    // ── Phase 157.0d: a slow disk, on purpose ─────────────────
+    // While in effect, the writer waits msPerFrame before each frame it
+    // writes, as a disk that has slowed down would make it. Seconds are
+    // from the start of each run; durationSec < 0 lasts the whole run.
+    // Set by AppCore::ApplyEmuFaults (RADUK_EMU_FAULT=disk-slow@T+D) in
+    // the emulator build, and by tests; never in the hardware build.
+    void SetSlowWrite(double startSec, double durationSec, int msPerFrame) {
+        m_slowStartSec = startSec; m_slowDurSec = durationSec;
+        m_slowMs.store(msPerFrame > 0 ? msPerFrame : 0, std::memory_order_relaxed);
+    }
+    void ClearSlowWrite() { m_slowMs.store(0, std::memory_order_relaxed); }
+
     bool SubmitFrame(const FrameSlot* slot, float sharpness = 0.0f,
                      uint32_t cropCX = 0, uint32_t cropCY = 0);
 
@@ -370,6 +386,8 @@ private:
     std::atomic<int>      m_diskStop{0};          // DiskStop, phase 135.1
     ICaptureWriter*       m_writerOverride = nullptr;
     std::function<uint64_t(const std::string&)> m_freeSpace;
+    std::atomic<int> m_slowMs{0};                 // phase 157.0d
+    double    m_slowStartSec = 0.0, m_slowDurSec = -1.0;
     uint64_t  FreeBytesAt(const std::string& path) const;
     std::atomic<uint32_t> m_hintCX{0}, m_hintCY{0};
     std::atomic<float>    m_hintSharp{0.0f};

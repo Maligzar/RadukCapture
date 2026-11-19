@@ -37,7 +37,7 @@ In practice:
   - the pure headers, from arithmetic to formats;
   - the controllers in `src/app` (autofocus, recording, Autorun);
   - `app_headless`: the application core on the emulators, by group (`connect`, `focus`, `record`);
-  - `fault_injection`: the app's answer to an emulator told to fail (`RADUK_EMU_FAULT`). Its groups are `eaf-stall`, `camera-gone`, `camera-blip` and `slew-stuck`.
+  - `fault_injection`: the app's answer to an emulator told to fail (`RADUK_EMU_FAULT`). Its groups are `eaf-stall`, `camera-gone`, `camera-blip`, `slew-stuck`, and from 157.0d `disk-slow-fits`, `disk-slow-overflow` and `quit-mid-run`.
 - **Adding a test.** Write it as `tests\<name>.cpp` and add a line to the `$Tests` list in `run-tests.ps1`. Pure headers are also built with g++ and the sanitizers, off Windows.
 
 ### Independent file checks (157.2)

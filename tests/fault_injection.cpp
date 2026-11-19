@@ -12,6 +12,14 @@
 //    fault_injection slew-stuck    a GoTo never arrives: the mount keeps
 //                                  saying so, and the GoTo panel's watch
 //                                  (157.0b) calls it a fault past its limit
+//    fault_injection disk-slow-fits  157.0d: the disk slows under a bounded
+//                                  run the buffer holds: no frame is lost
+//    fault_injection disk-slow-overflow  157.0d: the buffer fills: every
+//                                  frame lost is counted and said while it
+//                                  happens, and the rest reach the file
+//    fault_injection quit-mid-run  157.0d: the app closes while recording:
+//                                  the SER counts its frames, the record is
+//                                  written, nothing is stacked
 //
 //  Real time, a minute or so a group.
 // ============================================================
@@ -27,6 +35,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <mutex>
 #include <string>
@@ -89,11 +98,13 @@ struct Pipeline {
     RecordingUiSink ui;
     fs::path dir;
     std::atomic<bool> complete{false};
+    std::atomic<bool> completeNormal{true};
+    std::atomic<uint32_t> accepted{0};   // frames the manager took
     std::string path;
     std::vector<std::pair<ToastLevel, std::string>> toasts;
     std::mutex mu;
 
-    bool Start() {
+    bool Start(LimitType lt = LimitType::Time, uint32_t limitFrames = 0, int bufferCap = 0) {
         core.SetUi(&ui);
         if (!core.cam.Open(0)) return false;
         core.cam.SetTargetName("Jupiter");
@@ -106,14 +117,20 @@ struct Pipeline {
         std::error_code ec; fs::remove_all(dir, ec); fs::create_directories(dir, ec);
         CaptureConfig cfg;
         cfg.outputDir = dir.string(); cfg.filePrefix = "Jupiter";
-        cfg.limitType = LimitType::Time; cfg.limitTimeSec = 600.0;   // never reached here
+        cfg.limitType = lt; cfg.limitTimeSec = 600.0;   // never reached here
+        cfg.limitFrames = limitFrames;
+        cfg.writeBufferCap = bufferCap;
         cfg.format = CaptureFormat::SER;
         core.capturer.SetConfig(cfg);
         RecordingHooks h;
         h.notify = [this](ToastLevel l, const std::string& s) { std::lock_guard<std::mutex> lk(mu); toasts.push_back({l, s}); };
         core.recCtl.SetHooks(h);
-        core.capturer.SetOnComplete([this](const std::string& p, bool) { path = p; complete.store(true); });
-        core.capture.SetFrameSink([this](const FrameSlot* s) { core.capturer.SubmitFromCaptureThread(s); });
+        core.capturer.SetOnComplete([this](const std::string& p, bool n) {
+            path = p; completeNormal.store(n); complete.store(true);
+        });
+        core.capture.SetFrameSink([this](const FrameSlot* s) {
+            if (core.capturer.SubmitFromCaptureThread(s)) accepted.fetch_add(1);
+        });
         return core.recCtl.Begin(640, 480, 8, false);
     }
     // The render loop's part, for `seconds` or until the run ends.
@@ -134,9 +151,46 @@ struct Pipeline {
         core.analyzer.Stop();
         core.capture.Stop();
         core.cam.Close();
+        core.capturer.ClearSlowWrite();
         std::error_code ec; fs::remove_all(dir, ec);
     }
+    void WaitComplete() {
+        for (int i = 0; i < 600 && !complete.load(); ++i)
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    bool Toasted(ToastLevel l, const char* text) {
+        std::lock_guard<std::mutex> lk(mu);
+        for (auto& t : toasts) if (t.first == l && t.second.find(text) != std::string::npos) return true;
+        return false;
+    }
 };
+
+// A SER read from the specification, not from SERWriter: the header is 178
+// bytes, "LUCAM-RECORDER" first, width, height and pixel depth the int32s
+// at 26, 30 and 34, FrameCount at 38. Its frame count, and whether the
+// file is exactly that many frames, with or without the timestamp trailer.
+struct SerCheck { bool ok = false; int frames = -1; bool sizeMatches = false; };
+static SerCheck ReadSer(const std::string& path) {
+    SerCheck c;
+    FILE* f = nullptr;
+    if (path.empty() || fopen_s(&f, path.c_str(), "rb") != 0 || !f) return c;
+    unsigned char h[178] = {};
+    const size_t got = fread(h, 1, sizeof(h), f);
+    fclose(f);
+    if (got != sizeof(h) || memcmp(h, "LUCAM-RECORDER", 14) != 0) return c;
+    auto i32 = [&](int o) {
+        return (int)((unsigned)h[o] | ((unsigned)h[o + 1] << 8) | ((unsigned)h[o + 2] << 16) | ((unsigned)h[o + 3] << 24));
+    };
+    const int w = i32(26), hh = i32(30), depth = i32(34);
+    c.frames = i32(38);
+    std::error_code ec;
+    const uint64_t size = (uint64_t)fs::file_size(path, ec);
+    const uint64_t frameBytes = (uint64_t)w * hh * (depth > 8 ? 2 : 1);
+    const uint64_t body = 178 + (uint64_t)c.frames * frameBytes;
+    c.sizeMatches = !ec && (size == body || size == body + 8ull * (uint64_t)c.frames);
+    c.ok = true;
+    return c;
+}
 
 static void GroupCameraGone() {
     printf("camera-gone: the camera dies mid-recording\n");
@@ -190,6 +244,84 @@ static void GroupCameraBlip() {
     p.Stop();
 }
 
+// Phase 157.0d. A bounded run the buffer holds outright: the disk is on
+// no frame's critical path, so slowing it costs drain time and nothing else.
+static void GroupDiskSlowFits() {
+    printf("disk-slow-fits: the disk slows under a run the buffer holds\n");
+    SetFault("disk-slow@0");
+    Pipeline p;
+    p.core.ApplyEmuFaults();   // what main.cpp does at startup
+    SetFault(nullptr);
+    Check(p.Start(LimitType::Frames, 60), "a 60-frame run starts; every write takes 200 ms");
+    const auto t0 = std::chrono::steady_clock::now();
+    p.Loop(120.0);
+    p.WaitComplete();
+    Check(!p.core.capturer.IsRecording() && p.complete.load(), "it ends at its limit",
+          std::to_string((int)Since(t0)) + " s, drain included");
+    Check(p.core.capturer.FramesDropped() == 0, "no frame was lost to the slow disk",
+          std::to_string(p.core.capturer.FramesDropped()) + " dropped");
+    Check(p.core.capturer.FramesRecorded() == 60, "all 60 reached the file",
+          std::to_string(p.core.capturer.FramesRecorded()));
+    const SerCheck c = ReadSer(p.path);
+    Check(c.ok && c.frames == 60 && c.sizeMatches, "and the SER says so, read from the spec",
+          std::to_string(c.frames) + " in the header");
+    Check(!p.Toasted(ToastLevel::Warn, "disk is not keeping up"), "with nothing to warn about");
+    p.Stop();
+}
+
+// Phase 157.0d. An unbounded run whose buffer fills (capped at 48 slots so
+// it fills in seconds): the run goes on, and nothing is lost silently.
+static void GroupDiskSlowOverflow() {
+    printf("disk-slow-overflow: the write buffer fills\n");
+    SetFault("disk-slow@1+8");
+    Pipeline p;
+    p.core.ApplyEmuFaults();
+    SetFault(nullptr);
+    Check(p.Start(LimitType::Time, 0, 48), "a run starts with 48 slots; the disk slows from 1 s to 9 s");
+    p.Loop(14.0);
+    const uint32_t dropped = p.core.capturer.FramesDropped();
+    Check(dropped > 0, "the buffer overflowed", std::to_string(dropped) + " frames dropped");
+    Check(p.core.capturer.IsRecording(), "and the run goes on, past the slow spell");
+    Check(p.Toasted(ToastLevel::Warn, "disk is not keeping up"), "the bar said so while it happened");
+    Check(p.ui.Saw("write buffer full"), "and the log");
+    p.core.recCtl.End(true, "test done");
+    p.WaitComplete();
+    const DropReport dr = p.core.capturer.LastDropReport();
+    Check(dr.droppedBuffer == p.core.capturer.FramesDropped(), "the run's ledger counts every overrun",
+          std::to_string(dr.droppedBuffer) + " in the ledger");
+    Check(p.core.capturer.FramesRecorded() == p.accepted.load(), "every frame the buffer took reached the file",
+          std::to_string(p.core.capturer.FramesRecorded()) + " of " + std::to_string(p.accepted.load()));
+    Check(dr.unexplained == 0, "the timestamps show no gap the ledger cannot explain",
+          std::to_string(dr.gaps) + " gaps, " + std::to_string(dr.unexplained) + " unexplained");
+    const SerCheck c = ReadSer(p.path);
+    Check(c.ok && c.frames == (int)p.core.capturer.FramesRecorded() && c.sizeMatches,
+          "the SER holds exactly the frames written", std::to_string(c.frames) + " in the header");
+    p.Stop();
+}
+
+// Phase 157.0d. Quitting while recording, through the code main.cpp's
+// shutdown runs (AppCore::StopForExit).
+static void GroupQuitMidRun() {
+    printf("quit-mid-run: the app closes while recording\n");
+    Pipeline p;
+    Check(p.Start(), "a run starts");
+    p.Loop(4.0);
+    Check(p.core.capturer.IsRecording(), "and is recording when the app closes");
+    p.core.StopForExit();
+    Check(!p.core.capturer.IsRecording(), "closing ends the run");
+    p.WaitComplete();
+    Check(p.complete.load() && !p.completeNormal.load(), "as not normal, so nothing is stacked");
+    Check(p.ui.Saw("stopped (the app is closing)"), "the log says why");
+    const uint32_t n = p.core.capturer.FramesRecorded();
+    const SerCheck c = ReadSer(p.path);
+    Check(n > 0 && c.ok && c.frames == (int)n && c.sizeMatches, "the SER's header counts the frames it holds",
+          std::to_string(c.frames) + " in the header, " + std::to_string(n) + " written");
+    Check(n == p.accepted.load(), "every frame taken was drained to it");
+    std::error_code ec;
+    Check(!p.path.empty() && fs::exists(ObservationPathFor(p.path), ec), "and the observation record is written");
+    p.Stop();
+}
+
 static void GroupSlewStuck() {
     printf("slew-stuck: a GoTo never arrives\n");
     SetFault("slew-stuck@0");
@@ -221,6 +353,9 @@ int main(int argc, char** argv) {
     if (g == "all" || g == "camera-gone") { GroupCameraGone(); ran = true; }
     if (g == "all" || g == "camera-blip") { GroupCameraBlip(); ran = true; }
     if (g == "all" || g == "slew-stuck")  { GroupSlewStuck();  ran = true; }
+    if (g == "all" || g == "disk-slow-fits")     { GroupDiskSlowFits();     ran = true; }
+    if (g == "all" || g == "disk-slow-overflow") { GroupDiskSlowOverflow(); ran = true; }
+    if (g == "all" || g == "quit-mid-run")       { GroupQuitMidRun();       ran = true; }
     if (!ran) { printf("unknown group '%s'\n", g.c_str()); return 2; }
     if (g_fail) { printf("fault_injection: %d FAILED\n", g_fail); return 1; }
     printf("fault_injection: all passed\n");

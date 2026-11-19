@@ -43,6 +43,8 @@ struct FakeCapture {
     bool LimitReached() const { return limit; }
     bool DerotationStopped() const { return derotStopped; }
     double ElapsedSec() const { return elapsed; }
+    uint32_t dropped = 0;
+    uint32_t FramesDropped() const { return dropped; }
     void SetGateOpen(bool o) { gateOpen = o; }
     void SetFrameHints(uint32_t x, uint32_t y, float s) { hx = x; hy = y; hs = s; }
 };
@@ -65,6 +67,27 @@ struct Rig {
 
 int main() {
     printf("Recording controller (phase 153.2)\n");
+    {   // phase 157.0d: a full write buffer is said while it happens, once a run
+        Rig r;
+        r.c.Begin(640, 480, 8, false);
+        r.c.Service(false, 0.0f, RecordingFrameView{}, 1, 0.01);
+        Check(r.toasts.empty(), "no drops, no notice");
+        r.cap.dropped = 3; r.clk.Advance(0.1);
+        r.c.Service(false, 0.0f, RecordingFrameView{}, 2, 0.01);
+        Check(r.toasts.size() == 1 && r.toasts[0].first == ToastLevel::Warn &&
+              r.toasts[0].second.find("disk is not keeping up") != std::string::npos &&
+              r.ui.Saw("write buffer full"), "the first drop warns, on the bar and in the log");
+        Check(r.cap.recording, "and the run goes on");
+        r.cap.dropped = 40; r.clk.Advance(0.1);
+        r.c.Service(false, 0.0f, RecordingFrameView{}, 3, 0.01);
+        Check(r.toasts.size() == 1, "more drops in the same run do not repeat it");
+        r.c.End(true, nullptr);
+        r.cap.dropped = 0;
+        r.c.Begin(640, 480, 8, false);
+        r.cap.dropped = 1; r.clk.Advance(0.1);
+        r.c.Service(false, 0.0f, RecordingFrameView{}, 4, 0.01);
+        Check(r.toasts.size() == 2, "the next run warns again");
+    }
     {
         Rig r;
         Check(r.c.Begin(640, 480, 8, false) && r.cap.recording, "Begin starts the recording");

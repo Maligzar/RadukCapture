@@ -1698,7 +1698,10 @@ paths pass fault injection, and one unattended sky run completes.
    internet origin is refused; Dash says why a command was refused.
 24c. **157.0d and 157.0e (row 57)**: a slow disk and quitting mid-run in
    the fault harness; the focuser re-opened after an unplug, with its
-   position distrusted when it comes back different.
+   position distrusted when it comes back different. **157.0d written
+   2026-11-18 (3.3.27)**: `disk-slow`, quitting through `AppCore`, and a
+   live warning on the first overrun, which the test found was said only
+   at the end and blamed USB. 157.0e is next.
 
 #### Release 3.5: planetary excellence
 

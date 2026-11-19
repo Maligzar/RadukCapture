@@ -99,6 +99,8 @@ public:
         if (!m_cap.StartRecording(width, height, bits)) return false;
         m_lastFrameAt = m_clock->Now();
         m_haveStamp = false;
+        m_droppedSeen = 0;
+        m_overrunWarned = false;
         Usb(true);
         const std::string st = UsbStatus();
         Session("USB capture mode \xE2\x80\x94 " + st);
@@ -145,6 +147,21 @@ public:
         m_cap.SetFrameHints((a.valid && a.centroidValid) ? a.centroidX : 0u,
                             (a.valid && a.centroidValid) ? a.centroidY : 0u,
                             a.valid ? a.sharpnessPct : 0.0f);
+
+        // Phase 157.0d: the write buffer overflowed (the disk is not keeping
+        // up). The run goes on, because frames still fit once the disk
+        // recovers, but it is said while it happens, once a run, and not
+        // only in the summary at the end.
+        const uint32_t dropped = m_cap.FramesDropped();
+        if (dropped > m_droppedSeen) {
+            m_droppedSeen = dropped;
+            if (!m_overrunWarned) {
+                m_overrunWarned = true;
+                Line("[REC] write buffer full: the disk is not keeping up; frames are being dropped\n");
+                Notify(ToastLevel::Warn, "Frames dropped: the disk is not keeping up with the camera. "
+                                         "The count is in the run's record");
+            }
+        }
 
         using DS = typename Capture::DiskStop;
         const DS ds = m_cap.DiskStopped();
@@ -213,6 +230,8 @@ private:
     double         m_lastFrameAt = 0.0;
     uint64_t       m_lastStamp = 0;
     bool           m_haveStamp = false;
+    uint32_t       m_droppedSeen = 0;      // phase 157.0d
+    bool           m_overrunWarned = false;
     double         m_expectedFrameSec = 0.0;
     RecordingHooks m_hooks;
     double         m_derotSec = 0.0;
