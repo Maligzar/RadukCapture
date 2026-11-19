@@ -20,6 +20,12 @@
 //    fault_injection quit-mid-run  157.0d: the app closes while recording:
 //                                  the SER counts its frames, the record is
 //                                  written, nothing is stacked
+//    fault_injection eaf-drop      157.0e: the focuser is unplugged and comes
+//                                  back at another number: the reconnect
+//                                  moves nothing, the mismatch is caught,
+//                                  and a sweep is refused until the owner
+//                                  answers. Must run in its own process
+//                                  (the emulated device lives as long as it)
 //
 //  Real time, a minute or so a group.
 // ============================================================
@@ -322,6 +328,90 @@ static void GroupQuitMidRun() {
     p.Stop();
 }
 
+// Phase 157.0e. The focuser comes back from an unplug at a different
+// number, as owners report the EAF doing after a power loss.
+static void GroupEafDrop() {
+    printf("eaf-drop: the focuser comes back with a different number\n");
+    const fs::path dir = fs::temp_directory_path() / "raduk_fault_eaf_drop";
+    std::error_code ec; fs::remove_all(dir, ec); fs::create_directories(dir, ec);
+    const std::string mem = (dir / "focuser_position.ini").string();
+
+    SetFault("eaf-drop@3+4");
+    EAFFocuser f;
+    f.SetPositionMemory(mem);
+    Check(f.Open(0), "the emulated focuser opens; it will be unplugged at 3 s, back at 7 s");
+    SetFault(nullptr);
+    Check(f.PositionTrusted(), "with no record yet, its number is trusted");
+    const int start = f.GetPosition();
+    Check(f.MoveTo(start + 200), "a move is accepted");
+    for (int i = 0; i < 100 && f.IsMoving(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    const int was = f.GetPosition();
+    FocuserMemory m;
+    const bool loaded = LoadFocuserMemory(mem, m);
+    Check(loaded && m.position == was, "and recorded when it completes", std::to_string(m.position));
+
+    // The unplug: reads fail on the open handle, and the app's recovery
+    // tries a reconnect once they have failed for 2 s, every 3 s after.
+    FocuserRecovery rec;
+    const auto t0 = std::chrono::steady_clock::now();
+    bool readFailed = false, reconnected = false;
+    int tries = 0, refusedTries = 0;
+    f.ResetExcursion();
+    while (Since(t0) < 15.0 && !reconnected) {
+        int at = 0;
+        const bool ok = f.TryGetPosition(at);
+        readFailed |= !ok;
+        if (rec.OnRead(ok, Since(t0))) {
+            ++tries;
+            if (f.Reconnect()) reconnected = true; else ++refusedTries;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    Check(readFailed, "the reads failed while it was gone");
+    Check(refusedTries >= 1, "a reconnect while unplugged finds nothing", std::to_string(refusedTries) + " refused");
+    Check(reconnected, "and one after it is back succeeds", std::to_string(tries) + " tries, " +
+          std::to_string((int)Since(t0)) + " s");
+    Check(f.MaxExcursion() == 0, "nothing moved during the recovery", std::to_string(f.MaxExcursion()) + " steps");
+    Check(f.GetPosition() == EAFFocuser::kDropPosition, "it reports the number it came back with",
+          std::to_string(f.GetPosition()));
+    Check(!f.PositionTrusted(), "the mismatch is caught");
+    const std::string why = f.TrustProblem();
+    Check(why.find(std::to_string(was)) != std::string::npos &&
+          why.find(std::to_string(EAFFocuser::kDropPosition)) != std::string::npos, "naming both numbers", why);
+    Check(LoadFocuserMemory(mem, m) && m.position == was, "and the saved number is not overwritten");
+
+    Check(!f.MoveTo(was) && f.LastRefusalKind() == MoveRefusal::Untrusted, "a GO TO is refused", f.LastRefusal());
+    {
+        AutofocusRoutine af;
+        af.SetFocuser(&f);
+        Check(!af.Start(f.GetPosition(), false), "an autofocus sweep is refused");
+        AppCore core;   // the controller every way into autofocus goes through
+        std::atomic<bool> failed{false};
+        std::string status;
+        AutofocusHooks h;
+        h.failed = [&] { failed.store(true); };
+        h.status = [&](const std::string& s) { status = s; };
+        AutofocusControllerT<AutofocusRoutine, AutoExposureAssistant> ctl(
+            af, core.ae, f, core.Clock(), core.Ui(), 1.0);
+        ctl.SetHooks(h);
+        ctl.Start();
+        Check(failed.load() && !ctl.Busy() && status.find(std::to_string(was)) != std::string::npos,
+              "and the controller says why, with the numbers", status);
+    }
+    Check(f.MoveRelative(50), "a relative jog still works: steps mean what they say");
+    for (int i = 0; i < 100 && f.IsMoving(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    Check(LoadFocuserMemory(mem, m) && m.position == was, "and it does not overwrite the saved number either");
+
+    Check(f.RestoreSavedPosition(), "the owner puts the saved number back");
+    Check(f.PositionTrusted() && f.GetPosition() == was, "trusted, at the saved number", std::to_string(f.GetPosition()));
+    Check(f.MoveTo(was + 100), "and absolute moves work again");
+    for (int i = 0; i < 100 && f.IsMoving(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    const bool reloaded = LoadFocuserMemory(mem, m);
+    Check(reloaded && m.position == was + 100, "recorded as before", std::to_string(m.position));
+    f.Close();
+    fs::remove_all(dir, ec);
+}
+
 static void GroupSlewStuck() {
     printf("slew-stuck: a GoTo never arrives\n");
     SetFault("slew-stuck@0");
@@ -356,6 +446,7 @@ int main(int argc, char** argv) {
     if (g == "all" || g == "disk-slow-fits")     { GroupDiskSlowFits();     ran = true; }
     if (g == "all" || g == "disk-slow-overflow") { GroupDiskSlowOverflow(); ran = true; }
     if (g == "all" || g == "quit-mid-run")       { GroupQuitMidRun();       ran = true; }
+    if (g == "all" || g == "eaf-drop")           { GroupEafDrop();          ran = true; }
     if (!ran) { printf("unknown group '%s'\n", g.c_str()); return 2; }
     if (g_fail) { printf("fault_injection: %d FAILED\n", g_fail); return 1; }
     printf("fault_injection: all passed\n");

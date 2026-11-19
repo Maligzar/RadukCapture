@@ -39,6 +39,7 @@
 #include <string>
 #include "DeviceIdentity.h"
 #include "FocuserGuard.h"
+#include "FocuserTrust.h"
 
 namespace raduk::core {
 
@@ -119,6 +120,28 @@ public:
     virtual int FocuserId() const = 0;
     // Phase 157.3: model, firmware, SDK and serial (DeviceIdentity.h).
     virtual DeviceIdentity Identity() const { return {}; }
+
+    // ── Phase 157.0e: is the number the focuser reports the one it had? ──
+    // The record of the last position (FocuserTrust.h), set before Open.
+    // Empty: no record, always trusted. Defaults here so a test's fake
+    // focuser need not care.
+    virtual void SetPositionMemory(const std::string& /*path*/) {}
+    // False after an open whose number disagreed with the record. Until
+    // the owner answers, every absolute move (GO TO, a profile's
+    // position, autofocus, a refocus) is refused (MoveRefusal::Untrusted);
+    // a relative step still works.
+    virtual bool PositionTrusted() const { return true; }
+    // Empty while trusted; else both numbers and what to do.
+    virtual std::string TrustProblem() const { return {}; }
+    // The number saved when it was last used, -1 if none (for Dash's card).
+    virtual int SavedPosition() const { return -1; }
+    // The owner: the focuser's number is right. Records it. No motion.
+    virtual bool AcceptReportedPosition() { return true; }
+    // The owner: put the saved number back (EAFResetPostion). No motion.
+    virtual bool RestoreSavedPosition() { return false; }
+    // After an unplug: close, find the same focuser (by serial), open it,
+    // and judge its number as on any open. Never moves anything.
+    virtual bool Reconnect() { return false; }
 };
 
 } // namespace raduk::core

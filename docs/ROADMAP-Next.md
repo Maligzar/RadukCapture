@@ -1701,7 +1701,11 @@ paths pass fault injection, and one unattended sky run completes.
    position distrusted when it comes back different. **157.0d written
    2026-11-18 (3.3.27)**: `disk-slow`, quitting through `AppCore`, and a
    live warning on the first overrun, which the test found was said only
-   at the end and blamed USB. 157.0e is next.
+   at the end and blamed USB. **157.0e written 2026-11-18 (3.3.31)**: the
+   focuser's position saved and checked on every open, absolute moves
+   refused while it disagrees until the owner answers, and a re-open by
+   serial after an unplug, with Dash's POSITION IN DOUBT card. Owes: a run
+   on the real EAF.
 
 #### Release 3.5: planetary excellence
 

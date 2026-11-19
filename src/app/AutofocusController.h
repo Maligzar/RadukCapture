@@ -99,6 +99,18 @@ public:
             Status("No focuser connected");
             return;
         }
+        // Phase 157.0e: a sweep is a run of absolute positions, and the
+        // focuser's number is in doubt. Refused here, with both numbers,
+        // rather than one refused move at a time.
+        if (!m_focuser.PositionTrusted()) {
+            const std::string why = m_focuser.TrustProblem();
+            m_calibrate = false;
+            Status("Autofocus not started: " + why);
+            Session("AutoFocus not started: " + why);
+            Line("[AF] Not started: " + why + "\n");
+            if (m_hooks.failed) m_hooks.failed();
+            return;
+        }
         if (m_hooks.showAutoExposure) m_hooks.showAutoExposure();
         m_ae.SetEnabled(true);
         m_ae.SetAuto(true);

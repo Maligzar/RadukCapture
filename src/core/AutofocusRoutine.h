@@ -209,6 +209,12 @@ public:
             return false;
         if (!m_focuser || !m_focuser->IsOpen())
             return false;
+        // Phase 157.0e: no sweep from a number in doubt (AutofocusController
+        // says why; this is the backstop for any other caller).
+        if (!m_focuser->PositionTrusted()) {
+            SetStatus(("Autofocus refused: " + m_focuser->TrustProblem()).c_str());
+            return false;
+        }
 
         m_abortFlag.store(false);
         m_runCalibration = m_calibrate;   // 161.3: this run's kind

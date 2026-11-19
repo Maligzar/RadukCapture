@@ -60,14 +60,30 @@ public:
     float GetTemperature() const override;
     int FocuserId() const override { return m_focuserId; }
 
+    // Phase 157.0e (FocuserTrust.h).
+    void SetPositionMemory(const std::string& path) override { m_trust.SetPath(path); }
+    bool PositionTrusted() const override { return m_trust.Trusted(); }
+    std::string TrustProblem() const override { return m_trust.Problem(); }
+    int SavedPosition() const override { return m_trust.SavedPosition(); }
+    bool AcceptReportedPosition() override;
+    bool RestoreSavedPosition() override;
+    bool Reconnect() override;
+
 private:
+    // Phase 157.0e: open by SDK id, read the position, judge it.
+    bool OpenId(int id);
+    static std::string SerialOf(int id);
+    mutable PositionTrust m_trust;
+    std::string m_serial;
     int         m_focuserId = -1;
     EAF_INFO    m_info{};
     bool        m_isOpen = false;
     // Phase 139.2: the second leg of a one-sided move.
     mutable ApproachSequencer m_approach;
     // Phase 161.0a: one checked path for every move.
-    bool Command(int position, bool oneSided, bool pastGuard, const unsigned* sequence = nullptr);
+    // relative: a MoveRelative, allowed while the position is untrusted (157.0e).
+    bool Command(int position, bool oneSided, bool pastGuard, const unsigned* sequence = nullptr,
+                 bool relative = false);
     // Phase 161.0b: every move, stop, second leg and SDK call, one at a
     // time. Recursive: a move reads the position under it.
     mutable std::recursive_mutex m_cmd;

@@ -375,7 +375,7 @@ int main() {
         const char* moving[] = { "goto_target", "jog", "move_eaf", "move_eaf_rel", "autofocus",
                                  "calibrate_focus", "start_capture", "set_gain", "set_exposure",
                                  "set_gamma", "load_profile", "centroid_start", "centroid_lock",
-                                 "centroid_roi", "centroid_reset", "cables_dressed" };
+                                 "centroid_roi", "centroid_reset", "cables_dressed", "focuser_trust" };
         bool anyLeaks = false;
         for (const char* c : moving) anyLeaks |= CommandAllowedWithoutToken(c, "");
         Check(!anyLeaks, "every command that moves or changes the rig is refused");

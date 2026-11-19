@@ -33,6 +33,9 @@ std::string APEXTelemetry::ToJSON() const {
     j << "\"eaf_position\":" << eaf_position << ",";
     j << "\"eaf_temp\":"     << eaf_temp     << ",";
     j << "\"eaf_moving\":"   << (eaf_moving ? "true" : "false") << ",";
+    j << "\"eaf_trusted\":"        << (eaf_trusted ? "true" : "false") << ",";   // 157.0e
+    j << "\"eaf_saved_position\":" << eaf_saved_position << ",";
+    j << "\"eaf_trust_problem\":"  << jsonStr(eaf_trust_problem) << ",";
 
     // Mount
     j << "\"mount_ra\":"       << jsonStr(mount_ra)       << ",";

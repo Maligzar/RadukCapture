@@ -36,7 +36,24 @@ bool EAFFocuser::Open(int index) {
         return false;
     }
 
-    err = EAFOpen(id);
+    if (!OpenId(id)) return false;
+    m_fwBacklashAtOpen = GetBacklash();
+    raduk::core::CoreLog("[EAFFocuser] Opened: id=%d, maxStep=%d, firmware backlash=%d\n",
+           id, m_info.MaxStep, m_fwBacklashAtOpen);
+    return true;
+}
+
+std::string EAFFocuser::SerialOf(int id) {
+    EAF_SN sn{};
+    if (EAFGetSerialNumber(id, &sn) != EAF_SUCCESS) return {};
+    return SerialHex(sn.id, (int)sizeof(sn.id));
+}
+
+// Phase 157.0e: the part of opening that a reconnect repeats. Under the
+// command lock, so no move can slip in between the read and the verdict.
+bool EAFFocuser::OpenId(int id) {
+    std::lock_guard<std::recursive_mutex> cmd(m_cmd);
+    EAF_ERROR_CODE err = EAFOpen(id);
     if (err != EAF_SUCCESS) {
         raduk::core::CoreLog("[EAFFocuser] Open(%d) failed: %d\n", id, (int)err);
         return false;
@@ -62,9 +79,68 @@ bool EAFFocuser::Open(int index) {
         m_focuserId = -1;
         return false;
     }
-    m_fwBacklashAtOpen = GetBacklash();
-    raduk::core::CoreLog("[EAFFocuser] Opened: id=%d, maxStep=%d, firmware backlash=%d\n",
-           id, m_info.MaxStep, m_fwBacklashAtOpen);
+    // Phase 157.0e: the number against the record, before any move.
+    m_serial = SerialOf(id);
+    const TrustVerdict v = m_trust.OnOpen(m_serial, at, m_info.MaxStep);
+    if (!Trusting(v))
+        raduk::core::CoreLog("[EAFFocuser] position NOT TRUSTED: %s\n", m_trust.Problem().c_str());
+    return true;
+}
+
+// Phase 157.0e. After an unplug the old id is dead, as the camera's
+// handle is: close it, look for the same focuser by serial, open that.
+// Nothing here moves the motor.
+bool EAFFocuser::Reconnect() {
+    std::lock_guard<std::recursive_mutex> cmd(m_cmd);
+    if (m_isOpen) {
+        EAFClose(m_focuserId);   // the handle may be dead: its error does not matter
+        m_isOpen = false;
+        m_focuserId = -1;
+    }
+    m_approach.Cancel();
+    m_ledger.Idle();
+    const int n = EAFGetNum();
+    for (int i = 0; i < n; ++i) {
+        int id = 0;
+        if (EAFGetID(i, &id) != EAF_SUCCESS) continue;
+        if (!m_serial.empty()) {
+            if (EAFOpen(id) != EAF_SUCCESS) continue;
+            const std::string sn = SerialOf(id);
+            EAFClose(id);
+            if (sn != m_serial) continue;
+        }
+        const std::string want = m_serial;
+        if (!OpenId(id)) return false;
+        raduk::core::CoreLog("[EAFFocuser] Reconnected: id=%d%s%s\n", id,
+                             want.empty() ? "" : ", serial ", want.c_str());
+        return true;
+    }
+    raduk::core::CoreLog("[EAFFocuser] Reconnect: no focuser%s found\n",
+                         m_serial.empty() ? "" : " with that serial");
+    return false;
+}
+
+bool EAFFocuser::AcceptReportedPosition() {
+    std::lock_guard<std::recursive_mutex> cmd(m_cmd);
+    int at = 0;
+    if (!TryGetPosition(at)) return false;
+    m_trust.Accept(at);
+    raduk::core::CoreLog("[EAFFocuser] position %d accepted by the owner\n", at);
+    return true;
+}
+
+bool EAFFocuser::RestoreSavedPosition() {
+    std::lock_guard<std::recursive_mutex> cmd(m_cmd);
+    const int saved = m_trust.SavedPosition();
+    if (!m_isOpen || saved < 0 || IsMoving()) return false;
+    if (EAFResetPostion(m_focuserId, saved) != EAF_SUCCESS) {
+        raduk::core::CoreLog("[EAFFocuser] EAFResetPostion(%d) failed\n", saved);
+        return false;
+    }
+    int at = 0;
+    if (!TryGetPosition(at) || std::abs(at - saved) > kTrustToleranceSteps) return false;
+    m_trust.Restored(at);
+    raduk::core::CoreLog("[EAFFocuser] position set back to %d by the owner\n", at);
     return true;
 }
 
@@ -86,6 +162,10 @@ DeviceIdentity EAFFocuser::Identity() const {
 
 void EAFFocuser::Close() {
     if (!m_isOpen) return;
+    {   // Phase 157.0e: where it is now (the hand controller may have moved it).
+        int at = 0;
+        if (!IsMoving() && TryGetPosition(at)) m_trust.OnArrived(at);
+    }
 
     if (m_fwBacklashAtOpen >= 0 && GetBacklash() != m_fwBacklashAtOpen)
         EAFSetBacklash(m_focuserId, m_fwBacklashAtOpen);
@@ -103,12 +183,19 @@ void EAFFocuser::Close() {
 // further than the travel guard unless `pastGuard` overrides it.
 // Phase 161.0b: under the command lock, with the caller's stop generation
 // checked inside it, so a Stop() that has returned cannot be overtaken.
-bool EAFFocuser::Command(int position, bool oneSided, bool pastGuard, const unsigned* sequence) {
+bool EAFFocuser::Command(int position, bool oneSided, bool pastGuard, const unsigned* sequence,
+                         bool relative) {
     std::lock_guard<std::recursive_mutex> cmd(m_cmd);
     if (!m_isOpen) { m_ledger.Refuse(MoveRefusal::NotOpen, 0, position, 0); return false; }
     if (sequence && *sequence != m_stopGen.load()) {
         m_ledger.Refuse(MoveRefusal::Stopped, 0, position, 0);
         raduk::core::CoreLog("[EAFFocuser] move to %d dropped: a stop was asked for\n", position);
+        return false;
+    }
+    // Phase 157.0e: an absolute number means nothing until the position is confirmed.
+    if (!relative && !m_trust.Trusted()) {
+        m_ledger.Refuse(MoveRefusal::Untrusted, 0, position, 0);
+        raduk::core::CoreLog("[EAFFocuser] move to %d refused: %s\n", position, m_trust.Problem().c_str());
         return false;
     }
     int from = 0;
@@ -157,7 +244,7 @@ bool EAFFocuser::MoveRelative(int steps) {
                              m_ledger.LastRefusalText().c_str());
         return false;
     }
-    return MoveTo(RelativeBase(target, position) + steps);
+    return Command(RelativeBase(target, position) + steps, true, false, nullptr, true);
 }
 
 bool EAFFocuser::Stop() {
@@ -211,7 +298,9 @@ bool EAFFocuser::IsMoving() const {
         m_ledger.Leg(next);
         return true;
     }
+    const bool hadMove = m_ledger.Target() >= 0;
     m_ledger.Idle();
+    if (hadMove) m_trust.OnArrived(at);   // phase 157.0e: the record follows every completed move
     return false;
 }
 
