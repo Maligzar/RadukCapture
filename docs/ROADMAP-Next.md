@@ -1737,7 +1737,9 @@ checked against the eye (clear-night items 1, 37, 55, 57 and 58).
     2026-11-18 (3.3.29)**: the map resumes the active project, NEW asks
     first, the archive is looked at only. **162d written (3.3.30)**:
     the IAU gazetteer and the LRO map kept in `data/`, names on the map.
-    162e is next.
+    **162e written 2026-11-19 (3.3.32)**: tonight's lit Moon under the
+    grid, the owner's own tiles in captured cells, zoom and pan. 162f is
+    next.
 26. **Phases 147 and 148 (rows 47, 48)**: AVI, then TIFF.
 27. **149.5 and 149.6 (row 49)**: the ZWO filter wheel, then RGB sequencing
     on a mono camera.

@@ -53,6 +53,9 @@ struct MoonMapHooks {
     std::function<void(const std::string&)> session;         // a Capture line in the session log
     std::function<void(ToastLevel, const std::string&)> notify;
     std::function<void()>                   changed;         // redraw; the state moved
+    // Phase 162e: a section was credited with a recording; make its tile
+    // (section, the recording, where the tile goes). Off this thread.
+    std::function<void(const std::string&, const std::string&, const std::string&)> tileWanted;
 };
 
 class MoonMapController {
@@ -278,10 +281,13 @@ public:
         m_project.AddCapture(CaptureFor(i, file, frames));
         Line("[MOONMAP] " + id + " marked captured: " + m_project.Summary() + "\n");
         Saved();
+        WantTile(id, file);
         return true;
     }
     bool Clear(const std::string& id) {
         if (ViewingArchive() || !m_project.Clear(id)) return false;
+        std::error_code ec;
+        std::filesystem::remove(TilePath(m_project, id), ec);   // the picture goes with the capture
         Line("[MOONMAP] " + id + " cleared: " + m_project.Summary() + "\n");
         Saved();
         return true;
@@ -410,6 +416,7 @@ public:
                 Line(b);
                 Session("Moon map: " + id + " captured");
                 Saved();
+                WantTile(id, m_project.Latest(id) ? m_project.Latest(id)->file : std::string());
             }
             break;
         }
@@ -438,7 +445,19 @@ public:
     // "Moon_NE-A1_": the section is in the file's name.
     static std::string PrefixFor(const std::string& section) { return "Moon_" + section + "_"; }
 
+    // Phase 162e: a captured section's picture, beside the project file:
+    // moonmaps\<project>\tiles\<section>.png. Found by name, so the
+    // project file needs nothing new and an older app is not upset.
+    std::string TilePath(const Project& p, const std::string& section) const {
+        return m_dir + "\\" + Project::SafeName(p.Name()) + "\\tiles\\" + section + ".png";
+    }
+
 private:
+    void WantTile(const std::string& id, const std::string& file) {
+        if (file.empty() || !m_hooks.tileWanted) return;
+        m_hooks.tileWanted(id, file, TilePath(m_project, id));
+    }
+
     void Ended() {
         const bool ok = runner.State() == Runner::Phase::Complete;
         char b[320];

@@ -2961,9 +2961,18 @@ job.
   old map is kept in the archive. The sections are sized for the Moon
   profile's frame so that one fits at any camera angle: on the full sensor
   at 0.203"/px that is 5 x 5 a quadrant, 88 on the disc.
-- **The colours:** green is captured. Bright amber is wanted and wholly in
-  sunlight now. Faint amber has the terminator across it. Dark is unlit or
-  past the limb tonight; another night will reach it.
+- **The picture:** under the grid is tonight's Moon, painted from NASA's
+  LRO map (`data\moon_wac_4k.png`) and lit by tonight's Sun, so the
+  terminator is where it is in the eyepiece. A place libration turns away
+  from you tonight is dimmed.
+- **The colours:** green is captured, and shows your own picture of the
+  section once the app has made it from the recording (a few seconds after
+  the run; kept as `moonmaps\<project>\tiles\<section>.png`). A recording
+  with no lit surface in it (cloud, empty sky) makes no picture, and the
+  cell stays plain green. An amber outline is wanted and wholly in sunlight now. Unlit or past the limb
+  tonight: another night will reach it.
+- **Zoom:** the mouse wheel zooms about the pointer, up to 8 times, a drag
+  pans, and Home (or 0) shows the whole Moon again.
 - **A section's name** counts from the disc's centre: `NE-A1` touches the
   centre, the letter is the row away from the equator, the number the column
   away from the central meridian.
@@ -3407,6 +3416,7 @@ un-soak.ps1` runs the emulator for hours through GoTo, lock, autofocus and runs,
 | 3.3.29 | 162c | The Moon map is one long project. Opening it always carries on with the project you are working on, which is now remembered (`moonmaps\active.txt`) instead of guessed from the newest file, and the line under its name says which night of it tonight is, how many sections are captured and how many are ready now. The main row is only what a night needs: GOTO, MARK, CLEAR, START. NEW PROJECT, at the top, asks first when the current map holds captures (START NEW MAP or KEEP GOING); the old map goes to the archive. The arrows beside it show earlier maps without making them current: on an archived map START, GOTO, MARK and CLEAR are refused, and BACK or closing the map returns. Dash's NEW PROJECT asks the same, and its PREV and NEXT are gone, since Dash always shows the current map. Gated by `moon_map_run` section 11 and `tests/scenarios/moon-map-resume.scn`. |
 | 3.3.30 | 162d | The Moon map knows every named place on the Moon: the IAU/USGS gazetteer, 9087 adopted names with their size and what each name honours, is kept in `data\moon_gazetteer.csv`. Each section big enough on screen shows its largest feature whose name fits whole (named craters before lettered ones), and picking a section lists its five largest. Also kept: NASA's LRO WAC map of the whole Moon (`data\moon_wac_4k.png`, 4096 x 2048 grey, from the SVS CGI Moon Kit), which 162e will draw under the grid, and a WIC image reader for it. `data\SOURCE-moon.txt` says where both came from. The section line is shorter: `NE-B4  21°N 64°E  in sunlight, Sun 17°  not captured`. Gated by `lunar_gazetteer` (33 checks: Copernicus, Tycho and Mare Crisium in the sections worked out by hand; the map the right way round) and `tests/scenarios/moon-map-names.scn`. |
 | 3.3.31 | 157.0e | The focuser's position is remembered and checked. It is saved to `data\focuser_position.ini` after every completed move and when the focuser closes, and compared on every open. ZWO EAFs are reported losing their number over a power loss (reading 1000 against 13785, or 0, 2 or about 4761); when the number disagrees with the saved one by more than 5 steps, or the focuser's range changed, the bar says so with both numbers, and every absolute move is refused (GO TO, a profile's focus position, autofocus, a refocus, CALIBRATE) until you answer. Pressing AUTO FOCUS, CALIBRATE or GO TO asks: Yes puts the saved number back (EAFResetPostion; nothing moves), No keeps the focuser's number, Cancel decides later. Dash shows a POSITION IN DOUBT card in the EAF panel with both numbers and the same two answers, PUT BACK and KEEP. Relative steps (the jog buttons) still work, because a step means the same whatever the number. A focuser that stops answering is re-opened by itself, by serial, after 2 s and every 3 s, and its number judged again; nothing moves as part of it. In the emulator, `RADUK_EMU_FAULT=eaf-drop@T+D` unplugs the focuser at T s and brings it back D s later at 4761. |
+| 3.3.32 | 162e | The Moon map shows the Moon. Under the grid is tonight's Moon: NASA's LRO map lit by tonight's Sun, from the same arithmetic that decides which sections are in sunlight, so the picture and the colours cannot disagree. A captured section shows your own picture of it: a few seconds after a run (or a GOTO and RECORD) credits it, the sharpest of 24 frames spread through the recording is cropped, scaled to 256 x 256 and kept beside the project, off the thread that draws. Over the nights the map becomes your photograph of the Moon. A recording with no lit surface in it (no frame sampled above 4% of full scale) makes no picture, so cloud never leaves a black hole in the map. CLEAR takes the picture with the capture. The wheel zooms about the pointer, a drag pans, Home shows the whole Moon. An archived map is drawn fully lit. Gated by `moon_render` (18 checks: the terminator at first quarter on the central meridian, and on 88 sections the picture agrees with the map), `moon_tile` (20: the sharp frame picked over blurred ones, from a SER written by the test; empty sky makes no tile), `moon_map_run` section 12, and `tests/scenarios/moon-map-picture.scn`. |
 
 ---
 
