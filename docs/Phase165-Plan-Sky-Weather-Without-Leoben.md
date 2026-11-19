@@ -56,6 +56,8 @@ This phase moves the astroweather into RadukCapture itself, so the imaging PC fe
    - The Moon costs up to 40 points whether or not it is up. That matters for a nebula but means little for Jupiter.
    - Seeing enters only as a surface-wind proxy (`max(0, wind - 8) * 0.8`). The jet stream, which is what usually limits planetary detail, is not used at all.
    - RadukCapture is planetary until 4.0, so the score is re-derived here (165.3), not copied.
+6. **(tested) Leoben's 7Timer seeing is always the fallback.** `fetch_seeing_forecast` reads `pt.get("seeing2", 4)`. 7Timer's ASTRO JSON has no `seeing2`: a reply captured 2026-11-19 has the key `seeing` on all 24 timepoints, and no `seeing2`. So every night's seeing score has been class 4 (1" to 1.25"), whatever 7Timer forecast.
+7. **(sourced) Leoben reads 7Timer's wind class as knots.** In ASTRO's output `wind10m.speed` is a class from 1 to 8, not a speed. [7Timer's documentation](https://www.7timer.info/doc.php?lang=en) defines it: "1, Below 0.3m/s (calm); 2, 0.3-3.4m/s (light); 3, 3.4-8.0m/s (moderate)", up to "8, Over 32.6m/s (hurricane)". Leoben multiplies the class by 1.15078 as if it were knots, so a gale (class 6) reads as about 7 mph. The same page gives seeing classes 1 to 8 as `<0.5"` to `>2.5"`, transparency 1 to 8 as `<0.3` to `>1` mag per air mass, cloud cover 1 to 9 as `0%-6%` to `94%-100%`, relative humidity -4 to 16 in 5% steps, and `-9999` as undefined. 165.0's tables are taken from that page.
 5. **Copied as-is, it would sit outside the rules.** The rig and site are fixed, `datetime.now()` is local time, and 7Timer's "local" hour is a hard-coded UTC offset.
 
 ## The plan
@@ -77,7 +79,7 @@ This stage is pure, has no I/O, and is tested with g++.
   - **Dew risk.** Leoben's 4 °F and 8 °F spreads become 2.2 °C and 4.4 °C. They are `UNVERIFIED(item N)`, against the dew on the corrector on a real night.
   - **Wind tiers.** Leoben's sustained and gust bands are kept. The f/10 and payload deductions become a function of the train's focal length, with no "8SE" anywhere. Tagged UNVERIFIED.
   - **Cloud-layer classification.** It is not tied to the rig, so it ports as it is.
-  - **The 7Timer seeing and transparency tables.**
+  - **The 7Timer tables**, from 7Timer's own documentation rather than Leoben's code: seeing, transparency, cloud cover, relative humidity and the wind class. `-9999` is absent.
   - **The wind-shear seeing estimate**, used only when 7Timer is absent, and always labelled as an estimate.
 - **Dust.** The 0 to 5 dust category from visibility and gusts. NWS dust-warning floors apply only where NWS covers the site (inside the US); elsewhere the category comes from visibility and wind alone.
 - **Left in Leoben:** `sky_ledger` (SQLite, forecast against actual) and the multi-location weather. Phase 138's `SeeingTally` already keeps the measured-against-forecast record in the session log, which is the comparison that matters here.
@@ -137,7 +139,7 @@ This replaces Leoben's deep-sky score, for the planetary use.
 
 | Stage | Size | Needs |
 |---|---|---|
-| 165.0 | M | Real replies captured once (an online session) |
+| 165.0 | M | Real replies captured once, for a public reference location, never the owner's site. Open-Meteo `current`, 7Timer and NWS were captured 2026-11-19 (Greenwich, and a US point for NWS); Open-Meteo's hourly hit its daily limit from the shared address and waits a day |
 | 165.1 | S-M | 165.0 |
 | 165.2 | S | 165.1, then about five nights on `both` |
 | 165.3 | S, then nights | 165.0; ten nights of `SeeingTally` pairs to tune |
