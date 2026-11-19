@@ -109,6 +109,8 @@
 #include "gui/TemperatureWindow.h"
 #include "gui/MoonMapWindow.h"    // phase 162: the Moon by quadrant and section
 #include "sky/LunarGazetteer.h"   // phase 162d: every named place on the Moon
+#include "gui/MoonTileMaker.h"    // phase 162e: a captured section's picture
+#include "gui/WicImage.h"
 #include "app/NightPlanController.h"   // phase 163: a night of planets and stars
 #include "gui/StatusWindow.h"
 #include "gui/ConfirmToast.h"
@@ -6688,6 +6690,35 @@ static int RunApp(bool useEmulator) {
     // labels and a picked section's list. The data root's data\ first (on
     // the rig, the repository's), then the copy beside the exe.
     raduk::sky::LunarGazetteer moonNames;
+    // Phase 162e: the picture under the grid is painted from the LRO map,
+    // and a captured section's own picture is made from its recording off
+    // this thread. The maker's notes come back through a queue, because
+    // Log is not for other threads; the 500 ms tick writes them.
+    std::mutex moonTileMx;
+    std::vector<std::string> moonTileNotes;
+    raduk::gui::MoonTileMaker moonTiles([&](bool ok, const raduk::gui::MoonTileMaker::Job& j, const std::string& why) {
+        {
+            std::lock_guard<std::mutex> l(moonTileMx);
+            moonTileNotes.push_back(ok ? "[MOONMAP] tile for " + j.section + " made: " + j.tile + "\n"
+                                       : "[MOONMAP] tile for " + j.section + " not made: " + why + "\n");
+        }
+        moonMapWindow.TilesChanged();
+    });
+    {
+        std::string path;
+        for (const std::string& dir : {raduk::core::Paths::Data(), raduk::core::Paths::ExeDir() + "\\data"}) {
+            const std::string png = dir + "\\moon_wac_4k.png";
+            if (GetFileAttributesA(png.c_str()) != INVALID_FILE_ATTRIBUTES) { path = png; break; }
+        }
+        raduk::gui::WicPixels px;
+        std::string why = "no moon_wac_4k.png in data";
+        if (!path.empty() && raduk::gui::LoadImageFile(raduk::core::ToWide(path), true, px, why)) {
+            Log("[MOONMAP] albedo map: %d x %d from %s\n", px.width, px.height, path.c_str());
+            moonMapWindow.SetAlbedo(px.width, px.height, std::move(px.data));
+        } else {
+            Log("[MOONMAP] albedo map not read (%s): the Moon is drawn flat grey\n", why.c_str());
+        }
+    }
     {
         std::string path;
         for (const std::string& dir : {raduk::core::Paths::Data(), raduk::core::Paths::ExeDir() + "\\data"}) {
@@ -6776,6 +6807,10 @@ static int RunApp(bool useEmulator) {
             else                                   notifBar.NotifyWarn(raduk::core::ToWide(u8));
         };
         h.changed = [&]() { moonMapWindow.Refresh(); };
+        h.tileWanted = [&](const std::string& section, const std::string& rec, const std::string& tile) {
+            Log("[MOONMAP] making the tile for %s from %s\n", section.c_str(), rec.c_str());
+            moonTiles.Add({section, rec, tile});
+        };
         moonMap.SetHooks(std::move(h));
         moonMap.Open(raduk::core::Paths::EnsureSub("moonmaps"));
         moonMapWindow.SetModel(&moonMap);
@@ -8792,6 +8827,11 @@ static int RunApp(bool useEmulator) {
                 // Phase 162: the Moon map's run, on the same tick.
                 moonMap.Tick(nowSec, capturer.IsRecording(), core.afCtl.Busy(),
                              capturer.FramesRecorded());
+                {   // phase 162e: what the tile maker finished
+                    std::vector<std::string> notes;
+                    { std::lock_guard<std::mutex> l(moonTileMx); notes.swap(moonTileNotes); }
+                    for (const auto& n : notes) Log("%s", n.c_str());
+                }
                 nightPlan.Tick();   // phase 163
                 // A hand recording of a section the map's GOTO went to.
                 if (moonRec.donePending) {

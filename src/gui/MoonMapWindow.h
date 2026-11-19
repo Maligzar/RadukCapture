@@ -27,6 +27,11 @@
 // main row is only what a night needs (GOTO, MARK, CLEAR, START). NEW
 // PROJECT and the archive arrows sit in the header strip; an archived
 // map is only looked at, and NEW on a map with captures asks first.
+//
+// Phase 162e: under the grid is tonight's Moon (sky/MoonRender.h: the LRO
+// albedo map lit by tonight's Sun), and a captured section shows the
+// owner's own picture of it (moonmaps\<project>\tiles). The wheel zooms
+// about the pointer, a drag pans, Home puts it back.
 // ============================================================
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -49,6 +54,10 @@
 #include "Theme.h"
 #include "../app/MoonMapController.h"
 #include "../sky/LunarGazetteer.h"
+#include "../sky/MoonRender.h"
+#include "WicImage.h"
+#include <cmath>
+#include <map>
 #include "../core/TextConv.h"
 
 #pragma comment(lib, "d2d1.lib")
@@ -105,6 +114,16 @@ public:
     // shows, under its own name, the largest feature in it (20 km and up)
     // whose name fits the cell whole: a cut name is worse than none.
     void SetGazetteer(const raduk::sky::LunarGazetteer* g) { m_gz = g; m_labelSide = -1; }
+
+    // Phase 162e: the albedo map the picture is painted from (grey,
+    // equirectangular). Without it the Moon is a flat grey, still lit.
+    void SetAlbedo(int w, int h, std::vector<uint8_t> grey) {
+        m_render.SetAlbedo(w, h, std::move(grey));
+        m_shadeValid = false;
+    }
+    // A tile was written. Safe from any thread: it posts, and the window
+    // drops its tile cache on its own thread.
+    void TilesChanged() { if (m_hwnd) PostMessageW(m_hwnd, kMsgTiles, 0, 0); }
     void SetCommand(Command c) { m_command = std::move(c); }
 
     HWND Handle() const { return m_hwnd; }
@@ -122,6 +141,9 @@ public:
         for (const char* b : kTopButtons)
             if (what == b) { Send(b, ""); return true; }
         if (what == "CONFIRM" || what == "CANCEL") { Send(what, ""); return true; }
+        // Phase 162e: the view, for a scenario's pictures.
+        if (what == "ZOOM IN")    { ZoomAt(m_zoom * 2.0, ViewCx(), ViewCy()); return true; }
+        if (what == "ZOOM RESET") { ResetZoom(); return true; }
         if (what == "STOP") { Send("START", ""); return true; }
         return false;
     }
@@ -176,6 +198,8 @@ private:
     void ReleaseD2D() {
         auto rel = [](auto*& p) { if (p) { p->Release(); p = nullptr; } };
         rel(m_brush); rel(m_font); rel(m_fontC); rel(m_fontBig); rel(m_fontSmall);
+        rel(m_moonBmp); m_shadeValid = false;
+        ForgetTiles();
         rel(m_rt); rel(m_dwrite); rel(m_factory);
     }
 
@@ -201,6 +225,105 @@ private:
         m_rt->DrawRectangle(r, m_brush, width);
     }
     static std::wstring W(const std::string& s) { return raduk::core::ToWide(s); }
+
+    // Text over the picture: a dark copy under it, one pixel down and
+    // right, so it reads on bright highlands and dark seas alike.
+    void TextOver(const std::wstring& s, IDWriteTextFormat* f, const D2D1_RECT_F& r, uint32_t argb, float alpha) {
+        Text(s, f, D2D1::RectF(r.left + 1, r.top + 1, r.right + 1, r.bottom + 1), Theme::BG_VOID, 0.85f);
+        Text(s, f, r, argb, alpha);
+    }
+
+    // ── The picture (phase 162e) ──────────────────────────────
+    // Tonight's Moon in the view rectangle. `full` lights all of it (an
+    // archived map is a record of the surface, not of tonight). False when
+    // the Moon's position is not known.
+    bool DrawMoonPicture(bool full) {
+        if (!m_model || !m_model->HaveSky()) return false;
+        const int vw = (int)(m_view.right - m_view.left), vh = (int)(m_view.bottom - m_view.top);
+        if (vw <= 0 || vh <= 0) return false;
+        raduk::sky::LunarView v = m_model->View();
+        if (full) v.sunDir = (v.centre * -1.0).Unit();
+        const double cx = m_cx - m_view.left, cy = m_cy - m_view.top;
+        const bool nv = Theme::NightVisionOn();
+        const bool moved = vw != m_shadeW || vh != m_shadeH || cx != m_shadeCx || cy != m_shadeCy || m_r != m_shadeR;
+        if (moved || !m_shadeValid || nv != m_shadeNV || (v.sunDir - m_shadeSun).Len() > 1e-7 ||
+            (v.centre.Unit() - m_shadeEye).Len() > 1e-7) {
+            m_render.Layout(vw, vh, cx, cy, m_r);
+            m_render.Shade(v, m_grey, m_alpha);
+            m_bgra.resize((size_t)vw * vh * 4);
+            for (size_t i = 0, n = (size_t)vw * vh; i < n; ++i) {
+                const uint32_t a = m_alpha[i], g = (uint32_t)m_grey[i] * a / 255;   // premultiplied
+                m_bgra[i * 4 + 0] = nv ? 0 : (uint8_t)g;
+                m_bgra[i * 4 + 1] = nv ? 0 : (uint8_t)g;
+                m_bgra[i * 4 + 2] = (uint8_t)g;
+                m_bgra[i * 4 + 3] = (uint8_t)a;
+            }
+            if (m_moonBmp && (vw != m_shadeW || vh != m_shadeH)) { m_moonBmp->Release(); m_moonBmp = nullptr; }
+            const D2D1_BITMAP_PROPERTIES props = D2D1::BitmapProperties(
+                D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
+            if (!m_moonBmp) m_rt->CreateBitmap(D2D1::SizeU(vw, vh), m_bgra.data(), vw * 4, props, &m_moonBmp);
+            else            m_moonBmp->CopyFromMemory(nullptr, m_bgra.data(), vw * 4);
+            m_shadeW = vw; m_shadeH = vh; m_shadeCx = cx; m_shadeCy = cy; m_shadeR = m_r;
+            m_shadeSun = v.sunDir; m_shadeEye = v.centre.Unit(); m_shadeNV = nv;
+            m_shadeValid = m_moonBmp != nullptr;
+        }
+        if (!m_moonBmp) return false;
+        m_rt->DrawBitmap(m_moonBmp, m_view, 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR);
+        return true;
+    }
+
+    // A captured section's picture, loaded once. Null when there is none.
+    ID2D1Bitmap* Tile(const std::string& path) {
+        const bool nv = Theme::NightVisionOn();
+        if (nv != m_tilesNV) { ForgetTiles(); m_tilesNV = nv; }
+        auto it = m_tiles.find(path);
+        if (it != m_tiles.end()) return it->second;
+        ID2D1Bitmap* bmp = nullptr;
+        WicPixels px;
+        std::string why;
+        if (GetFileAttributesW(W(path).c_str()) != INVALID_FILE_ATTRIBUTES &&
+            LoadImageFile(W(path), true, px, why) && px.Valid()) {
+            std::vector<uint8_t> bgra((size_t)px.width * px.height * 4);
+            for (size_t i = 0, n = (size_t)px.width * px.height; i < n; ++i) {
+                const uint8_t g = px.data[i];
+                bgra[i * 4 + 0] = nv ? 0 : g; bgra[i * 4 + 1] = nv ? 0 : g;
+                bgra[i * 4 + 2] = g;          bgra[i * 4 + 3] = 255;
+            }
+            m_rt->CreateBitmap(D2D1::SizeU(px.width, px.height), bgra.data(), px.width * 4,
+                D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED)), &bmp);
+        }
+        m_tiles[path] = bmp;
+        return bmp;
+    }
+    void ForgetTiles() {
+        for (auto& kv : m_tiles) if (kv.second) kv.second->Release();
+        m_tiles.clear();
+    }
+
+    // ── Zoom and pan (phase 162e) ─────────────────────────────
+    float ViewCx() const { return (m_view.left + m_view.right) * 0.5f; }
+    float ViewCy() const { return (m_view.top + m_view.bottom) * 0.5f; }
+    void ClampPan() {
+        m_panX = (std::max)(-1.0, (std::min)(1.0, m_panX));
+        m_panY = (std::max)(-1.0, (std::min)(1.0, m_panY));
+        if (m_zoom <= 1.0) { m_panX = m_panY = 0.0; }
+    }
+    // Zoom to `z`, keeping the place under (x, y) where it is.
+    void ZoomAt(double z, float x, float y) {
+        z = (std::max)(1.0, (std::min)(kMaxZoom, z));
+        if (m_r <= 0.0f) { m_zoom = z; return; }
+        const double dx = (x - m_cx) / m_r, dy = (m_cy - y) / m_r;
+        const double r1 = m_r / m_zoom * z;
+        m_zoom = z;
+        m_panX = (ViewCx() - x) / r1 + dx;
+        m_panY = (y - ViewCy()) / r1 + dy;
+        ClampPan();
+        if (m_hwnd) InvalidateRect(m_hwnd, nullptr, FALSE);
+    }
+    void ResetZoom() {
+        m_zoom = 1.0; m_panX = m_panY = 0.0;
+        if (m_hwnd) InvalidateRect(m_hwnd, nullptr, FALSE);
+    }
 
     // Each section's largest features, worked out once per grid size:
     // named ones before lettered satellite craters ("Boss L"), which only
@@ -318,9 +441,11 @@ private:
         // ── The disc ─────────────────────────────────────────
         const float availW = (float)m_w - pad * 2.0f;
         const float availH = (float)m_h - top - headH - footH - pad * 2.0f;
-        m_r  = (std::max)(20.0f, (std::min)(availW, availH) * 0.5f);
-        m_cx = (float)m_w * 0.5f;
-        m_cy = top + headH + pad + availH * 0.5f;
+        m_view = D2D1::RectF(pad, top + headH + pad, pad + availW, top + headH + pad + (std::max)(1.0f, availH));
+        const float r0 = (std::max)(20.0f, (std::min)(availW, availH) * 0.5f);
+        m_r  = r0 * (float)m_zoom;
+        m_cx = ViewCx() - (float)m_panX * m_r;
+        m_cy = ViewCy() + (float)m_panY * m_r;
 
         if (have) {
             const auto& P = *shownPtr;
@@ -328,24 +453,41 @@ private:
             const bool sky = m->HaveSky() && !archive;
             const std::string running = m->CurrentSection();
 
+            m_rt->PushAxisAlignedClip(m_view, D2D1_ANTIALIAS_MODE_ALIASED);
+            const bool picture = DrawMoonPicture(archive);
+
             ID2D1EllipseGeometry* disc = nullptr;
             m_factory->CreateEllipseGeometry(D2D1::Ellipse(D2D1::Point2F(m_cx, m_cy), m_r, m_r), &disc);
             ID2D1Layer* layer = nullptr;
             m_rt->CreateLayer(&layer);
             if (disc && layer) {
                 m_rt->PushLayer(D2D1::LayerParameters(D2D1::InfiniteRect(), disc), layer);
-                Fill(D2D1::RectF(m_cx - m_r, m_cy - m_r, m_cx + m_r, m_cy + m_r), Theme::PANEL, 1.0f);
+                if (!picture) Fill(D2D1::RectF(m_cx - m_r, m_cy - m_r, m_cx + m_r, m_cy + m_r), Theme::PANEL, 1.0f);
                 for (size_t i = 0; i < secs.size(); ++i) {
                     const D2D1_RECT_F r = CellRect(secs[i]);
+                    if (r.right < m_view.left || r.left > m_view.right || r.bottom < m_view.top || r.top > m_view.bottom)
+                        continue;
                     const bool done = P.IsCaptured(secs[i].id);
+                    const bool ready = sky && m->Sky((int)i).Capturable();
+                    const bool edge = sky && m->Sky((int)i).visible && m->Sky((int)i).litFraction > 0.0;
                     if (done) {
-                        Fill(r, Theme::ACCENT3, 0.78f);
-                    } else if (sky && m->Sky((int)i).Capturable()) {
-                        Fill(r, Theme::ACCENT2, 0.55f);
-                    } else if (sky && m->Sky((int)i).visible && m->Sky((int)i).litFraction > 0.0) {
+                        // The owner's own picture of it, when one has been made.
+                        if (ID2D1Bitmap* tile = Tile(m->TilePath(P, secs[i].id))) {
+                            m_rt->DrawBitmap(tile, r, 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+                            Fill(r, Theme::ACCENT3, 0.12f);
+                        } else {
+                            Fill(r, Theme::ACCENT3, picture ? 0.45f : 0.78f);
+                        }
+                    } else if (ready) {
+                        Fill(r, Theme::ACCENT2, picture ? 0.16f : 0.55f);
+                    } else if (edge && !picture) {
                         Fill(r, Theme::ACCENT2, 0.16f);
                     }
-                    Frame(r, Theme::BORDER, 1.0f, 1.0f);
+                    Frame(r, Theme::BORDER, picture ? 0.55f : 1.0f, 1.0f);
+                    // Over the picture the states are also outlined: green
+                    // captured, amber wanted and lit now.
+                    if (picture && done)  Frame(r, Theme::ACCENT3, 0.9f, 2.0f);
+                    if (picture && ready && !done) Frame(r, Theme::ACCENT2, 0.9f, 2.0f);
                 }
                 m_rt->PopLayer();
             }
@@ -362,26 +504,31 @@ private:
                 const float pull = ar > 0.93 ? (float)(0.93 / ar) : 1.0f;
                 const float ax = m_cx + (float)secs[i].aimX * pull * m_r;
                 const float ay = m_cy - (float)secs[i].aimY * pull * m_r;
+                if (ax < m_view.left - cell || ax > m_view.right + cell || ay < m_view.top - cell || ay > m_view.bottom + cell)
+                    continue;
                 const bool done = P.IsCaptured(secs[i].id);
                 if (done) {
-                    m_brush->SetColor(Theme::Color(Theme::BG_VOID, 0.85f));
+                    m_brush->SetColor(Theme::Color(picture ? Theme::ACCENT3 : Theme::BG_VOID, 0.9f));
                     m_rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(ax, ay - cell * 0.22f), cell * 0.07f, cell * 0.07f), m_brush);
                 }
-                if (cell >= m_base * 2.6f)
-                    Text(W(secs[i].id.substr(3)), m_fontSmall,
-                         D2D1::RectF(ax - cell * 0.5f, ay - cell * 0.1f, ax + cell * 0.5f, ay + cell * 0.4f),
-                         done ? Theme::BG_VOID : Theme::TEXT_DIM, done ? 0.9f : 1.0f);
+                const uint32_t ink = picture ? Theme::TEXT : (done ? Theme::BG_VOID : Theme::TEXT_DIM);
+                if (cell >= m_base * 2.6f) {
+                    const D2D1_RECT_F idr = D2D1::RectF(ax - cell * 0.5f, ay - cell * 0.1f, ax + cell * 0.5f, ay + cell * 0.4f);
+                    if (picture) TextOver(W(secs[i].id.substr(3)), m_fontSmall, idr, ink, 0.9f);
+                    else Text(W(secs[i].id.substr(3)), m_fontSmall, idr, ink, done ? 0.9f : 1.0f);
+                }
                 const std::wstring* name = nullptr;
                 if (cell >= m_base * 3.5f && i < labels.size())
                     for (const auto& n : labels[i]) if (n.size() <= fitChars) { name = &n; break; }
-                if (name)
-                    Text(*name, m_fontSmall,
-                         D2D1::RectF(ax - cell * 0.5f, ay + cell * 0.22f, ax + cell * 0.5f, ay + cell * 0.55f),
-                         done ? Theme::BG_VOID : Theme::TEXT, done ? 0.75f : 0.8f);
+                if (name) {
+                    const D2D1_RECT_F nr = D2D1::RectF(ax - cell * 0.5f, ay + cell * 0.22f, ax + cell * 0.5f, ay + cell * 0.55f);
+                    if (picture) TextOver(*name, m_fontSmall, nr, Theme::TEXT, 0.95f);
+                    else Text(*name, m_fontSmall, nr, done ? Theme::BG_VOID : Theme::TEXT, done ? 0.75f : 0.8f);
+                }
             }
 
             // The quadrants: the equator and the central meridian.
-            m_brush->SetColor(Theme::Color(Theme::TEXT, 0.8f));
+            m_brush->SetColor(Theme::Color(Theme::TEXT, picture ? 0.55f : 0.8f));
             m_rt->DrawLine(D2D1::Point2F(m_cx - m_r, m_cy), D2D1::Point2F(m_cx + m_r, m_cy), m_brush, 2.0f);
             m_rt->DrawLine(D2D1::Point2F(m_cx, m_cy - m_r), D2D1::Point2F(m_cx, m_cy + m_r), m_brush, 2.0f);
             m_brush->SetColor(Theme::Color(Theme::TEXT_DIM));
@@ -394,17 +541,26 @@ private:
             }
 
             // A count in each corner, green when that quadrant is done.
-            using Q = raduk::sky::MoonQuadrant;
-            const struct { Q q; float sx, sy; } corners[] = {
-                {Q::NE, 1, -1}, {Q::NW, -1, -1}, {Q::SW, -1, 1}, {Q::SE, 1, 1}};
-            for (const auto& c : corners) {
+            // Only at the whole-disc view: zoomed in, the corners are off it.
+            if (m_zoom <= 1.0) {
+                using Q = raduk::sky::MoonQuadrant;
+                const struct { Q q; float sx, sy; } corners[] = {
+                    {Q::NE, 1, -1}, {Q::NW, -1, -1}, {Q::SW, -1, 1}, {Q::SE, 1, 1}};
+                for (const auto& c : corners) {
+                    wchar_t b[48];
+                    swprintf(b, 48, L"%hs %d/%d", raduk::sky::MoonQuadrantName(c.q),
+                             P.QuadrantCaptured(c.q), P.QuadrantTotal(c.q));
+                    const float x = m_cx + c.sx * m_r * 0.86f, y = m_cy + c.sy * m_r * 0.93f;
+                    Text(b, m_fontC, D2D1::RectF(x - m_base * 5, y - lineH * 0.5f, x + m_base * 5, y + lineH * 0.5f),
+                         P.QuadrantComplete(c.q) ? Theme::ACCENT3 : Theme::TEXT);
+                }
+            } else {
                 wchar_t b[48];
-                swprintf(b, 48, L"%hs %d/%d", raduk::sky::MoonQuadrantName(c.q),
-                         P.QuadrantCaptured(c.q), P.QuadrantTotal(c.q));
-                const float x = m_cx + c.sx * m_r * 0.86f, y = m_cy + c.sy * m_r * 0.93f;
-                Text(b, m_fontC, D2D1::RectF(x - m_base * 5, y - lineH * 0.5f, x + m_base * 5, y + lineH * 0.5f),
-                     P.QuadrantComplete(c.q) ? Theme::ACCENT3 : Theme::TEXT);
+                swprintf(b, 48, L"x%.1f   Home: whole Moon", m_zoom);
+                TextOver(b, m_font, D2D1::RectF(m_view.left + pad * 0.5f, m_view.bottom - lineH * 1.1f,
+                                                m_view.right, m_view.bottom - lineH * 0.1f), Theme::TEXT_DIM, 1.0f);
             }
+            m_rt->PopAxisAlignedClip();
             if (disc)  disc->Release();
             if (layer) layer->Release();
         }
@@ -455,7 +611,7 @@ private:
                     Text(b, m_font, D2D1::RectF(pad, footTop, (float)m_w - pad, footTop + lineH), Theme::TEXT);
                 }
             } else if (have) {
-                Text(archive ? L"An archived map: click a section to see it." : L"Click a section to pick it.",
+                Text(archive ? L"An archived map: click a section to see it." : L"Click a section to pick it. Wheel zooms, drag pans.",
                      m_font, D2D1::RectF(pad, footTop, (float)m_w - pad, footTop + lineH), Theme::TEXT_DIM);
             }
 
@@ -484,13 +640,37 @@ private:
         return r.right > r.left && x >= r.left && x < r.right && y >= r.top && y < r.bottom;
     }
 
-    void OnClick(int x, int y) {
+    void OnDown(int x, int y) {
         for (int i = 0; i < 2; ++i)
             if (Inside(m_conf[i], x, y)) { Send(i == 0 ? "CONFIRM" : "CANCEL", ""); return; }
         for (int i = 0; i < kTopCount; ++i)
             if (Inside(m_top[i], x, y)) { Send(kTopButtons[i], ""); return; }
         for (int i = 0; i < kButtonCount; ++i)
             if (Inside(m_btn[i], x, y)) { Send(kButtons[i], ""); return; }
+        if (!Inside(m_view, x, y)) return;
+        m_down = true; m_dragging = false;
+        m_downX = x; m_downY = y; m_downPanX = m_panX; m_downPanY = m_panY;
+        SetCapture(m_hwnd);
+    }
+    void OnDrag(int x, int y) {
+        if (!m_down) return;
+        if (!m_dragging && std::abs(x - m_downX) + std::abs(y - m_downY) > 5 && m_zoom > 1.0) m_dragging = true;
+        if (!m_dragging || m_r <= 0.0f) return;
+        m_panX = m_downPanX - (x - m_downX) / (double)m_r;
+        m_panY = m_downPanY + (y - m_downY) / (double)m_r;
+        ClampPan();
+        InvalidateRect(m_hwnd, nullptr, FALSE);
+    }
+    void OnUp(int x, int y) {
+        if (!m_down) return;
+        m_down = false;
+        ReleaseCapture();
+        if (!m_dragging) OnClick(x, y);
+        m_dragging = false;
+    }
+
+    // A click on the disc picks the section under it.
+    void OnClick(int x, int y) {
         if (!m_model || !m_model->HasProject() || m_r <= 0.0f) return;
         const double dx = (x - m_cx) / m_r, dy = (m_cy - y) / m_r;
         if (dx * dx + dy * dy > 1.0) return;
@@ -529,9 +709,33 @@ private:
                 self->OnResize(LOWORD(lp), HIWORD(lp));
                 return 0;
             case WM_LBUTTONDOWN:
-                self->OnClick(GET_X_LPARAM(lp), GET_Y_LPARAM(lp));
+                self->OnDown(GET_X_LPARAM(lp), GET_Y_LPARAM(lp));
+                return 0;
+            case WM_MOUSEMOVE:
+                self->OnDrag(GET_X_LPARAM(lp), GET_Y_LPARAM(lp));
+                return 0;
+            case WM_LBUTTONUP:
+                self->OnUp(GET_X_LPARAM(lp), GET_Y_LPARAM(lp));
+                return 0;
+            case WM_CAPTURECHANGED:
+                self->m_down = self->m_dragging = false;
+                return 0;
+            case WM_MOUSEWHEEL: {
+                POINT pt{GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
+                ScreenToClient(hwnd, &pt);
+                if (Inside(self->m_view, pt.x, pt.y))
+                    self->ZoomAt(self->m_zoom * std::pow(1.25, GET_WHEEL_DELTA_WPARAM(wp) / 120.0),
+                                 (float)pt.x, (float)pt.y);
+                return 0;
+            }
+            case kMsgTiles:
+                self->ForgetTiles();
+                InvalidateRect(hwnd, nullptr, FALSE);
                 return 0;
             case WM_KEYDOWN:
+                if (wp == VK_HOME || wp == '0') { self->ResetZoom(); return 0; }
+                if (wp == VK_ADD || wp == VK_OEM_PLUS)   { self->ZoomAt(self->m_zoom * 1.5, self->ViewCx(), self->ViewCy()); return 0; }
+                if (wp == VK_SUBTRACT || wp == VK_OEM_MINUS) { self->ZoomAt(self->m_zoom / 1.5, self->ViewCx(), self->ViewCy()); return 0; }
                 if (wp == VK_ESCAPE) {
                     // Esc first takes back an armed NEW, then closes.
                     if (self->m_model && self->m_model->NewArmed()) self->Send("CANCEL", "");
@@ -565,6 +769,25 @@ private:
     const raduk::sky::LunarGazetteer*    m_gz = nullptr;
     int                                  m_labelSide = -1;
     std::vector<std::vector<std::wstring>> m_labels;
+
+    // Phase 162e: the picture, the tiles, the view.
+    static constexpr UINT   kMsgTiles = WM_APP + 162;
+    static constexpr double kMaxZoom = 8.0;
+    raduk::sky::MoonRender  m_render;
+    ID2D1Bitmap*            m_moonBmp = nullptr;
+    std::vector<uint8_t>    m_grey, m_alpha, m_bgra;
+    bool                    m_shadeValid = false, m_shadeNV = false;
+    int                     m_shadeW = 0, m_shadeH = 0;
+    double                  m_shadeCx = 0, m_shadeCy = 0;
+    float                   m_shadeR = 0;
+    raduk::sky::LVec        m_shadeSun, m_shadeEye;
+    std::map<std::string, ID2D1Bitmap*> m_tiles;
+    bool                    m_tilesNV = false;
+    D2D1_RECT_F             m_view = {};
+    double                  m_zoom = 1.0, m_panX = 0.0, m_panY = 0.0;
+    bool                    m_down = false, m_dragging = false;
+    int                     m_downX = 0, m_downY = 0;
+    double                  m_downPanX = 0.0, m_downPanY = 0.0;
     Command                 m_command;
 };
 

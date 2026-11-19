@@ -96,6 +96,17 @@ Both downloads are asked of the owner first, with the source and the size.
   - at colongitude 0 the terminator lies near longitude 0
   - the pixel-to-section mapping agrees with `BuildMoonSections`
 
+**162e, as built (2026-11-19, 3.3.32).**
+- The sunlight ramp is a smooth step from 1 degree below the horizon to 6 above, so the soft terminator sits where `SectionSkyAt`'s 1 degree rule puts it. `moon_render` checks that on all 88 sections of a 5 x 5 grid at full Moon and first quarter: every section the map calls in sunlight is drawn lit, and every unlit one dark.
+- At new Moon, libration turns a sliver near the limb toward the Sun but away from us. It is drawn at the past-limb level, which is right, and the test says so.
+- The tile's frame is chosen by surface sharpness (mean squared gradient over the mean squared, on the frame binned 2 x 2), not `SerScan::ScoreFrame`, which looks for a planet on black sky. The score does not follow brightness: a sharp frame at 40% gain scores the same as at full.
+- A recording with no lit surface makes no tile: frames whose mean is under 4% of full scale are not candidates, and with none left the cell stays plain green. A sharpness floor would not do: sharpness is divided by the mean squared, so noise on black sky scores high.
+- `moon-map-picture.scn` files a recording by hand (GOTO, then RECORD), so it does not need the emulated Moon above the horizon. `moon-map.scn` does: its lock fails while the Moon is down at the PC's clock (found 2026-11-19 at 06:00, on master as well as this branch). Run it in the evening.
+- Seen in passing, not touched: the run's log line says "runs of 1844674407370955 s" when the profile limits by frames, the time limit's "none" printed as a number.
+- No `tile=` field: a tile is found by its name, `moonmaps\<project>\tiles\<section>.png`, so the project file is unchanged and an older app is not upset.
+- The tile maker's notes reach the log through a queue the 500 ms tick drains, because `Log` also feeds the scenario recorder and is not for other threads.
+- An archived map is drawn fully lit: it is a record of the surface, not of tonight.
+
 ### 162f: tonight's suggestion, the journal, milestones and the section card
 
 - **`src/core/MoonMapJournal.h`** (pure) works from the captures alone, so nothing new is stored.

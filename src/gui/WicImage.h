@@ -98,4 +98,45 @@ inline bool LoadImageFile(const std::wstring& path, bool grey, WicPixels& out, s
     return true;
 }
 
+// An 8-bit grey picture to a PNG (phase 162e: the Moon map's tiles).
+// Written beside the target and moved over it, so a reader never sees half
+// a file. False with the reason.
+inline bool SaveGreyPng(const std::wstring& path, int w, int h, const uint8_t* grey, std::string& why) {
+    using namespace wic_detail;
+    if (w <= 0 || h <= 0 || !grey) { why = "nothing to write"; return false; }
+    const HRESULT co = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    struct Undo { bool on; ~Undo() { if (on) CoUninitialize(); } } undo{SUCCEEDED(co)};
+
+    Ptr<IWICImagingFactory> factory;
+    HRESULT hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
+    if (FAILED(hr)) { why = Hr("the WIC factory", hr); return false; }
+    const std::wstring tmp = path + L".tmp";
+    {
+        Ptr<IWICStream> stream;
+        hr = factory->CreateStream(&stream);
+        if (SUCCEEDED(hr)) hr = stream->InitializeFromFilename(tmp.c_str(), GENERIC_WRITE);
+        if (FAILED(hr)) { why = Hr("creating the file", hr); return false; }
+        Ptr<IWICBitmapEncoder> enc;
+        hr = factory->CreateEncoder(GUID_ContainerFormatPng, nullptr, &enc);
+        if (SUCCEEDED(hr)) hr = enc->Initialize(stream.p, WICBitmapEncoderNoCache);
+        Ptr<IWICBitmapFrameEncode> frame;
+        if (SUCCEEDED(hr)) hr = enc->CreateNewFrame(&frame, nullptr);
+        if (SUCCEEDED(hr)) hr = frame->Initialize(nullptr);
+        if (SUCCEEDED(hr)) hr = frame->SetSize((UINT)w, (UINT)h);
+        WICPixelFormatGUID fmt = GUID_WICPixelFormat8bppGray;
+        if (SUCCEEDED(hr)) hr = frame->SetPixelFormat(&fmt);
+        if (SUCCEEDED(hr) && fmt != GUID_WICPixelFormat8bppGray) hr = E_FAIL;
+        if (SUCCEEDED(hr)) hr = frame->WritePixels((UINT)h, (UINT)w, (UINT)((size_t)w * h), const_cast<BYTE*>(grey));
+        if (SUCCEEDED(hr)) hr = frame->Commit();
+        if (SUCCEEDED(hr)) hr = enc->Commit();
+        if (FAILED(hr)) { why = Hr("encoding the PNG", hr); DeleteFileW(tmp.c_str()); return false; }
+    }
+    if (!MoveFileExW(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+        why = "could not move the PNG into place";
+        DeleteFileW(tmp.c_str());
+        return false;
+    }
+    return true;
+}
+
 } // namespace raduk::gui

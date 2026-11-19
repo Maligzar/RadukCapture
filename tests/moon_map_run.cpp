@@ -112,6 +112,7 @@ struct Night {
     std::map<std::string, std::pair<double, double>> coords;
     std::vector<std::pair<ToastLevel, std::string>> toasts;
     int changes = 0, locks = 0, focusStarts = 0;
+    std::vector<std::pair<std::string, std::string>> tiles;   // section, tile path (162e)
     std::string lastFile;
 
     explicit Night(const fs::path& d, bool wipe) : dir(d) {
@@ -150,6 +151,9 @@ struct Night {
         h.frameSize = [](int& w, int& hgt) { w = 3840; hgt = 2160; };
         h.notify = [this](ToastLevel l, const std::string& s) { toasts.push_back({l, s}); };
         h.changed = [this] { ++changes; };
+        h.tileWanted = [this](const std::string& id, const std::string&, const std::string& tile) {
+            tiles.push_back({id, tile});
+        };
         c.SetHooks(h);
         c.Open(dir.string());
     }
@@ -449,6 +453,28 @@ int main() {
         Check(old.c.NewArmed(), "NEW can be armed");
         old.c.DisarmNew();
         Check(!old.c.NewArmed() && old.c.Active().Name() == "First map", "and disarmed with nothing changed");
+    }
+
+    printf("\n12. A captured section's picture is asked for, and goes with CLEAR (162e)\n");
+    {
+        Night n(dir, true);
+        std::string why;
+        n.c.NewProject("Tiles", 1, why);
+        n.c.Mark("NE-A1");
+        Check(n.tiles.empty(), "a section marked by hand with no recording has no picture to make");
+        n.c.Mark("NW-A1", "D:\\caps\\Moon_NW-A1_x.ser", 300);
+        Check(n.tiles.size() == 1 && n.tiles[0].first == "NW-A1", "one marked with its recording asks for a tile");
+        const std::string want = (dir / "Tiles" / "tiles" / "NW-A1.png").string();
+        Check(n.tiles.size() == 1 && fs::path(n.tiles[0].second) == fs::path(want),
+              "beside the project: moonmaps\\<project>\\tiles\\<section>.png", n.tiles.empty() ? "" : n.tiles[0].second);
+        Check(n.c.TilePath(n.c.Active(), "NW-A1") == n.tiles[0].second, "and the window finds it where it was asked for");
+        Check(n.Start(why), "a run starts on the rest", why);
+        n.RunToEnd();
+        Check(n.tiles.size() == 1 + n.recorded.size(), "and every section it records asks for one",
+              std::to_string(n.tiles.size()) + " for " + std::to_string(n.recorded.size()));
+        fs::create_directories(fs::path(want).parent_path());
+        { std::ofstream f(want); f << "png"; }
+        Check(n.c.Clear("NW-A1") && !fs::exists(want), "CLEAR takes the picture with the capture");
     }
 
     std::error_code ec;

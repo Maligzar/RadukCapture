@@ -1,0 +1,47 @@
+# Phase 162e: tonight's Moon under the grid, and the owner's own pictures.
+#
+# The map paints the LRO albedo map lit by tonight's Sun. A section that is
+# credited with a recording gets a tile made from it, off the UI thread,
+# and its cell shows that picture.
+#
+# By hand (GOTO, then RECORD), not with a run, so this does not need the
+# emulated Moon above the horizon or a lock: a run's lock does, and
+# moon-map.scn is the scenario for that. Whatever the frames hold, a tile
+# is tried: made when the emulated Moon is up, "no surface" when it has set.
+
+name    Moon map: the picture and the tiles
+timeout 300
+
+env     RADUK_EMU_LUNAR_PHASE=0.5
+env     RADUK_EMU_MOONMAP_FULL=1
+rig     MoonMapSectionsPerSide=1
+profile moon.ini capture limit_value=60
+
+expect 30  [MOONMAP] albedo map: 4096 x 2048
+expect 30  [SCENARIO] Moon map
+wait   3
+press  MOONMAP:SHOW
+press  MOONMAP:NEW
+expect 10  [MOONMAP] new project
+wait   2
+shot   picture-empty
+
+press  MOONMAP:SELECT NE-A1
+press  MOONMAP:GOTO
+expect 10  [MOONMAP] GoTo NE-A1: RECORD now files the run under that section
+expect 120 [GOTO] Slew to 'Moon' complete
+wait   2
+press  RECORD
+expect 20  Recording started:
+expect 120 [MOONMAP] NE-A1 marked captured: 1 of 4 sections
+expect 10  [MOONMAP] making the tile for NE-A1
+expect 60  [MOONMAP] tile for NE-A1
+wait   2
+shot   picture-tile
+press  MOONMAP:ZOOM IN
+wait   1
+shot   picture-zoomed
+press  MOONMAP:ZOOM RESET
+press  MOONMAP:SELECT NE-A1
+press  MOONMAP:CLEAR
+expect 10  [MOONMAP] NE-A1 cleared: 0 of 4 sections
