@@ -1598,11 +1598,11 @@ static int RunApp(bool useEmulator) {
         cfg.limitType        = LimitType::Frames;
         cfg.limitFrames      = 1000;
         cfg.limitTimeSec     = 60.0;
-        cfg.writeBufferSlots = 512;
         cfg.format = raduk::core::CaptureFormatFromName(
             raduk::core::RigConfig::Get().captureFormat);
         capturer.SetConfig(cfg);
     }
+    core.ApplyEmuFaults();   // phase 157.0d: disk-slow; nothing in the hardware build
     Log("[INIT] Capture manager ready\n");
 
     // Recording takes EVERY frame, from the capture thread, rather than
@@ -7032,7 +7032,7 @@ static int RunApp(bool useEmulator) {
                 L"RadukCapture — Exit",
                 MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2);
             if (choice != IDYES) return;
-            capturer.StopRecording(false);  // app exiting - do not auto-stack
+            core.recCtl.End(false, "the app is closing");  // not normal: no auto-stack
         }
         // Shut down floating windows and AI gracefully before message loop exits
         aiChat.Destroy();
@@ -9203,7 +9203,7 @@ static int RunApp(bool useEmulator) {
                 // Warn if frames were dropped
                 if (capturer.FramesDropped() > 0) {
                     wchar_t wbuf[128];
-                    swprintf(wbuf, 128, L"\u26A0 %u frames dropped — reduce USB BW or exposure",
+                    swprintf(wbuf, 128, L"\u26A0 %u frames dropped — the disk did not keep up",   // write-buffer overruns (157.0d), not USB
                              capturer.FramesDropped());
                     notifBar.NotifyWarn(wbuf);
                 }
@@ -9487,16 +9487,10 @@ static int RunApp(bool useEmulator) {
     // Shut down Phase 50 AI before hardware teardown
     aiChat.Destroy();
 
-    // Unhook the recorder from the capture thread FIRST.
-    //
-    // `capture` is declared before `capturer`, so on scope exit
-    // `capturer` is destroyed first and ~CaptureThread() then joins a
-    // thread whose sink still points at it. The explicit capture.Stop()
-    // further down covers the normal path, but clearing the sink here
-    // makes the ordering requirement independent of it.
-    capture.SetFrameSink(nullptr);
-
-    if (capturer.IsRecording()) capturer.StopRecording(false);  // app shutting down - do not auto-stack
+    // Unhook the recorder from the capture thread FIRST, then end any
+    // run (not normal: no auto-stack). In AppCore since phase 157.0d, so
+    // the fault test quits mid-run through this same code.
+    core.StopForExit();
     tracker.Reset();
     analyzer.Stop();
     statusBar.Release();

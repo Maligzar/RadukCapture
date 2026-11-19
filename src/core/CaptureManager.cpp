@@ -61,10 +61,12 @@ bool CaptureManager::StartRecording(int width, int height, int bitDepth) {
     GlobalMemoryStatusEx(&mem);
 
     const double planFps = (m_lastKnownFps > 1.0) ? m_lastKnownFps : 60.0;
-    const int slots = PlanWriteBufferSlots(
+    const int planned = PlanWriteBufferSlots(
         m_config.limitType == LimitType::Frames ? m_config.limitFrames : 0,
         m_config.limitType == LimitType::Time   ? m_config.limitTimeSec : 0.0,
         planFps, frameBytes, mem.ullAvailPhys);
+    const int slots = (m_config.writeBufferCap > 0 && planned > m_config.writeBufferCap)
+                    ? m_config.writeBufferCap : planned;   // phase 157.0d
 
     {
         char b[220];
@@ -598,6 +600,13 @@ void CaptureManager::WriterLoop() {
         float realSharp = SharpnessPercent(
             BayerLaplacianVariance(slot->data, slot->width, slot->height,
                                    slot->bitDepth, ccx, ccy));
+        // Phase 157.0d: the slow-disk fault, inside its window.
+        if (const int slowMs = m_slowMs.load(std::memory_order_relaxed)) {
+            const double t = std::chrono::duration<double>(
+                std::chrono::steady_clock::now() - m_startTime).count();
+            if (t >= m_slowStartSec && (m_slowDurSec < 0.0 || t < m_slowStartSec + m_slowDurSec))
+                Sleep((DWORD)slowMs);
+        }
         bool ok = m_writer->WriteFrame(slot->data, slot->dataSize,
                                       slot->timestampUs, realSharp);
         m_writeBuffer.Pop();
