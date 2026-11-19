@@ -44,6 +44,12 @@ Each stage is its own branch, version and PR, and is useful on its own.
   - the archive view does not change it, and START is refused there
   - NEW without CONFIRM does nothing
 
+**162c, as built (2026-11-18, 3.3.29).**
+- The archive is sorted by each project's `created_jd`, not by file time: saving a capture rewrites a file, so its write time is not its age.
+- Without `active.txt` (a folder from before 162c), the project last written to is active, the old rule.
+- The night count is derived from the captures (`MoonMapProject::Nights`, 12 h apart), so nothing new is stored. Phase 162f's journal reuses it.
+- A scenario `expect` matches after the line the previous one matched, so two expects on one log line fail; `moon-map-resume.scn` checks each line once.
+
 ### 162d: the Moon's data, kept locally
 
 Both downloads are asked of the owner first, with the source and the size.

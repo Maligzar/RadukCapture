@@ -1729,7 +1729,9 @@ checked against the eye (clear-night items 1, 37, 55, 57 and 58).
     tonight's suggestion, a journal, milestones and a card per section;
     the Sky map's Moon tied to the map both ways. Plan in
     [`Phase162-Plan-Moon-Map-Long-Project.md`](Phase162-Plan-Moon-Map-Long-Project.md).
-    Placed in 3.5 for now; the owner may move it.
+    Placed in 3.5 for now; the owner may move it. **162c written
+    2026-11-18 (3.3.29)**: the map resumes the active project, NEW asks
+    first, the archive is looked at only. 162d is next.
 26. **Phases 147 and 148 (rows 47, 48)**: AVI, then TIFF.
 27. **149.5 and 149.6 (row 49)**: the ZWO filter wheel, then RGB sequencing
     on a mono camera.
