@@ -1,0 +1,64 @@
+# Phase 162c: the Moon map is one long project.
+#
+# Opening the map carries on with the active project. NEW on a map that
+# holds captures asks first, and taking it back changes nothing. A new
+# map made with CONFIRM puts the old one in the archive, where it can be
+# looked at but not run, marked or cleared; BACK returns to the active
+# map, and closing and opening the map comes back to it too.
+
+name    Moon map: one long project, resumed
+timeout 180
+
+env     RADUK_EMU_LUNAR_PHASE=0.5
+env     RADUK_EMU_MOONMAP_FULL=1
+rig     MoonMapSectionsPerSide=1
+
+expect 30  [SCENARIO] Moon map
+wait   3
+press  MOONMAP:SHOW
+expect 10  [MOONMAP] no project yet: NEW PROJECT starts one
+
+# The first map: nothing in it yet, so NEW needs no confirmation.
+press  MOONMAP:NEW
+expect 10  [MOONMAP] new project
+press  MOONMAP:SELECT NE-A1
+press  MOONMAP:MARK
+expect 10  [MOONMAP] NE-A1 marked captured: 1 of 4 sections
+shot   first-map
+
+# NEW on a map with a capture asks, and KEEP GOING takes it back.
+press  MOONMAP:NEW
+expect 10  [MOONMAP] NEW asks to be confirmed
+shot   new-asks
+press  MOONMAP:CANCEL
+expect 10  [MOONMAP] NEW taken back
+press  MOONMAP:CONFIRM
+expect 10  [MOONMAP] CONFIRM refused: nothing to confirm
+
+# Asked again and confirmed: a second map, with the first kept.
+press  MOONMAP:NEW
+expect 10  [MOONMAP] NEW asks to be confirmed
+press  MOONMAP:CONFIRM
+expect 10  [MOONMAP] new project 'Moon
+
+# The first map, in the archive: looked at, not worked on.
+press  MOONMAP:PREV
+expect 10  (1 of 2), 1 of 4 sections
+shot   archive
+press  MOONMAP:START
+expect 10  [MOONMAP] START refused: viewing an archived map
+press  MOONMAP:SELECT NE-A1
+press  MOONMAP:CLEAR
+expect 10  [MOONMAP] CLEAR refused: viewing an archived map
+press  MOONMAP:BACK
+expect 10  [MOONMAP] back to the active map
+
+# Closing in the archive and opening again lands on the active map.
+press  MOONMAP:PREV
+expect 10  [MOONMAP] archive:
+press  MOON
+expect 10  [MOONMAP] map hidden
+press  MOON
+expect 10  [MOONMAP] map shown
+expect 10  b': night 1, 0 of 4 captured
+shot   resumed

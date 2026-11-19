@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <functional>
 #include <string>
 #include <system_error>
@@ -65,34 +66,127 @@ public:
     void SetUi(IUiSink& u)        { m_ui = &u; }
 
     // ── Projects ──────────────────────────────────────────────
-    // Where the .moonmap files live. Reads what is there; the newest
-    // file is the active project.
+    // Where the .moonmap files live. Reads what is there, oldest project
+    // first. The ACTIVE project is the one named in active.txt (phase
+    // 162c): opening the app, or the map, always carries on with it until
+    // the owner starts another with NEW. Without that file (a folder from
+    // before 162c), the project last written to is the active one, which
+    // was the old rule and is the right guess.
+    static constexpr const char* kActiveFile = "active.txt";
+
     void Open(const std::string& dir) {
         m_dir = dir;
         m_files.clear();
         std::error_code ec;
         std::filesystem::create_directories(dir, ec);
-        std::vector<std::pair<std::filesystem::file_time_type, std::string>> found;
+        struct Found { double created; std::string path; std::filesystem::file_time_type written; };
+        std::vector<Found> found;
         for (const auto& e : std::filesystem::directory_iterator(dir, ec)) {
             if (!e.is_regular_file(ec)) continue;
             if (e.path().extension().string() != Project::kExtension) continue;
-            found.push_back({e.last_write_time(ec), e.path().string()});
+            Project p;
+            std::string why;
+            const double created = p.Load(e.path().string(), why) ? p.CreatedJd() : 1e12;
+            found.push_back({created, e.path().string(), e.last_write_time(ec)});
         }
-        std::sort(found.begin(), found.end());
-        for (const auto& f : found) m_files.push_back(f.second);
-        m_at = (int)m_files.size() - 1;
+        // By age, which is the order the archive is stepped through. Saving
+        // a capture rewrites a file, so its write time is not its age.
+        std::sort(found.begin(), found.end(), [](const Found& a, const Found& b) {
+            return a.created != b.created ? a.created < b.created : a.path < b.path;
+        });
+        for (const auto& f : found) m_files.push_back(f.path);
+
+        m_at = -1;
+        const std::string named = ReadActiveName();
+        for (size_t i = 0; i < m_files.size() && !named.empty(); ++i)
+            if (std::filesystem::path(m_files[i]).filename().string() == named) m_at = (int)i;
+        if (m_at < 0 && !found.empty()) {
+            size_t newest = 0;
+            for (size_t i = 1; i < found.size(); ++i)
+                if (found[i].written > found[newest].written) newest = i;
+            m_at = (int)newest;
+        }
         LoadActive();
+        if (m_project.Valid()) WriteActiveName();
     }
 
     bool HasProject() const { return m_project.Valid(); }
+    // The project every run, GOTO, MARK and CLEAR acts on.
     const Project& Active() const { return m_project; }
     int  ProjectCount() const { return (int)m_files.size(); }
     int  ProjectIndex() const { return m_at; }
     const std::string& Dir() const { return m_dir; }
 
+    // ── The archive (phase 162c) ──────────────────────────────
+    // PREV and NEXT look at older projects without making them active:
+    // the only thing that changes the active project is NEW. While one is
+    // on screen, Shown() is it, and every command that would change a
+    // project or move the mount is refused.
+    bool ViewingArchive() const { return m_viewing >= 0 && m_viewing != m_at; }
+    const Project& Shown() const { return ViewingArchive() ? m_archived : m_project; }
+    int  ShownIndex() const { return ViewingArchive() ? m_viewing : m_at; }
+    std::string ArchiveRefusal() const {
+        return "viewing an archived map: BACK returns to '" + m_project.Name() + "'";
+    }
+
+    // The next or the previous project, by age. Stepping onto the active
+    // one is the same as BACK.
+    bool Step(int dir) {
+        if (runner.Running() || m_files.size() < 2) return false;
+        const int n = (int)m_files.size();
+        const int to = ((ShownIndex() + dir) % n + n) % n;
+        if (to == m_at) return ViewActive();
+        Project p;
+        std::string why;
+        if (!p.Load(m_files[(size_t)to], why)) {
+            Line("[MOONMAP] " + m_files[(size_t)to] + " was not read: " + why + "\n");
+            return false;
+        }
+        m_archived = p;
+        m_viewing = to;
+        m_selected.clear();
+        DisarmNew();
+        char b[64];
+        std::snprintf(b, sizeof(b), " (%d of %d)", to + 1, n);
+        Line("[MOONMAP] archive: '" + p.Name() + "'" + b + ", " + p.Summary() +
+             "; the active map is still '" + m_project.Name() + "'\n");
+        Changed();
+        return true;
+    }
+
+    // Back to the active project. False when it is already on screen.
+    bool ViewActive() {
+        if (!ViewingArchive()) { m_viewing = -1; return false; }
+        m_viewing = -1;
+        m_archived = Project{};
+        m_selected.clear();
+        Line("[MOONMAP] back to the active map '" + m_project.Name() + "': " + m_project.Summary() + "\n");
+        Changed();
+        return true;
+    }
+
+    // ── NEW asks first (phase 162c) ───────────────────────────
+    // A project with captures in it is weeks of nights. NEW on it arms a
+    // confirmation the window shows; CONFIRM then makes the new project
+    // (the old one stays, in the archive). Anything else disarms it.
+    bool NewNeedsConfirm() const { return m_project.Valid() && !m_project.Captures().empty(); }
+    bool NewArmed() const { return m_newArmed; }
+    void ArmNew()    { m_newArmed = true; Changed(); }
+    void DisarmNew() { if (m_newArmed) { m_newArmed = false; Changed(); } }
+
+    // Which night of the active project tonight is: the nights it already
+    // has, plus one when tonight has not yet added to it.
+    int NightNumber() const {
+        if (!m_project.Valid()) return 0;
+        const int had = m_project.Nights();
+        if (had == 0) return 1;
+        return had + (Jd() - m_project.LastCaptureJd() >= Project::kNightGapDays ? 1 : 0);
+    }
+
     // A new project, which becomes the active one. False with a reason:
     // a name already used, a grid that cannot be, a sequence under way.
     bool NewProject(const std::string& name, int perSide, std::string& why) {
+        m_newArmed = false;
         if (runner.Running()) { why = "a map run is going"; return false; }
         if (perSide < raduk::sky::MOONMAP_MIN_SIDE || perSide > raduk::sky::MOONMAP_MAX_SIDE) {
             why = "no frame yet, so no section size";
@@ -104,10 +198,15 @@ public:
         Project p;
         p.Init(name, perSide, Jd());
         if (!p.Save(path)) { why = "could not write " + path; return false; }
+        m_before = (m_at >= 0 && m_at < (int)m_files.size()) ? m_files[(size_t)m_at] : std::string();
         m_project = p;
         m_files.push_back(path);
         m_at = (int)m_files.size() - 1;
+        m_viewing = -1;
+        m_archived = Project{};
         m_selected.clear();
+        m_wasComplete = false;
+        WriteActiveName();
         RefreshSky();
         Line("[MOONMAP] new project '" + name + "': " + std::to_string(p.Total()) + " sections\n");
         Changed();
@@ -125,20 +224,15 @@ public:
         std::error_code ec;
         std::filesystem::remove(m_files[(size_t)m_at], ec);
         m_files.erase(m_files.begin() + m_at);
+        // The map a mistaken NEW was pressed over is active again; failing
+        // that, the newest.
         m_at = (int)m_files.size() - 1;
+        for (size_t i = 0; i < m_files.size(); ++i) if (m_files[i] == m_before) m_at = (int)i;
+        m_before.clear();
         LoadActive();
+        if (m_project.Valid()) WriteActiveName();
+        else std::filesystem::remove(std::filesystem::path(m_dir) / kActiveFile, ec);
         Line("[MOONMAP] empty project '" + name + "' discarded\n");
-        Changed();
-        return true;
-    }
-
-    // The next or the previous project, by age.
-    bool Step(int dir) {
-        if (runner.Running() || m_files.size() < 2) return false;
-        const int n = (int)m_files.size();
-        m_at = ((m_at + dir) % n + n) % n;
-        LoadActive();
-        Line("[MOONMAP] project '" + m_project.Name() + "': " + m_project.Summary() + "\n");
         Changed();
         return true;
     }
@@ -171,12 +265,13 @@ public:
     // ── The selection, and marking by hand ────────────────────
     const std::string& Selected() const { return m_selected; }
     void Select(const std::string& id) {
-        m_selected = m_project.Find(id) ? id : std::string();
+        m_selected = Shown().Find(id) ? id : std::string();
         Changed();
     }
 
     // A section recorded by hand, or outside the app.
     bool Mark(const std::string& id, const std::string& file = std::string(), uint32_t frames = 0) {
+        if (ViewingArchive()) return false;
         const int i = IndexOf(id);
         if (i < 0) return false;
         RefreshSky();
@@ -186,7 +281,7 @@ public:
         return true;
     }
     bool Clear(const std::string& id) {
-        if (!m_project.Clear(id)) return false;
+        if (ViewingArchive() || !m_project.Clear(id)) return false;
         Line("[MOONMAP] " + id + " cleared: " + m_project.Summary() + "\n");
         Saved();
         return true;
@@ -195,6 +290,7 @@ public:
     // Slew to one section, outside a run. False with a reason.
     bool GoTo(const std::string& id, std::string& why) {
         const int i = IndexOf(id);
+        if (ViewingArchive()) { why = ArchiveRefusal(); return false; }
         if (i < 0) { why = "no such section"; return false; }
         if (runner.Running()) { why = "a map run is going"; return false; }
         RefreshSky();
@@ -208,6 +304,7 @@ public:
     // `c.sections` is filled in here. False with the reason.
     bool Start(Runner::Config c, double nowSec, std::string& why) {
         if (runner.Running()) { why = "one is already going"; return false; }
+        if (ViewingArchive()) { why = ArchiveRefusal(); return false; }
         if (!m_project.Valid()) { why = "no project: make one first"; return false; }
         RefreshSky();
         if (!HaveSky()) { why = "the Moon's position is not known"; return false; }
@@ -399,8 +496,24 @@ private:
         return c;
     }
 
+    std::string ReadActiveName() const {
+        std::ifstream f(std::filesystem::path(m_dir) / kActiveFile);
+        std::string s;
+        if (f) std::getline(f, s);
+        while (!s.empty() && (s.back() == '\r' || s.back() == '\n' || s.back() == ' ')) s.pop_back();
+        return s;
+    }
+    void WriteActiveName() const {
+        if (m_at < 0 || m_at >= (int)m_files.size()) return;
+        std::ofstream f(std::filesystem::path(m_dir) / kActiveFile, std::ios::trunc);
+        if (f) f << std::filesystem::path(m_files[(size_t)m_at]).filename().string() << "\n";
+    }
+
     void LoadActive() {
         m_project = Project{};
+        m_archived = Project{};
+        m_viewing = -1;
+        m_newArmed = false;
         m_selected.clear();
         m_haveView = false;
         m_sky.clear();
@@ -441,8 +554,12 @@ private:
     MoonMapHooks m_hooks;
     std::string  m_dir;
     std::vector<std::string> m_files;     // oldest first
-    int          m_at = -1;
+    int          m_at = -1;               // the active project
+    int          m_viewing = -1;          // an archived one on screen, or -1
     Project      m_project;
+    Project      m_archived;
+    bool         m_newArmed = false;
+    std::string  m_before;                // the active file before the last NEW
     std::string  m_selected;
     raduk::sky::LunarView m_view;
     bool         m_haveView = false;

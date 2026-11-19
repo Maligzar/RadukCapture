@@ -22,6 +22,7 @@
 
 #include "../sky/MoonMap.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cstdint>
 #include <cstdio>
@@ -82,6 +83,27 @@ public:
         for (const auto& c : m_captures)
             if (c.section == id && (!best || c.jdUt >= best->jdUt)) best = &c;
         return best;
+    }
+
+    // ── Nights (phase 162c) ───────────────────────────────────
+    // Captures twelve hours or more apart are on different nights. A
+    // night's sections are taken within a few hours, and two nights are
+    // a day apart, so the gap has room either side.
+    static constexpr double kNightGapDays = 0.5;
+
+    int Nights() const {
+        std::vector<double> jd;
+        for (const auto& c : m_captures) jd.push_back(c.jdUt);
+        std::sort(jd.begin(), jd.end());
+        int n = 0;
+        for (size_t i = 0; i < jd.size(); ++i)
+            if (i == 0 || jd[i] - jd[i - 1] >= kNightGapDays) ++n;
+        return n;
+    }
+    double LastCaptureJd() const {
+        double last = 0.0;
+        for (const auto& c : m_captures) if (c.jdUt > last) last = c.jdUt;
+        return last;
     }
 
     int Total() const { return (int)m_sections.size(); }

@@ -21,6 +21,12 @@
 // The window draws and reports clicks. Every button and every click on
 // a section leaves through one command callback, the same one Dash and
 // a scenario use, so there is one implementation of each.
+//
+// Phase 162c: the map is one long project. It opens on the ACTIVE
+// project, says which night of it tonight is and what is ready, and the
+// main row is only what a night needs (GOTO, MARK, CLEAR, START). NEW
+// PROJECT and the archive arrows sit in the header strip; an archived
+// map is only looked at, and NEW on a map with captures asks first.
 // ============================================================
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -52,8 +58,9 @@ namespace raduk::gui {
 
 class MoonMapWindow {
 public:
-    // "NEW", "PREV", "NEXT", "GOTO", "MARK", "CLEAR", "START" (which also
-    // stops), and "SELECT" with a section's name as the argument.
+    // "GOTO", "MARK", "CLEAR", "START" (which also stops); "NEW", "PREV",
+    // "NEXT", "BACK", "CONFIRM", "CANCEL"; and "SELECT" with a section's
+    // name as the argument.
     using Command = std::function<void(const std::string& cmd, const std::string& arg)>;
 
     bool Create(HWND parent, int x, int y, int w, int h) {
@@ -107,13 +114,19 @@ public:
         if (what.rfind("SELECT ", 0) == 0) { Send("SELECT", what.substr(7)); return true; }
         for (const char* b : kButtons)
             if (what == b) { Send(b, ""); return true; }
+        for (const char* b : kTopButtons)
+            if (what == b) { Send(b, ""); return true; }
+        if (what == "CONFIRM" || what == "CANCEL") { Send(what, ""); return true; }
         if (what == "STOP") { Send("START", ""); return true; }
         return false;
     }
 
 private:
-    static constexpr const char* kButtons[] = {"NEW", "PREV", "NEXT", "GOTO", "MARK", "CLEAR", "START"};
-    static constexpr int kButtonCount = 7;
+    static constexpr const char* kButtons[] = {"GOTO", "MARK", "CLEAR", "START"};
+    static constexpr int kButtonCount = 4;
+    // The header strip: the archive arrows, BACK, and NEW PROJECT.
+    static constexpr const char* kTopButtons[] = {"PREV", "NEXT", "BACK", "NEW"};
+    static constexpr int kTopCount = 4;
 
     void Send(const std::string& cmd, const std::string& arg) { if (m_command) m_command(cmd, arg); }
 
@@ -203,39 +216,79 @@ private:
 
         const bool have = m_model && m_model->HasProject();
         const auto* m = m_model;
+        const bool archive = have && m->ViewingArchive();
+        const raduk::core::MoonMapProject* shownPtr = have ? &m->Shown() : nullptr;
 
-        // ── Header ───────────────────────────────────────────
+        // ── Header strip: the project, the archive arrows, NEW PROJECT ──
         {
-            std::wstring title = have ? W(m->Active().Name()) : L"No Moon map project";
-            if (have && m->ProjectCount() > 1) {
-                wchar_t n[40];
-                swprintf(n, 40, L"   (%d of %d)", m->ProjectIndex() + 1, m->ProjectCount());
-                title += n;
+            const float rowTop = top + pad * 0.5f, rowH = lineH * 1.3f;
+            const float sbw = m_base * 2.6f, nbw = m_base * 9.0f, bbw = m_base * 5.0f, gap = pad * 0.4f;
+            float x = (float)m_w - pad;
+            for (auto& r : m_top) r = D2D1::RectF(0, 0, 0, 0);
+            const bool many = m && m->ProjectCount() > 1;
+            const bool running = have && m->runner.Running();
+            auto button = [&](int i, float w, const wchar_t* label, bool live) {
+                x -= w;
+                m_top[i] = D2D1::RectF(x, rowTop, x + w, rowTop + rowH);
+                Fill(m_top[i], i == 3 && m && m->NewArmed() ? Theme::ACCENT4 : Theme::PANEL, 1.0f);
+                Frame(m_top[i], Theme::BORDER, 1.0f, 1.0f);
+                Text(label, m_fontC, m_top[i], live ? Theme::TEXT : Theme::TEXT_DIM, live ? 1.0f : 0.6f);
+                x -= gap;
+            };
+            button(3, nbw, L"NEW PROJECT", !running && !archive);
+            if (many) {
+                button(1, sbw, L"\x25B8", !running);
+                // Which map of how many, between the arrows.
+                const float cw = m_base * 3.4f;
+                wchar_t n[24];
+                swprintf(n, 24, L"%d/%d", m->ShownIndex() + 1, m->ProjectCount());
+                Text(n, m_fontC, D2D1::RectF(x - cw, rowTop, x, rowTop + rowH), Theme::TEXT_DIM);
+                x -= cw + gap;
+                button(0, sbw, L"\x25C2", !running);
             }
-            Text(title, m_fontBig, D2D1::RectF(pad, top + pad * 0.5f, (float)m_w - pad, top + pad * 0.5f + lineH * 1.3f), Theme::TEXT);
+            if (archive) button(2, bbw, L"BACK", true);
 
+            const std::wstring title = have ? W(shownPtr->Name()) : L"No Moon map project";
+            Text(title, m_fontBig, D2D1::RectF(pad, rowTop, x - gap, rowTop + rowH),
+                 archive ? Theme::ACCENT2 : Theme::TEXT);
+
+            auto nights = [](int n) { return n == 1 ? L"1 night" : (std::to_wstring(n) + L" nights"); };
             std::wstring line;
             uint32_t col = Theme::TEXT_DIM;
+            wchar_t b[260];
             if (!have) {
-                line = L"Press NEW to start one: it is sized for the camera's frame as it is now.";
+                line = L"Press NEW PROJECT to start your first map.";
+            } else if (archive) {
+                swprintf(b, 260, L"ARCHIVE   %d of %d sections, %ls.   BACK to return",
+                         shownPtr->Captured(), shownPtr->Total(), nights(shownPtr->Nights()).c_str());
+                line = b;
+                col = Theme::ACCENT2;
             } else if (m->Active().Complete()) {
-                line = L"READY FOR MOSAIC   every section is captured";
+                swprintf(b, 260, L"READY FOR MOSAIC in %ls.   NEW PROJECT starts another map",
+                         nights(m->Active().Nights()).c_str());
+                line = b;
                 col = Theme::ACCENT3;
             } else {
-                wchar_t b[200];
-                swprintf(b, 200, L"%d of %d sections captured   %d more are in sunlight now",
-                         m->Active().Captured(), m->Active().Total(), m->CapturableNow());
+                const int ready = m->CapturableNow();
+                swprintf(b, 260, L"Night %d   %d of %d captured   ", m->NightNumber(),
+                         m->Active().Captured(), m->Active().Total());
                 line = b;
+                if (ready > 0) {
+                    swprintf(b, 260, L"%d ready now \x2192 START", ready);
+                    line += b;
+                    col = Theme::TEXT;
+                } else {
+                    line += L"nothing in sunlight now";
+                }
             }
             if (have && m->runner.Running()) {
-                wchar_t b[160];
-                swprintf(b, 160, L"   RUN: %hs, %hs (%d of %d)", m->CurrentSection().c_str(),
+                swprintf(b, 260, L"   RUN: %hs, %hs (%d of %d)", m->CurrentSection().c_str(),
                          raduk::app::MoonMapController::Runner::PhaseName(m->runner.State()),
                          m->runner.Index() + 1, m->runner.Total());
                 line += b;
                 col = Theme::ACCENT;
             }
-            Text(line, m_font, D2D1::RectF(pad, top + pad * 0.5f + lineH * 1.3f, (float)m_w - pad, top + headH), col);
+            Text(line, m_font, D2D1::RectF(pad, rowTop + rowH, (float)m_w - pad, top + headH), col);
         }
 
         // ── The disc ─────────────────────────────────────────
@@ -246,8 +299,9 @@ private:
         m_cy = top + headH + pad + availH * 0.5f;
 
         if (have) {
-            const auto& secs = m->Active().Sections();
-            const bool sky = m->HaveSky();
+            const auto& P = *shownPtr;
+            const auto& secs = P.Sections();
+            const bool sky = m->HaveSky() && !archive;
             const std::string running = m->CurrentSection();
 
             ID2D1EllipseGeometry* disc = nullptr;
@@ -259,7 +313,7 @@ private:
                 Fill(D2D1::RectF(m_cx - m_r, m_cy - m_r, m_cx + m_r, m_cy + m_r), Theme::PANEL, 1.0f);
                 for (size_t i = 0; i < secs.size(); ++i) {
                     const D2D1_RECT_F r = CellRect(secs[i]);
-                    const bool done = m->Active().IsCaptured(secs[i].id);
+                    const bool done = P.IsCaptured(secs[i].id);
                     if (done) {
                         Fill(r, Theme::ACCENT3, 0.78f);
                     } else if (sky && m->Sky((int)i).Capturable()) {
@@ -273,7 +327,7 @@ private:
             }
 
             // Names and the captured dot, over the fills.
-            const float cell = m_r / (float)m->Active().PerSide();
+            const float cell = m_r / (float)P.PerSide();
             for (size_t i = 0; i < secs.size(); ++i) {
                 // A limb sliver's aim point is at the limb; its label sits
                 // a little inside, so it does not hang off the disc.
@@ -281,7 +335,7 @@ private:
                 const float pull = ar > 0.93 ? (float)(0.93 / ar) : 1.0f;
                 const float ax = m_cx + (float)secs[i].aimX * pull * m_r;
                 const float ay = m_cy - (float)secs[i].aimY * pull * m_r;
-                const bool done = m->Active().IsCaptured(secs[i].id);
+                const bool done = P.IsCaptured(secs[i].id);
                 if (done) {
                     m_brush->SetColor(Theme::Color(Theme::BG_VOID, 0.85f));
                     m_rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(ax, ay - cell * 0.22f), cell * 0.07f, cell * 0.07f), m_brush);
@@ -312,10 +366,10 @@ private:
             for (const auto& c : corners) {
                 wchar_t b[48];
                 swprintf(b, 48, L"%hs %d/%d", raduk::sky::MoonQuadrantName(c.q),
-                         m->Active().QuadrantCaptured(c.q), m->Active().QuadrantTotal(c.q));
+                         P.QuadrantCaptured(c.q), P.QuadrantTotal(c.q));
                 const float x = m_cx + c.sx * m_r * 0.86f, y = m_cy + c.sy * m_r * 0.93f;
                 Text(b, m_fontC, D2D1::RectF(x - m_base * 5, y - lineH * 0.5f, x + m_base * 5, y + lineH * 0.5f),
-                     m->Active().QuadrantComplete(c.q) ? Theme::ACCENT3 : Theme::TEXT);
+                     P.QuadrantComplete(c.q) ? Theme::ACCENT3 : Theme::TEXT);
             }
             if (disc)  disc->Release();
             if (layer) layer->Release();
@@ -323,48 +377,65 @@ private:
 
         // ── The picked section, and the buttons ──────────────
         const float footTop = (float)m_h - footH;
-        if (have && !m->Selected().empty()) {
-            const auto* s = m->Active().Find(m->Selected());
-            int idx = -1;
-            for (size_t i = 0; i < m->Active().Sections().size(); ++i)
-                if (m->Active().Sections()[i].id == m->Selected()) idx = (int)i;
-            if (s && idx >= 0) {
-                wchar_t b[260];
-                const int n = m->Active().CaptureCount(s->id);
-                const wchar_t* light = L"";
-                wchar_t sun[64] = L"";
-                if (m->HaveSky()) {
-                    const auto& k = m->Sky(idx);
-                    light = !k.visible ? L"past the limb tonight"
-                          : k.Capturable() ? L"in sunlight"
-                          : k.litFraction > 0.0 ? L"on the terminator" : L"in darkness";
-                    swprintf(sun, 64, L"Sun %+.0f deg", k.sunAltDeg);
-                }
-                swprintf(b, 260, L"%hs   lat %+.1f  lon %+.1f   %ls, %ls   %ls",
-                         s->id.c_str(), s->latDeg, s->lonDeg, light, sun,
-                         n == 0 ? L"not captured" : n == 1 ? L"captured" : L"captured more than once");
-                Text(b, m_font, D2D1::RectF(pad, footTop, (float)m_w - pad, footTop + lineH), Theme::TEXT);
-            }
-        } else if (have) {
-            Text(L"Click a section to pick it.", m_font,
-                 D2D1::RectF(pad, footTop, (float)m_w - pad, footTop + lineH), Theme::TEXT_DIM);
-        }
+        for (auto& r : m_btn)  r = D2D1::RectF(0, 0, 0, 0);
+        for (auto& r : m_conf) r = D2D1::RectF(0, 0, 0, 0);
 
-        const float bw = ((float)m_w - pad * 2.0f - pad * 0.5f * (kButtonCount - 1)) / kButtonCount;
-        for (int i = 0; i < kButtonCount; ++i) {
-            const float x = pad + i * (bw + pad * 0.5f);
-            m_btn[i] = D2D1::RectF(x, footTop + lineH * 1.25f, x + bw, footTop + lineH * 1.25f + lineH * 1.3f);
-            const bool start = i == kButtonCount - 1;
+        if (have && m->NewArmed()) {
+            // NEW on a map with captures: say what happens, and ask.
+            wchar_t b[260];
+            swprintf(b, 260, L"New map? '%hs' (%d of %d) goes to the archive.",
+                     m->Active().Name().c_str(), m->Active().Captured(), m->Active().Total());
+            Text(b, m_font, D2D1::RectF(pad, footTop, (float)m_w - pad, footTop + lineH), Theme::ACCENT4);
+            const float cw = ((float)m_w - pad * 2.5f) / 2.0f;
+            const wchar_t* labels[2] = {L"START NEW MAP", L"KEEP GOING"};
+            for (int i = 0; i < 2; ++i) {
+                const float x = pad + i * (cw + pad * 0.5f);
+                m_conf[i] = D2D1::RectF(x, footTop + lineH * 1.25f, x + cw, footTop + lineH * 1.25f + lineH * 1.3f);
+                Fill(m_conf[i], i == 0 ? Theme::ACCENT4 : Theme::PANEL, 1.0f);
+                Frame(m_conf[i], Theme::BORDER, 1.0f, 1.0f);
+                Text(labels[i], m_fontC, m_conf[i], Theme::TEXT);
+            }
+        } else {
+            const auto* P = shownPtr;
+            if (have && !m->Selected().empty()) {
+                const auto* s = P->Find(m->Selected());
+                int idx = -1;
+                for (size_t i = 0; i < P->Sections().size(); ++i)
+                    if (P->Sections()[i].id == m->Selected()) idx = (int)i;
+                if (s && idx >= 0) {
+                    wchar_t b[260];
+                    const int n = P->CaptureCount(s->id);
+                    const wchar_t* light = L"";
+                    wchar_t sun[64] = L"";
+                    if (m->HaveSky() && !archive) {
+                        const auto& k = m->Sky(idx);
+                        light = !k.visible ? L"past the limb tonight"
+                              : k.Capturable() ? L"in sunlight"
+                              : k.litFraction > 0.0 ? L"on the terminator" : L"in darkness";
+                        swprintf(sun, 64, L", Sun %+.0f deg", k.sunAltDeg);
+                    }
+                    swprintf(b, 260, L"%hs   lat %+.1f  lon %+.1f   %ls%ls   %ls",
+                             s->id.c_str(), s->latDeg, s->lonDeg, light, sun,
+                             n == 0 ? L"not captured" : n == 1 ? L"captured" : L"captured more than once");
+                    Text(b, m_font, D2D1::RectF(pad, footTop, (float)m_w - pad, footTop + lineH), Theme::TEXT);
+                }
+            } else if (have) {
+                Text(archive ? L"An archived map: click a section to see it." : L"Click a section to pick it.",
+                     m_font, D2D1::RectF(pad, footTop, (float)m_w - pad, footTop + lineH), Theme::TEXT_DIM);
+            }
+
+            const float bw = ((float)m_w - pad * 2.0f - pad * 0.5f * (kButtonCount - 1)) / kButtonCount;
             const bool running = have && m->runner.Running();
-            const bool needsSel = i >= 3 && i <= 5;
-            const bool live = start ? have : (i == 0) ? true
-                            : (i <= 2) ? (m_model && m_model->ProjectCount() > 1)
-                            : (have && !m->Selected().empty());
-            (void)needsSel;
-            Fill(m_btn[i], start && running ? Theme::ACCENT4 : Theme::PANEL, 1.0f);
-            Frame(m_btn[i], Theme::BORDER, 1.0f, 1.0f);
-            const std::wstring label = start ? (running ? L"STOP" : L"START") : W(kButtons[i]);
-            Text(label, m_fontC, m_btn[i], live ? Theme::TEXT : Theme::TEXT_DIM, live ? 1.0f : 0.6f);
+            for (int i = 0; i < kButtonCount; ++i) {
+                const float x = pad + i * (bw + pad * 0.5f);
+                m_btn[i] = D2D1::RectF(x, footTop + lineH * 1.25f, x + bw, footTop + lineH * 1.25f + lineH * 1.3f);
+                const bool start = i == kButtonCount - 1;
+                const bool live = have && !archive && (start || !m->Selected().empty());
+                Fill(m_btn[i], start && running ? Theme::ACCENT4 : Theme::PANEL, 1.0f);
+                Frame(m_btn[i], Theme::BORDER, 1.0f, 1.0f);
+                const std::wstring label = start ? (running ? L"STOP" : L"START") : W(kButtons[i]);
+                Text(label, m_fontC, m_btn[i], live ? Theme::TEXT : Theme::TEXT_DIM, live ? 1.0f : 0.6f);
+            }
         }
 
         m_chrome.Draw(m_rt, m_dwrite, m_w);
@@ -374,16 +445,21 @@ private:
         }
     }
 
+    static bool Inside(const D2D1_RECT_F& r, int x, int y) {
+        return r.right > r.left && x >= r.left && x < r.right && y >= r.top && y < r.bottom;
+    }
+
     void OnClick(int x, int y) {
+        for (int i = 0; i < 2; ++i)
+            if (Inside(m_conf[i], x, y)) { Send(i == 0 ? "CONFIRM" : "CANCEL", ""); return; }
+        for (int i = 0; i < kTopCount; ++i)
+            if (Inside(m_top[i], x, y)) { Send(kTopButtons[i], ""); return; }
         for (int i = 0; i < kButtonCount; ++i)
-            if (x >= m_btn[i].left && x < m_btn[i].right && y >= m_btn[i].top && y < m_btn[i].bottom) {
-                Send(kButtons[i], "");
-                return;
-            }
+            if (Inside(m_btn[i], x, y)) { Send(kButtons[i], ""); return; }
         if (!m_model || !m_model->HasProject() || m_r <= 0.0f) return;
         const double dx = (x - m_cx) / m_r, dy = (m_cy - y) / m_r;
         if (dx * dx + dy * dy > 1.0) return;
-        for (const auto& s : m_model->Active().Sections())
+        for (const auto& s : m_model->Shown().Sections())
             if (dx >= s.x0 && dx < s.x1 && dy >= s.y0 && dy < s.y1) {
                 Send("SELECT", s.id);
                 return;
@@ -421,7 +497,12 @@ private:
                 self->OnClick(GET_X_LPARAM(lp), GET_Y_LPARAM(lp));
                 return 0;
             case WM_KEYDOWN:
-                if (wp == VK_ESCAPE) { self->Hide(); return 0; }
+                if (wp == VK_ESCAPE) {
+                    // Esc first takes back an armed NEW, then closes.
+                    if (self->m_model && self->m_model->NewArmed()) self->Send("CANCEL", "");
+                    else self->Hide();
+                    return 0;
+                }
                 break;
             case WM_ERASEBKGND:
                 return 1;
@@ -443,6 +524,8 @@ private:
     float                   m_base = 14.0f;
     float                   m_cx = 0, m_cy = 0, m_r = 0;
     D2D1_RECT_F             m_btn[kButtonCount] = {};
+    D2D1_RECT_F             m_top[kTopCount] = {};
+    D2D1_RECT_F             m_conf[2] = {};
     const raduk::app::MoonMapController* m_model = nullptr;
     Command                 m_command;
 };
