@@ -17,7 +17,7 @@ This phase moves the astroweather into RadukCapture itself, so the imaging PC fe
 
   What the camera measures (`SeeingMonitor`, `FadeWatch`) stays the authority on the sky. A forecast only advises.
 - **Phase 149 (no rig in code).** Leoben's scoring has the rig and the site written into it:
-  - Anthem, AZ at 33.8653, -112.1235, 1732 ft, Bortle 4, and NWS zone AZZ001;
+  - the owner's site: its coordinates, elevation, Bortle class and NWS forecast zone, as constants (deliberately not repeated here);
   - a "Celestron 8SE @ f/10 (2032mm) with heavy payload" penalty inside the wind score.
 
   The port takes the site from `RigConfig` (`siteLatDeg`, `siteLonDeg`, `siteElevationM`) and the focal length from the imaging train (149.0). No site, rig or camera constant is copied in.
@@ -56,7 +56,7 @@ This phase moves the astroweather into RadukCapture itself, so the imaging PC fe
    - The Moon costs up to 40 points whether or not it is up. That matters for a nebula but means little for Jupiter.
    - Seeing enters only as a surface-wind proxy (`max(0, wind - 8) * 0.8`). The jet stream, which is what usually limits planetary detail, is not used at all.
    - RadukCapture is planetary until 4.0, so the score is re-derived here (165.3), not copied.
-5. **Copied as-is, it would sit outside the rules.** The rig and site are fixed, `datetime.now()` is local time, and 7Timer's "local" hour is hard-coded to UTC-7.
+5. **Copied as-is, it would sit outside the rules.** The rig and site are fixed, `datetime.now()` is local time, and 7Timer's "local" hour is a hard-coded UTC offset.
 
 ## The plan
 
