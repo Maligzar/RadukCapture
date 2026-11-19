@@ -6,7 +6,7 @@ Line numbers are left out on purpose, so an edit elsewhere in a file does not ma
 
 A tag is removed when its clear-night item has been run and the value confirmed or replaced, with the night noted in the checklist.
 
-26 constants across 12 checklist items.
+29 constants across 14 checklist items.
 
 ## Item 1: SHARP_CEIL = 1000
 
@@ -93,3 +93,16 @@ A tag is removed when its clear-night item has been run and the value confirmed 
 | `kMinDefaultOvershootSteps` | `1500` | `src/core/FocusDirection.h` | the default overshoot exceeds the 8SE's real slack (reverse in 10-step moves until the image changes) |
 | `kDefaultMaxTravelSteps` | `12000` | `src/core/FocuserGuard.h` | the travel guard is wide enough for a night's focus moves and autofocus on the rig |
 | `centralObstruction` | `0.34f` | `src/core/RigConfig.h` | the 8SE's obstruction, measured on a defocused star (hole diameter over disc diameter) |
+
+## Item 62: Dew against the forecast's spread
+
+| Constant | Value | File | What verifies it |
+|---|---|---|---|
+| `kDewWarnSpreadC` | `4.0 * 5.0 / 9.0` | `src/core/SkyWeather.h` | dew on the corrector against the spread on a humid night |
+| `kDewElevatedSpreadC` | `8.0 * 5.0 / 9.0` | `src/core/SkyWeather.h` | dew on the corrector against the spread on a humid night |
+
+## Item 63: Wind on the tube, by band
+
+| Constant | Value | File | What verifies it |
+|---|---|---|---|
+| `inline constexpr double kWindBandMph[4][2] = {{5, 8}, {10, 14}, {15, 22}, {20, 28}};` |  | `src/core/SkyWeather.h` | the tracking error and star shake at each band, on the real mount |

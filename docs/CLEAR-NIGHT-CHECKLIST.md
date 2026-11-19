@@ -1399,3 +1399,18 @@ the bench already showed, so the night only has to confirm it. The plan is
     SDK wants something this sequence does not do (ASICamera::Reconnect):
     note what the log says. The emulator only models this; it cannot
     prove the SDK behaves the way the code assumes.
+
+62. **Dew against the forecast's spread** (165.0, added 2026-11-19). On a
+    humid night, note the time the corrector first fogs and the session
+    log's temperature and dew point at that time. `core/SkyWeather.h`
+    calls a spread of 4.4 C or less "elevated" and 2.2 C or less a
+    "warning" (Leoben's 8 F and 4 F, converted, never checked against this
+    scope). If the corrector fogs well before the warning, or never at it,
+    record the spread at which it did and move the two constants.
+63. **Wind on the tube, by band** (165.0, added 2026-11-19). On a windy
+    night with a star locked, note the tracking error and the star's
+    shake in the preview against the forecast's sustained wind and gust.
+    `core/SkyWeather.h` keeps Leoben's bands (5/8, 10/14, 15/22 and 20/28
+    mph, sustained/gust), which were set for the owner's 8SE but never
+    measured. Record the band at which detail is lost and the band at
+    which the image is unusable, and move the bands to match.
