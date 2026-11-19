@@ -124,6 +124,7 @@ $Tests = @(
     @{ Name = "mosaic_run";      Sources = @() }
     @{ Name = "moon_map";        Sources = @() }
     @{ Name = "moon_map_run";    Sources = @() }
+    @{ Name = "lunar_gazetteer"; Sources = @() }
     @{ Name = "night_plan";      Sources = @() }
     @{ Name = "camera_panel";    Sources = @() }
     @{ Name = "camera_controls"; Sources = @() }
