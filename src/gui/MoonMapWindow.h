@@ -48,6 +48,7 @@
 #include "BundledFonts.h"
 #include "Theme.h"
 #include "../app/MoonMapController.h"
+#include "../sky/LunarGazetteer.h"
 #include "../core/TextConv.h"
 
 #pragma comment(lib, "d2d1.lib")
@@ -100,6 +101,10 @@ public:
     }
 
     void SetModel(const raduk::app::MoonMapController* m) { m_model = m; }
+    // Phase 162d: the names on the disc. Each section big enough on screen
+    // shows, under its own name, the largest feature in it (20 km and up)
+    // whose name fits the cell whole: a cut name is worse than none.
+    void SetGazetteer(const raduk::sky::LunarGazetteer* g) { m_gz = g; m_labelSide = -1; }
     void SetCommand(Command c) { m_command = std::move(c); }
 
     HWND Handle() const { return m_hwnd; }
@@ -196,6 +201,25 @@ private:
         m_rt->DrawRectangle(r, m_brush, width);
     }
     static std::wstring W(const std::string& s) { return raduk::core::ToWide(s); }
+
+    // Each section's largest features, worked out once per grid size:
+    // named ones before lettered satellite craters ("Boss L"), which only
+    // stand in when nothing named fits.
+    const std::vector<std::vector<std::wstring>>& Labels(const raduk::core::MoonMapProject& p) {
+        if (!m_gz || p.PerSide() == m_labelSide) return m_labels;
+        m_labelSide = p.PerSide();
+        m_labels.clear();
+        for (const auto& s : p.Sections()) {
+            std::vector<std::wstring> names, lettered;
+            for (const auto* g : m_gz->FeaturesIn(s, 0, 20.0)) {
+                auto& to = g->type == "Satellite Feature" ? lettered : names;
+                if (to.size() < 6) to.push_back(W(g->name));
+            }
+            names.insert(names.end(), lettered.begin(), lettered.end());
+            m_labels.push_back(std::move(names));
+        }
+        return m_labels;
+    }
 
     // Disc units to pixels: east to the right, north up.
     D2D1_RECT_F CellRect(const raduk::sky::MoonSection& s) const {
@@ -328,6 +352,9 @@ private:
 
             // Names and the captured dot, over the fills.
             const float cell = m_r / (float)P.PerSide();
+            const auto& labels = Labels(P);
+            // Space Mono is monospaced: an advance of 0.6 of the font size.
+            const size_t fitChars = (size_t)(cell * 0.92f / (m_base * 0.72f * 0.6f));
             for (size_t i = 0; i < secs.size(); ++i) {
                 // A limb sliver's aim point is at the limb; its label sits
                 // a little inside, so it does not hang off the disc.
@@ -344,6 +371,13 @@ private:
                     Text(W(secs[i].id.substr(3)), m_fontSmall,
                          D2D1::RectF(ax - cell * 0.5f, ay - cell * 0.1f, ax + cell * 0.5f, ay + cell * 0.4f),
                          done ? Theme::BG_VOID : Theme::TEXT_DIM, done ? 0.9f : 1.0f);
+                const std::wstring* name = nullptr;
+                if (cell >= m_base * 3.5f && i < labels.size())
+                    for (const auto& n : labels[i]) if (n.size() <= fitChars) { name = &n; break; }
+                if (name)
+                    Text(*name, m_fontSmall,
+                         D2D1::RectF(ax - cell * 0.5f, ay + cell * 0.22f, ax + cell * 0.5f, ay + cell * 0.55f),
+                         done ? Theme::BG_VOID : Theme::TEXT, done ? 0.75f : 0.8f);
             }
 
             // The quadrants: the equator and the central meridian.
@@ -412,10 +446,11 @@ private:
                         light = !k.visible ? L"past the limb tonight"
                               : k.Capturable() ? L"in sunlight"
                               : k.litFraction > 0.0 ? L"on the terminator" : L"in darkness";
-                        swprintf(sun, 64, L", Sun %+.0f deg", k.sunAltDeg);
+                        swprintf(sun, 64, L", Sun %.0f\x00B0", k.sunAltDeg);
                     }
-                    swprintf(b, 260, L"%hs   lat %+.1f  lon %+.1f   %ls%ls   %ls",
-                             s->id.c_str(), s->latDeg, s->lonDeg, light, sun,
+                    swprintf(b, 260, L"%hs  %.0f\x00B0%lc %.0f\x00B0%lc  %ls%ls  %ls",
+                             s->id.c_str(), std::fabs(s->latDeg), s->latDeg >= 0 ? L'N' : L'S',
+                             std::fabs(s->lonDeg), s->lonDeg >= 0 ? L'E' : L'W', light, sun,
                              n == 0 ? L"not captured" : n == 1 ? L"captured" : L"captured more than once");
                     Text(b, m_font, D2D1::RectF(pad, footTop, (float)m_w - pad, footTop + lineH), Theme::TEXT);
                 }
@@ -527,6 +562,9 @@ private:
     D2D1_RECT_F             m_top[kTopCount] = {};
     D2D1_RECT_F             m_conf[2] = {};
     const raduk::app::MoonMapController* m_model = nullptr;
+    const raduk::sky::LunarGazetteer*    m_gz = nullptr;
+    int                                  m_labelSide = -1;
+    std::vector<std::vector<std::wstring>> m_labels;
     Command                 m_command;
 };
 

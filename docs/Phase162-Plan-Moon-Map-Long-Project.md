@@ -67,6 +67,13 @@ Both downloads are asked of the owner first, with the source and the size.
   - quoted names parse
   - the fallback works when the file is absent
 
+**162d, as built (2026-11-18, 3.3.30).**
+- The imagery is `lroc_color_poles_4k.tif` (12.5 MB; the 2025 16-bit version is 59 MB at the same size), converted to 8-bit grey by WIC. Equirectangular, longitude 0 in the middle; the test checks Mare Crisium and Mare Imbrium dark (84, 85) against the southern highlands (150).
+- The gazetteer is the shapefile's `.dbf` (the site offers no CSV), read with the standard library: all 9087 names are adopted. Longitude moved to -180..180 east; sorted largest first.
+- Every one of the 6714 near-side names falls in a section on a 4 x 4 grid.
+- On the map, a section shows its largest feature of 20 km or more whose name fits the cell whole, named ones before lettered satellite craters. Space Mono is monospaced, so the fit is counted in characters. On this rig's 5 x 5 grid the names show when the window is maximised.
+- Python on this PC has no imaging library, so the conversion used WPF's WIC classes from PowerShell.
+
 ### 162e: tonight's Moon, with the owner's own captures on it
 
 - **`src/sky/MoonRender.h`** (pure) draws the disc in the grid's frame: zero libration, north up, east right, the same frame as `MoonSection`.

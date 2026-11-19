@@ -1,0 +1,26 @@
+The Moon map's local data (phase 162d). Both read 2026-11-18.
+
+moon_wac_4k.png
+  From:    lroc_color_poles_4k.tif, NASA Scientific Visualization Studio,
+           "CGI Moon Kit", https://svs.gsfc.nasa.gov/4720
+           (the LROC WAC Hapke-normalised mosaic, Arizona State University,
+           with LOLA polar fill)
+  Credit:  NASA's Scientific Visualization Studio. NASA imagery is not
+           copyrighted; see NASA's media usage guidelines.
+  Done:    converted to 8-bit grey with Windows' WIC (no resampling).
+           4096 x 2048, equirectangular: x = (lon + 180) / 360 * width,
+           y = (90 - lat) / 180 * height, longitude +E, 0 in the middle.
+  Note:    SVS calls it "optimized for aesthetics, not science". It is a
+           picture of the Moon under the grid, not a measurement.
+
+moon_gazetteer.csv
+  From:    MOON_nomenclature_center_pts.zip, the IAU/USGS Gazetteer of
+           Planetary Nomenclature, https://planetarynames.wr.usgs.gov/GIS_Downloads
+           (https://asc-planetarynames-data.s3.us-west-2.amazonaws.com/MOON_nomenclature_center_pts.zip)
+  Credit:  IAU Working Group for Planetary System Nomenclature and the USGS
+           Astrogeology Science Center. A US Government work.
+  Done:    the .dbf read with the standard library; names adopted by the
+           IAU only (9087 of 9087); longitude moved from 0..360 to
+           -180..180 east; the type cut to its first word ("Sinus, sinus"
+           -> "Sinus"); sorted by diameter, largest first.
+  Columns: name,lat,lon,diameter_km,type,origin (RFC 4180 quoting).

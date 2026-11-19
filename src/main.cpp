@@ -108,6 +108,7 @@
 #include "gui/PlayerWindow.h"     // [PLAY]: look through a SER recording
 #include "gui/TemperatureWindow.h"
 #include "gui/MoonMapWindow.h"    // phase 162: the Moon by quadrant and section
+#include "sky/LunarGazetteer.h"   // phase 162d: every named place on the Moon
 #include "app/NightPlanController.h"   // phase 163: a night of planets and stars
 #include "gui/StatusWindow.h"
 #include "gui/ConfirmToast.h"
@@ -6630,6 +6631,26 @@ static int RunApp(bool useEmulator) {
     // panel's, the lock is PLANET LOCK (which guides on the surface when
     // the Moon fills the frame), the sweep is autofocus's and the run is
     // RECORD. The controller puts them in order, section by section.
+    //
+    // Phase 162d: every named place on the Moon, from data\, for the map's
+    // labels and a picked section's list. The data root's data\ first (on
+    // the rig, the repository's), then the copy beside the exe.
+    raduk::sky::LunarGazetteer moonNames;
+    {
+        std::string path;
+        for (const std::string& dir : {raduk::core::Paths::Data(), raduk::core::Paths::ExeDir() + "\\data"}) {
+            const std::string p = dir + "\\moon_gazetteer.csv";
+            if (GetFileAttributesA(p.c_str()) != INVALID_FILE_ATTRIBUTES) { path = p; break; }
+        }
+        std::string why;
+        if (!path.empty() && moonNames.Load(path, why))
+            Log("[MOONMAP] gazetteer: %zu named places from %s\n", moonNames.Size(), path.c_str());
+        else {
+            if (path.empty()) { moonNames.UseShortlist(); why = "no moon_gazetteer.csv in data"; }
+            Log("[MOONMAP] gazetteer: the shortlist of %zu, because %s\n", moonNames.Size(), why.c_str());
+        }
+        moonMapWindow.SetGazetteer(&moonNames);
+    }
     {
         raduk::app::MoonMapHooks h;
         h.view = [&]() {
@@ -6897,6 +6918,16 @@ static int RunApp(bool useEmulator) {
 
         if (cmd == "SELECT") {
             moonMap.Select(arg);
+            // Phase 162d: what is in it, largest first.
+            if (const auto* s = moonMap.Shown().Find(moonMap.Selected())) {
+                std::string list;
+                for (const auto* g : moonNames.FeaturesIn(*s, 5, 10.0)) {
+                    char b[96];
+                    snprintf(b, sizeof(b), "%s%s %.0f km", list.empty() ? "" : ", ", g->name.c_str(), g->diameterKm);
+                    list += b;
+                }
+                Log("[MOONMAP] %s: %s\n", s->id.c_str(), list.empty() ? "no named feature of 10 km or more" : list.c_str());
+            }
         } else if (cmd == "CANCEL") {
             // Nothing was armed: nothing to take back.
         } else if (cmd == "BACK") {
