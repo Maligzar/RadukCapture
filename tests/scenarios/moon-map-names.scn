@@ -1,0 +1,28 @@
+# Phase 162d: the Moon map knows every named place.
+#
+# The IAU/USGS gazetteer is read at startup (data\moon_gazetteer.csv,
+# copied beside the exe by the build). Picking a section lists its largest
+# features, and each section big enough on screen shows its largest name.
+# Copernicus is in NW-A2 on a grid of four a side (tests/lunar_gazetteer.cpp
+# works it out by hand).
+
+name    Moon map: the names on it
+timeout 120
+
+env     RADUK_EMU_LUNAR_PHASE=0.5
+env     RADUK_EMU_MOONMAP_FULL=1
+rig     MoonMapSectionsPerSide=4
+
+expect 30  [MOONMAP] gazetteer: 9087 named places
+expect 30  [SCENARIO] Moon map
+wait   3
+press  MOONMAP:SHOW
+press  MOONMAP:NEW
+expect 10  [MOONMAP] new project
+press  MOONMAP:SELECT NW-A2
+expect 10  [MOONMAP] NW-A2: Copernicus 96 km
+press  MOONMAP:SELECT SW-C1
+expect 10  Tycho 85 km
+press  MOONMAP:SELECT NE-B4
+expect 10  Mare Crisium 556 km
+shot   names

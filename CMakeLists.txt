@@ -328,3 +328,17 @@ add_custom_target(copy_knowledge_db ALL
     COMMENT "Copying object_knowledge.db next to the exe"
 )
 add_dependencies(copy_knowledge_db RadukCapture)
+
+# Phase 162d: the Moon map's local data. The LRO WAC albedo map (NASA SVS
+# CGI Moon Kit) and the IAU/USGS lunar gazetteer; data/SOURCE-moon.txt
+# says where each came from. Found at run time through Paths::Data().
+add_custom_target(copy_moon_data ALL
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:RadukCapture>/data"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/data/moon_wac_4k.png"
+        "${CMAKE_SOURCE_DIR}/data/moon_gazetteer.csv"
+        "$<TARGET_FILE_DIR:RadukCapture>/data"
+    DEPENDS "${CMAKE_SOURCE_DIR}/data/moon_wac_4k.png" "${CMAKE_SOURCE_DIR}/data/moon_gazetteer.csv"
+    COMMENT "Copying the Moon map's data next to the exe"
+)
+add_dependencies(copy_moon_data RadukCapture)
