@@ -64,6 +64,7 @@ public:
     void SetPositionMemory(const std::string& path) override { m_trust.SetPath(path); }
     bool PositionTrusted() const override { return m_trust.Trusted(); }
     std::string TrustProblem() const override { return m_trust.Problem(); }
+    int SavedPosition() const override { return m_trust.SavedPosition(); }
     bool AcceptReportedPosition() override;
     bool RestoreSavedPosition() override;
     bool Reconnect() override;

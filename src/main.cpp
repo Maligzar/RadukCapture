@@ -9353,6 +9353,10 @@ static int RunApp(bool useEmulator) {
                     telemetry.eaf_temp     = focuser.GetTemperature();
                     telemetry.eaf_moving   = focuser.IsMoving();
                 }
+                // Phase 157.0e: Dash's focuser-trust card.
+                telemetry.eaf_trusted        = !focuser.IsOpen() || focuser.PositionTrusted();
+                telemetry.eaf_saved_position = focuser.IsOpen() ? focuser.SavedPosition() : -1;
+                telemetry.eaf_trust_problem  = telemetry.eaf_trusted ? std::string() : focuser.TrustProblem();
 
                 if (mount && mount->IsConnected()) {
                     double ra=0, dec=0;

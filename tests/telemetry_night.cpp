@@ -30,6 +30,18 @@ int main() {
     Check(on.find("\"night_vision\":true") != std::string::npos, "on when the app is in night vision");
     Check(on.find("\"planet_lock\":") != std::string::npos, "the existing fields are still there");
     Check(!on.empty() && on.front() == '{' && on.back() == '}', "still one JSON object");
+
+    // Phase 157.0e: Dash's focuser-trust card reads these.
+    Check(off.find("\"eaf_trusted\":true") != std::string::npos &&
+          off.find("\"eaf_saved_position\":-1") != std::string::npos &&
+          off.find("\"eaf_trust_problem\":\"\"") != std::string::npos, "focuser trusted by default, nothing saved");
+    t.eaf_trusted = false;
+    t.eaf_saved_position = 166700;
+    t.eaf_trust_problem = "the focuser reports 4761 but was last at \"166700\"";
+    const std::string doubt = t.ToJSON();
+    Check(doubt.find("\"eaf_trusted\":false") != std::string::npos &&
+          doubt.find("\"eaf_saved_position\":166700") != std::string::npos, "in doubt: said, with the saved number");
+    Check(doubt.find("was last at \\\"166700\\\"") != std::string::npos, "and the problem's text escaped as JSON");
     printf("\n%s\n", g_fail == 0 ? "ALL CHECKS PASSED" : "SOME CHECKS FAILED");
     return g_fail == 0 ? 0 : 1;
 }

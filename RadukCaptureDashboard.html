@@ -170,6 +170,11 @@ body { background:var(--d-void); color:var(--d-text); font-family:'Barlow Conden
 .rc-ctrl-btn.green { border-color:var(--d-green);  color:var(--d-green);   background:rgba(77,255,145,.07); }
 .rc-ctrl-btn.red   { border-color:var(--d-red);    color:var(--d-red);     background:rgba(255,59,92,.07); }
 .rc-ctrl-btn:hover { filter:brightness(1.3); }
+/* Phase 157.0e: the focuser-trust card */
+.rc-trust { margin:6px 10px 4px; padding:6px 8px; border:1px solid var(--d-amber); border-radius:2px; }
+.rc-trust[hidden] { display:none; }
+.rc-trust-head { font-family:'Space Mono',monospace; font-size:9px; letter-spacing:1px; color:var(--d-amber); margin-bottom:2px; }
+.rc-trust-text { font-size:10px; line-height:1.35; color:var(--d-text-dim); padding:2px 0; }
 .rc-ctrl-btn.active { filter:brightness(1.5); }
 
 .rc-row { display:flex; align-items:center; justify-content:space-between; padding:5px 10px; border-bottom:1px solid rgba(13,32,53,.6); font-family:'Space Mono',monospace; font-size:11px; }
@@ -952,6 +957,18 @@ body { background:var(--d-void); color:var(--d-text); font-family:'Barlow Conden
       <div class="rc-row"><span class="rk">POSITION</span><span class="rv" id="rcEAFPos">--</span></div>
       <div class="rc-row"><span class="rk">TEMPERATURE</span><span class="rv" id="rcEAFTemp">--</span></div>
       <div class="rc-row"><span class="rk">STATUS</span><span class="rv-dim" id="rcEAFStatus">--</span></div>
+      <!-- Phase 157.0e: the focuser came back with a number that disagrees
+           with the one saved. Shown only then; absolute moves wait for this. -->
+      <div class="rc-trust" id="rcEAFTrust" hidden>
+        <div class="rc-trust-head">POSITION IN DOUBT</div>
+        <div class="rc-row"><span class="rk">SAVED</span><span class="rv" id="rcEAFTrustSaved">--</span></div>
+        <div class="rc-row"><span class="rk">REPORTS</span><span class="rv" id="rcEAFTrustNow">--</span></div>
+        <div class="rc-trust-text" id="rcEAFTrustText"></div>
+        <div class="rc-btn-row" style="padding:4px 0 0">
+          <button class="rc-ctrl-btn green" id="rcEAFTrustRestore" onclick="rcFocuserTrust('restore')">PUT BACK --</button>
+          <button class="rc-ctrl-btn amber" id="rcEAFTrustAccept" onclick="rcFocuserTrust('accept')">KEEP --</button>
+        </div>
+      </div>
     </div>
 
     <!-- Mount telemetry -->
@@ -2313,6 +2330,7 @@ function rcConnect() {
       rcWs.onclose = () => {
         rcConnected = false; rcRunning = false; rcIsCapturing = false;
         rcClearPreview();
+        rcShowFocuserTrust(null);   // 157.0e
         rcSetStatus(false, false, null);
         document.getElementById('rcConnectBtn').textContent = 'CONNECT';
         document.getElementById('rcConnectBtn').className = 'rc-connect-btn connect';
@@ -2416,6 +2434,7 @@ function rcHandleData(data) {
   if (typeof data.night_vision === 'boolean') rcApplyNight(data.night_vision);
   rcRunning = !!data.rc_running;
   rcSetStatus(true, rcRunning, data.camera || null);
+  rcShowFocuserTrust(data);   // 157.0e: hidden unless the focuser's number is in doubt
 
   if (rcRunning) {
     // Camera
@@ -2809,6 +2828,26 @@ function rcSendCmd(cmd, arg) {
     : JSON.stringify({cmd});
   rcWs.send(payload);
   rcLogSession('[CMD] ' + cmd + (arg ? ' → ' + arg : ''), 'info');
+}
+
+// Phase 157.0e: the focuser's number disagrees with the saved one. The
+// card shows both and sends the owner's answer; neither moves the motor.
+// An older RadukCapture sends no eaf_trusted, and the card stays hidden.
+function rcShowFocuserTrust(data) {
+  const card = document.getElementById('rcEAFTrust');
+  if (!card) return;
+  const doubt = !!data && data.rc_running && data.eaf_trusted === false;
+  card.hidden = !doubt;
+  if (!doubt) return;
+  const n = v => (v != null && v >= 0) ? Number(v).toLocaleString() : '--';
+  rcSetVal('rcEAFTrustSaved', n(data.eaf_saved_position));
+  rcSetVal('rcEAFTrustNow', n(data.eaf_position));
+  rcSetVal('rcEAFTrustText', data.eaf_trust_problem || '');
+  rcSetVal('rcEAFTrustRestore', 'PUT BACK ' + n(data.eaf_saved_position));
+  rcSetVal('rcEAFTrustAccept', 'KEEP ' + n(data.eaf_position));
+}
+function rcFocuserTrust(answer) {
+  rcSendCmd('focuser_trust', answer);
 }
 
 function rcToggleAF() {

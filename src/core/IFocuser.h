@@ -133,6 +133,8 @@ public:
     virtual bool PositionTrusted() const { return true; }
     // Empty while trusted; else both numbers and what to do.
     virtual std::string TrustProblem() const { return {}; }
+    // The number saved when it was last used, -1 if none (for Dash's card).
+    virtual int SavedPosition() const { return -1; }
     // The owner: the focuser's number is right. Records it. No motion.
     virtual bool AcceptReportedPosition() { return true; }
     // The owner: put the saved number back (EAFResetPostion). No motion.

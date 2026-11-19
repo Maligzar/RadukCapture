@@ -1704,7 +1704,8 @@ paths pass fault injection, and one unattended sky run completes.
    at the end and blamed USB. **157.0e written 2026-11-18 (3.3.28)**: the
    focuser's position saved and checked on every open, absolute moves
    refused while it disagrees until the owner answers, and a re-open by
-   serial after an unplug. Owes: a run on the real EAF, and Dash's card.
+   serial after an unplug, with Dash's POSITION IN DOUBT card. Owes: a run
+   on the real EAF.
 
 #### Release 3.5: planetary excellence
 

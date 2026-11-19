@@ -187,8 +187,7 @@ public:
         raduk::core::CoreLog("[EAFEmulator] Reconnect: %s\n", ok ? "open again" : "no focuser");
         return ok;
     }
-    // A test's view of the record.
-    int SavedPosition() const { return m_trust.SavedPosition(); }
+    int SavedPosition() const override { return m_trust.SavedPosition(); }
 
     bool IsOpen() const override { return m_isOpen; }
 

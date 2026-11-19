@@ -66,6 +66,12 @@ struct APEXTelemetry {
     int         eaf_position   = 0;
     float       eaf_temp       = 0.0f;
     bool        eaf_moving     = false;
+    // Phase 157.0e: the position checked against the saved one. While
+    // eaf_trusted is false, Dash shows both numbers and the two answers
+    // (focuser_trust restore|accept). True when no focuser is open.
+    bool        eaf_trusted        = true;
+    int         eaf_saved_position = -1;
+    std::string eaf_trust_problem;
 
     // ── Mount ────────────────────────────────────────────────
     std::string mount_ra       = "--h --m --s";
