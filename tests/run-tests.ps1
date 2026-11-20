@@ -67,6 +67,8 @@ $Tests = @(
     @{ Name = "app_headless";      Sources = @("src\core\CaptureManager.cpp", "src\core\WriteBuffer.cpp", "src\core\SERWriter.cpp", "src\core\FITSWriter.cpp") }
     @{ Name = "imaging_train";     Sources = @() }
     @{ Name = "leoben_weather";    Sources = @() }
+    @{ Name = "sky_weather";       Sources = @() }
+    @{ Name = "sky_weather_client"; Sources = @() }
     @{ Name = "mutual_events";     Sources = @() }
     @{ Name = "sntp_offset";       Sources = @() }
     @{ Name = "phemu_sheet";       Sources = @() }

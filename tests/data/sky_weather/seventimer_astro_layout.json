@@ -1,0 +1,75 @@
+{
+	"product" : "astro" ,
+	"init" : "2026111912" ,
+	"dataseries" : [
+	{
+		"timepoint" : 3,
+		"cloudcover" : 1,
+		"seeing" : 1,
+		"transparency" : 1,
+		"lifted_index" : -10,
+		"rh2m" : -4,
+		"wind10m" : {
+			"direction" : "N",
+			"speed" : 1
+		},
+		"temp2m" : -76,
+		"prec_type" : "none"
+	},
+	{
+		"timepoint" : 6,
+		"cloudcover" : 9,
+		"seeing" : 8,
+		"transparency" : 8,
+		"lifted_index" : 15,
+		"rh2m" : 16,
+		"wind10m" : {
+			"direction" : "NW",
+			"speed" : 8
+		},
+		"temp2m" : 60,
+		"prec_type" : "rain"
+	},
+	{
+		"timepoint" : 9,
+		"cloudcover" : 5,
+		"seeing" : -9999,
+		"transparency" : 4,
+		"lifted_index" : 2,
+		"rh2m" : 13,
+		"wind10m" : {
+			"direction" : "W",
+			"speed" : 2
+		},
+		"temp2m" : 8,
+		"prec_type" : "none"
+	},
+	{
+		"timepoint" : 12,
+		"cloudcover" : 10,
+		"seeing" : 9,
+		"transparency" : 0,
+		"lifted_index" : 3,
+		"rh2m" : 17,
+		"wind10m" : {
+			"direction" : "SE",
+			"speed" : 9
+		},
+		"temp2m" : 61,
+		"prec_type" : "none"
+	},
+	{
+		"timepoint" : 15,
+		"cloudcover" : 2,
+		"seeing" : 3,
+		"lifted_index" : 6,
+		"rh2m" : 5,
+		"wind10m" : {
+			"direction" : "S",
+			"speed" : 3
+		},
+		"temp2m" : 12,
+		"prec_type" : "none"
+	}
+	]
+}

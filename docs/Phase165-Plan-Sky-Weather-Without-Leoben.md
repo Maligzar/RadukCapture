@@ -124,6 +124,21 @@ This replaces Leoben's deep-sky score, for the planetary use.
 - **Dash gets a weather card:** the source, the age, the verdict and the dew risk. A `weather_refresh` command forces a fetch, with Playwright specs for desktop and phone. This keeps to the owner's rule that every control at the telescope works from Dash and is tested through it.
 - **The status window's weather line names the source and the age**, for example "internal, 4 min" or "cache, 3 h, offline".
 
+## 165.0a and 165.1, as built (2026-11-20, 3.3.34)
+
+- **165.0a, `src/core/SkyWeather.h`.** It parses Open-Meteo's current conditions, 7Timer's ASTRO forecast and NWS active alerts. Each reading is absent when it is missing, null, out of range or in an unknown unit, and set-aside readings are listed for the log. A reply that is not in UTC is refused. The tables are dew risk, wind tier, cloud layers and dust, plus 7Timer's classes taken from its documentation. The JSON reader moved unchanged from `sky/MutualEvents.h` to `core/MiniJson.h`.
+- **165.1, `src/core/SkyWeatherClient.h`, not `src/net/` as planned.** The client is pure C++: the request is a function passed in, so it is tested whole under g++ (ASan, UBSan, TSan) rather than only on CI. In the app that function is `SatDesk::HttpGet`, wired in 165.2.
+  - Cadence: Open-Meteo every 10 minutes, or 2 after a failure; 7Timer every 60, or 10 after a failure; NWS every 10, or 30 after a failure.
+  - States: ok, not reachable, offline, not readable (with the service's reason), and no site.
+  - A raw-reply cache is written by temporary file and rename, and read back through the same parsers.
+  - Dew, wind and dust come from readings under 30 minutes old only.
+- **Test data** is in `tests/data/sky_weather/`, with a README on its terms:
+  - real Open-Meteo replies (CC BY 4.0) for Greenwich: a current reading, and its daily-limit error;
+  - real NWS replies (public domain): none at a point, and 13 alerts in Alaska;
+  - a 7Timer file that copies a real reply's layout with test values, because 7Timer states no terms.
+- **Checklist items:** 62 for the dew spreads and 63 for the wind bands, both `UNVERIFIED`.
+- **Owed:** Open-Meteo's hourly parser (cloud layers, the 200 and 250 hPa winds). Its capture hit the daily limit from a shared address on 2026-11-19, and the host reset connections on 2026-11-20. It is written once a real reply is captured.
+
 ## Checks
 
 - **g++, with ASan and UBSan:**
