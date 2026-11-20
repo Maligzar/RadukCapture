@@ -93,16 +93,20 @@ public:
         // than the client's own type, so this window does not depend on
         // the network code. configured=false hides the row entirely.
         struct Weather {
-            bool   configured = false;  // LeobenUrl is set
+            bool   configured = false;  // WeatherSource is not off (phase 165.2)
             bool   fresh      = false;  // a reading under 30 minutes old
             int    ageMin     = -1;
-            int    score      = -1;     // Leoben's imaging score, 0-100
+            int    score      = -1;     // Leoben's imaging score, 0-100; -1 none
             char   verdict[12]= {};     // GO / CAUTION / NO-GO
             double cloudPct   = 0;
             double windMph    = 0;
             double tempF      = 0;
             char   dewRisk[12]= {};
             char   state[40]  = {};     // why there is no fresh reading
+            // Phase 165.2: the row as core/SiteWeather.h's StatusRow wrote
+            // it, naming the source. When set, these are what is drawn.
+            char   line[120]  = {};
+            char   air[12]    = {};
         } wx;
     };
 
@@ -507,7 +511,31 @@ private:
             const auto& w = m_data.wx;
             Row r;
             strcpy_s(r.label, "WX");
-            if (w.fresh) {
+            if (w.fresh && w.line[0]) {
+                // Phase 165.2: no score yet from the internal source (165.3
+                // makes one), so the bar shows the reading's freshness.
+                r.pct = w.score >= 0 ? (float)w.score
+                                     : (float)(std::max)(0, 100 - w.ageMin * 100 / 30);
+                const bool go = strcmp(w.verdict, "GO") == 0;
+                const bool caution = strcmp(w.verdict, "CAUTION") == 0;
+                r.fill = go ? Theme::NV(Theme::Rgb::ACCENT3)
+                       : caution ? Theme::NV(Theme::Rgb::ACCENT2)
+                       : w.verdict[0] ? Theme::NV(Theme::Rgb::ACCENT4)
+                                      : Theme::NV(Theme::Rgb::TEXT_DIM);
+                strncpy_s(r.barText, w.line, _TRUNCATE);
+                strcpy_s(r.rightLabel, "AIR");
+                strncpy_s(r.rightValue, w.air[0] ? w.air : "--", _TRUNCATE);
+                r.rightClr = strcmp(w.dewRisk, "warning") == 0 ? Theme::NV(Theme::Rgb::ACCENT4)
+                           : strcmp(w.dewRisk, "elevated") == 0 ? Theme::NV(Theme::Rgb::ACCENT2)
+                                                                : Theme::NV(Theme::Rgb::TEXT);
+            } else if (w.line[0]) {
+                r.pct = 0.0f;
+                r.fill = Theme::NV(Theme::Rgb::BORDER);
+                strncpy_s(r.barText, w.line, _TRUNCATE);
+                strcpy_s(r.rightLabel, "AIR");
+                strcpy_s(r.rightValue, "--");
+                r.rightClr = Theme::NV(Theme::Rgb::TEXT_DIM);
+            } else if (w.fresh) {
                 r.pct = w.score < 0 ? 0.0f : (float)w.score;
                 const bool go = strcmp(w.verdict, "GO") == 0;
                 const bool caution = strcmp(w.verdict, "CAUTION") == 0;

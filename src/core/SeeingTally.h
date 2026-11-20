@@ -39,7 +39,7 @@ public:
     explicit SeeingTally(int64_t periodSec = 3600) : m_period(periodSec) {}
 
     void Forecast(const SeeingForecast& f) { if (f.Any()) m_forecast = f; }
-    // Leoben not fresh this hour: an old forecast beside new measurements
+    // No fresh forecast this hour: an old forecast beside new measurements
     // would be a false pairing, so the line says none.
     void ClearForecast() { m_forecast = SeeingForecast{}; }
     void Measured(double normalised, const std::string& target) {
@@ -63,7 +63,7 @@ public:
         m_next = nowUnix + m_period;
         std::string s = "forecast ";
         char b[96];
-        if (!m_forecast.Any()) s += "none from Leoben";
+        if (!m_forecast.Any()) s += "none given";
         else {
             bool first = true;
             auto sep = [&]() { if (!first) s += ", "; first = false; };

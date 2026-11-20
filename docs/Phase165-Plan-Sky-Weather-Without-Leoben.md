@@ -139,6 +139,26 @@ This replaces Leoben's deep-sky score, for the planetary use.
 - **Checklist items:** 62 for the dew spreads and 63 for the wind bands, both `UNVERIFIED`.
 - **Owed:** Open-Meteo's hourly parser (cloud layers, the 200 and 250 hPa winds). Its capture hit the daily limit from a shared address on 2026-11-19, and the host reset connections on 2026-11-20. It is written once a real reply is captured.
 
+## 165.2, as built (2026-11-20, 3.3.35)
+
+- **`src/core/SiteWeather.h`** holds the choice and is pure.
+  - `WeatherSource=` takes `internal`, `leoben`, `both` or `off`. Left unset, it is `both` when a `LeobenUrl` is set and `internal` otherwise; text it does not understand gets the default, and the log says so.
+  - `FromSky` and `FromLeoben` turn either source into one `SiteWeather`: optional fields, the source, and the reason when nothing is fresh.
+  - `PickWeather` chooses. In `both`, internal wins when it is fresh and Leoben stands in when it is not; with neither fresh, both reasons are shown.
+  - It also writes the status row, the AI context line and the `WXCMP` line.
+- **`LeobenConditions` was not renamed** to `SkyConditions`, as the plan had it. Both sources map into `SiteWeather` instead, which leaves Leoben's parser and its tests untouched.
+- **`main.cpp`.** Leoben's client starts only in `leoben` or `both`, and `SkyWeatherClient` only in `internal` or `both`, fetching through `SatDesk::HttpGet`. The cache is `weather_cache.txt` under the data root. Each consumer now reads `weatherNow()`:
+  - the ADC's live air, set only when both pressure and temperature are present;
+  - the dew risk in the fade warning;
+  - the SEEING forecast: 7Timer's class while it covers the hour, so Phase 138's pairing finally gets data;
+  - the observation record, which writes only the fields given;
+  - the status `WX` row, which now names the source and shows the reading's freshness where there is no score;
+  - the AI context.
+
+  In `both`, a `WXCMP` line goes to the session log every 10 minutes.
+- **`SeeingTally`** says "none given" rather than "none from Leoben".
+- **Checks:** `tests/site_weather.cpp` (40 checks). CI builds `main.cpp` and `StatusWindow.h` but cannot run them; the run on the PC and five parity nights are checklist item 64.
+
 ## Checks
 
 - **g++, with ASan and UBSan:**

@@ -1337,7 +1337,7 @@ Capture health and disk space, one bar per row.
 |---|---|---|
 | `REC` | How much of the capture drive's free space this recording has used | Live FPS |
 | `BUF` | Ring-buffer slots in use — amber past 50%, red past 80% | Frames lost |
-| `WX` | Leoben's imaging score, green GO / amber CAUTION / red NO-GO, with cloud, wind, dew risk and the reading's age. Only when `LeobenUrl` is set | Air temperature, coloured by dew risk |
+| `WX` | The weather (see **Weather**): cloud, wind, dew risk, the reading's age and its source. With Leoben's reading, its imaging score as the bar, green GO / amber CAUTION / red NO-GO; with RadukCapture's own, the bar shows how fresh the reading is. Hidden with `WeatherSource=off` | Air temperature, coloured by dew risk |
 | one per drive | Space **used** | Percent **free** |
 
 **`REC` is bytes written by the current recording**, not disk usage. It
@@ -1980,14 +1980,44 @@ PC's timestamp has not been measured, and the sheet says so. If UDP port
 Frame the moons, not Jupiter: both moons of the event in the frame, a
 third as a reference if it fits, and Jupiter outside if you can.
 
-## Weather from Leoben
+## Weather
 
-Leoben, the assistant on Elminster, already runs a careful weather service
-for the site: several forecast sources blended, an imaging score, wind
-stability, dew risk. RadukCapture reads its current conditions every 10
-minutes rather than keeping a second weather service of its own.
+RadukCapture fetches the site's weather itself (from 3.3.35): current
+conditions from Open-Meteo, 7Timer's seeing forecast, and NWS alerts inside
+the US. Leoben, the assistant on Elminster, can still supply it instead.
+`WeatherSource=` in `rig.ini` chooses:
 
-**Setting it up**
+| `WeatherSource` | Where the weather comes from |
+|---|---|
+| `internal` | RadukCapture's own fetch. The default when no `LeobenUrl` is set. |
+| `leoben` | Leoben only, as before 3.3.35. |
+| `both` | RadukCapture's own fetch, with Leoben standing in when it has no fresh reading. Every 10 minutes the session log gets a `WXCMP` line with the two readings side by side. The default when a `LeobenUrl` is set, so nobody loses weather on upgrade. |
+| `off` | No weather. |
+
+The log says which is in use at start: `[WX] Weather source: both`.
+
+**RadukCapture's own fetch**
+
+- **It needs a site in `rig.ini`.** With no site, nothing is asked for: the
+  app never requests the weather at latitude 0, longitude 0. The site is
+  sent rounded to 0.01 degree, about a kilometre.
+- **It goes through the offline switch.** With `Offline=1`, nothing is asked
+  of the internet and the `WX` row says `offline`.
+- **Timing.** Current conditions every 10 minutes (2 after a failure), 7Timer
+  hourly, and NWS alerts every 10 minutes. The log notes each source only
+  when its state changes, for example `[SKYWX] open-meteo: ok` or
+  `[SKYWX] 7timer: offline`.
+- **The last good reply is kept.** It is also saved in `weather_cache.txt`
+  beside the other data, so after a restart without internet the app still
+  has the last weather, with its age.
+- **A missing value stays missing.** A reply with no cloud figure gives an
+  unknown cloud, not a guess.
+- **No score yet.** The row shows the readings and the source, but no
+  GO / CAUTION / NO-GO; a verdict made for planets is the next stage
+  (165.3). Open-Meteo's data is licensed CC BY 4.0: weather data by
+  [Open-Meteo.com](https://open-meteo.com/).
+
+**Leoben** (`WeatherSource=leoben` or `both`)
 
 - On Elminster, Leoben has to accept requests from the network: in
   `leoben.config.json`, `server.expose_lan` set to `true`, and a
@@ -1995,28 +2025,30 @@ minutes rather than keeping a second weather service of its own.
   without both.
 - On the capture PC, in `rig.ini`: `LeobenUrl=http://elminster:5000` (or
   Elminster's address) and `LeobenToken=` the same token.
+- When Elminster is asleep or busy, RadukCapture asks again every 2 minutes.
 
-**What it is used for**
+**What the weather is used for**, from whichever source:
 
 - **The ADC.** Dispersion scales with air pressure and temperature, and the
   model has used a standard atmosphere for your elevation and a fixed 15 C.
-  With Leoben's reading it uses the real air. Leoben reports sea-level
-  pressure, as weather services do; RadukCapture converts it to the
-  pressure at your elevation before using it -- the sea-level figure would
-  overstate dispersion by several percent. The log says when live air is in
-  use: `[LEOBEN] ADC now uses live air: ... hPa at the site`.
+  With a fresh reading it uses the real air. Weather services report
+  sea-level pressure; RadukCapture converts it to the pressure at your
+  elevation before using it -- the sea-level figure would overstate
+  dispersion by several percent. The log says when live air is in use:
+  `[WX] ADC now uses live air (internal): ... hPa at the site`.
 - **The status window's `WX` row** -- see **The status window**.
+- **The dew risk** in the warning when the target fades.
+- **The hourly `SEEING` line** pairs 7Timer's seeing forecast with the
+  seeing measured that hour.
 - **The observation record** written beside each capture keeps the cloud,
-  temperature, humidity, wind, dew point, pressure and Leoben's verdict at
-  the start of the run.
-- **The assistant** is told the measured conditions, so "is tonight any
-  good?" gets a real answer -- or is told plainly that it does not know.
+  temperature, humidity, wind, dew point and pressure at the start of the
+  run, and the source.
+- **The assistant** is told the measured conditions and where they came
+  from, or is told plainly that it does not know.
 
-**When Leoben is off** -- Elminster asleep, or busy with a game -- nothing
-breaks. RadukCapture asks again every 2 minutes, the `WX` row says why there
-is no reading, and after 30 minutes without one the ADC goes back to the
-standard atmosphere and the record leaves the weather out rather than write
-a stale sky. The request is a few hundred bytes every 10 minutes.
+After 30 minutes without a fresh reading, the ADC goes back to the standard
+atmosphere and the record leaves the weather out rather than write a stale
+sky.
 
 ---
 
@@ -3137,11 +3169,12 @@ real site is stored. Most of it is written for you.
 | `WsToken` | The browser dashboard's access token. Generated on first launch; see **The browser dashboard**. Delete the line to have a new one made. Never paste it anywhere public. |
 | `WsLan` | `1` = the dashboard server listens on the home network too, not only this PC. Off by default. See **From another device on your home network**. |
 | `WsLanOpen` | `1` = a device on the home network (a private address) needs no token. Only with `WsLan=1`. This PC and outside addresses still need it. |
-| `LeobenUrl` | Where Leoben is, as `http://name:port` -- for example `http://elminster:5000`. Empty = no weather from Leoben. See **Weather from Leoben**. |
+| `LeobenUrl` | Where Leoben is, as `http://name:port` -- for example `http://elminster:5000`. Empty = no weather from Leoben. See **Weather**. |
 | `TimeServer` | The time server the PC clock is checked against before and after a mutual event recording (UDP 123). Default `pool.ntp.org`. A LAN name or private address is tried even when offline. |
 | `Offline` | Phase 151.0. `1`: never try the internet (JPL, CelesTrak, IMCCE, an internet time server); each keeps its cache and says it is offline. `0` (default): try, and stop for ten minutes after a lookup fails. LAN machines are never affected. |
 | `PhemuSite` | The site and telescope name on IMCCE's observation sheet, no spaces, different for each telescope. Default `RadukCapture_8SE`. |
 | `LeobenToken` | Leoben's API token (its `LEOBEN_API_TOKEN`). Never logged. |
+| `WeatherSource` | Where the weather comes from: `internal` (RadukCapture fetches it), `leoben`, `both` (internal, Leoben standing in, and a `WXCMP` comparison in the session log) or `off`. Unset: `both` with a `LeobenUrl`, otherwise `internal`. See **Weather**. |
 | `CaptureFormat` | `ser` or `fits`, as the toolbar's selector leaves it. |
 | `FocuserBacklashSteps` | The focuser's backlash in steps. `-1` (the default) uses the EAF's own figure, else 200. Set it once several autofocus runs' `Backlash measured` lines agree. |
 | `FocuserOneSidedMoves` | `1` (default): every focuser move ends travelling one way by at least the backlash. `0` off. |
@@ -3419,6 +3452,7 @@ un-soak.ps1` runs the emulator for hours through GoTo, lock, autofocus and runs,
 | 3.3.32 | 162e | The Moon map shows the Moon. Under the grid is tonight's Moon: NASA's LRO map lit by tonight's Sun, from the same arithmetic that decides which sections are in sunlight, so the picture and the colours cannot disagree. A captured section shows your own picture of it: a few seconds after a run (or a GOTO and RECORD) credits it, the sharpest of 24 frames spread through the recording is cropped, scaled to 256 x 256 and kept beside the project, off the thread that draws. Over the nights the map becomes your photograph of the Moon. A recording with no lit surface in it (no frame sampled above 4% of full scale) makes no picture, so cloud never leaves a black hole in the map. CLEAR takes the picture with the capture. The wheel zooms about the pointer, a drag pans, Home shows the whole Moon. An archived map is drawn fully lit. Gated by `moon_render` (18 checks: the terminator at first quarter on the central meridian, and on 88 sections the picture agrees with the map), `moon_tile` (20: the sharp frame picked over blurred ones, from a SER written by the test; empty sky makes no tile), `moon_map_run` section 12, and `tests/scenarios/moon-map-picture.scn`. |
 | 3.3.33 | 165 (plan) | A plan to stop depending on Leoben for the weather. RadukCapture will fetch and score the sky itself (Open-Meteo, 7Timer, NWS), always through the offline switch, so a night at the scope no longer needs the gaming PC awake. Site and focal length come from `rig.ini`; a missing value stays missing rather than being guessed. Leoben stays available as a source, side by side for a few nights, until the readings agree. No code yet: see `docs/Phase165-Plan-Sky-Weather-Without-Leoben.md`. |
 | 3.3.34 | 165.0a, 165.1 | The weather, read and fetched by RadukCapture itself, not yet switched on. `core/SkyWeather.h` reads Open-Meteo's current conditions, 7Timer's astronomy forecast and NWS alerts, and keeps Leoben's dew, wind, cloud-layer and dust thresholds in metric. A value that is missing or unreadable stays unknown: no cloud figure is not 15% cloud, and a clear night's 24 km visibility is a number (Leoben's weather broke on it). 7Timer's seeing is now read from the key 7Timer actually sends, and its wind is a class, not knots. `core/SkyWeatherClient.h` asks the three services on their own cadences through the offline switch, never without a site, sends the site rounded to about 1 km, keeps each source's last good reply, and caches them so a restart offline still has the last weather with its age. Gated by `sky_weather` (75 checks) and `sky_weather_client` (42), on replies captured for public places. 165.2 connects it to the app. |
+| 3.3.35 | 165.2 | RadukCapture now fetches the weather itself. `WeatherSource=` in `rig.ini` picks `internal`, `leoben`, `both` or `off`; with it unset, a rig with a `LeobenUrl` runs on `both` and one without on `internal`. In `both`, Leoben stands in whenever the internal fetch has no fresh reading, and every 10 minutes a `WXCMP` line in the session log compares the two, for a few parity nights. Everything that used Leoben's weather now reads whichever source is chosen: the ADC's live air, the dew risk on a fade, the hourly `SEEING` line (7Timer's forecast now reaches it; Leoben's never did), the observation record, the status window's `WX` row (which now names the source) and the assistant. Nothing is fetched without a site or with `Offline=1`. Gated by `site_weather` (40 checks). |
 
 ---
 
