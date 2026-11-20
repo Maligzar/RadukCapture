@@ -460,6 +460,15 @@ struct RigConfig {
     std::string leobenUrl;
     std::string leobenToken;
 
+    // Phase 165.2: where the weather comes from. internal = RadukCapture
+    // fetches it itself (Open-Meteo, 7Timer, NWS; through the Offline
+    // switch, never without a site); leoben = Leoben only, as before;
+    // both = internal, with Leoben standing in and a WXCMP line in the
+    // session log comparing the two; off = none. Unset: "both" when a
+    // LeobenUrl is set, else "internal" (core/SiteWeather.h).
+    //   WeatherSource=internal
+    std::string weatherSource;
+
     // Phase 141.1, the PHEMU event recording. The time server the PC
     // clock is checked against before and after an event (UDP 123), and
     // the name IMCCE's observation sheet gives this site and telescope:
@@ -853,6 +862,7 @@ private:
         cfg.wsLanOpen   = rs("WsLanOpen", "0") == "1";
         cfg.leobenUrl   = rs("LeobenUrl", "");
         cfg.leobenToken = rs("LeobenToken", "");
+        cfg.weatherSource = rs("WeatherSource", "");
         cfg.timeServer  = rs("TimeServer", cfg.timeServer);
         cfg.offline     = (int)rf("Offline", cfg.offline) != 0 ? 1 : 0;
         if (cfg.timeServer.empty()) cfg.timeServer = "pool.ntp.org";

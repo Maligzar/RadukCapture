@@ -62,6 +62,7 @@
 #include "net/APEXTelemetry.h"
 #include "net/PreviewStreamer.h"
 #include "net/LeobenClient.h"     // weather and sky from Leoben, on the home network
+#include "core/SiteWeather.h"     // phase 165.2: the weather fetched here, or Leoben's
 #include "gui/Window.h"
 #include "gui/PreviewRenderer.h"
 #include "gui/Theme.h"
@@ -1578,13 +1579,51 @@ static int RunApp(bool useEmulator) {
             lanOpen ? " - private-network clients need no token (WsLanOpen)" : "");
     }
 
-    // Weather and sky conditions from Leoben (LeobenUrl / LeobenToken in
-    // rig.ini). Off, silently, when no URL is set. Its own thread; the
-    // readout below only reads the last good reading.
+    // Phase 165.2: the weather. rig.ini WeatherSource= picks RadukCapture's
+    // own fetch (core/SkyWeatherClient.h), Leoben (LeobenUrl / LeobenToken),
+    // both, or neither (core/SiteWeather.h). Each client has its own
+    // thread; everything below reads one SiteWeather from weatherNow().
+    namespace wx = raduk::core::sky;
+    bool wxModeKnown = true;
+    const wx::WeatherMode wxMode = wx::ParseWeatherSource(
+        RigConfig::Get().weatherSource, !RigConfig::Get().leobenUrl.empty(), &wxModeKnown);
+    Log("[WX] Weather source: %s%s\n", wx::WeatherModeText(wxMode),
+        wxModeKnown ? "" : " (WeatherSource in rig.ini not understood; using the default)");
     raduk::net::LeobenClient leoben;
-    leoben.Start(RigConfig::Get().leobenUrl, RigConfig::Get().leobenToken,
-                 [](const std::string& s) { Log("%s\n", s.c_str()); });
-    bool leobenAirLogged = false;
+    if (wx::ModeUsesLeoben(wxMode))
+        leoben.Start(RigConfig::Get().leobenUrl, RigConfig::Get().leobenToken,
+                     [](const std::string& s) { Log("%s\n", s.c_str()); });
+    wx::SkyWeatherClient skyWx;
+    if (wx::ModeUsesInternal(wxMode)) {
+        wx::SkyWeatherClient::Options o;
+        o.siteSet   = RigConfig::Get().SiteIsSet();
+        o.latDeg    = RigConfig::Get().siteLatDeg;
+        o.lonDeg    = RigConfig::Get().siteLonDeg;
+        o.cachePath = raduk::core::Paths::Root() + "\\weather_cache.txt";
+        // Every request goes through SatDesk::HttpGet, where the offline
+        // rule is kept (phase 151): Offline=1 asks nothing of the internet.
+        skyWx.Start(o, [](const std::string& host, const std::string& path, std::string& body) {
+                const std::wstring h(host.begin(), host.end()), q(path.begin(), path.end());
+                if (raduk::core::SatDesk::HttpGet(h.c_str(), q.c_str(), body))
+                    return wx::FetchResult::Ok;
+                return raduk::core::SatDesk::LastSkippedOffline() ? wx::FetchResult::Offline
+                                                                  : wx::FetchResult::Failed;
+            },
+            [](const std::string& s) { Log("%s\n", s.c_str()); });
+    }
+    auto wxInternal = [&](int64_t now) { return wx::FromSky(skyWx.Get(), now); };
+    auto wxLeoben = [&](int64_t now) {
+        const auto ls = leoben.Get();
+        return wx::FromLeoben(ls.last, now, raduk::net::LeobenClient::StateText(ls.state));
+    };
+    auto weatherNow = [&](int64_t now) {
+        if (wxMode == wx::WeatherMode::Off) return wx::SiteWeather{};
+        return wx::PickWeather(wxMode,
+                               wx::ModeUsesInternal(wxMode) ? wxInternal(now) : wx::SiteWeather{},
+                               wx::ModeUsesLeoben(wxMode) ? wxLeoben(now) : wx::SiteWeather{});
+    };
+    bool wxAirLogged = false;
+    int64_t wxCmpNext = 0;   // "both": the next WXCMP line
 
     // B3: the dashboard's preview picture. Encoded and sent on its own
     // thread; the render loop only decimates, twice a second, and only
@@ -4732,25 +4771,24 @@ static int RunApp(bool useEmulator) {
             r.siteLatDeg = rigc.siteLatDeg;
             r.siteLonDeg = rigc.siteLonDeg;
         }
-        // The sky at the start of the run, from Leoben -- only when the
-        // reading is fresh; a stale one is left out, not written.
+        // The sky at the start of the run (phase 165.2: from whichever
+        // source WeatherSource picks) -- only when the reading is fresh,
+        // and only the fields it gave; the rest stay unknown.
         {
-            const auto ls = leoben.Get();
             const int64_t nowU = (int64_t)std::time(nullptr);
-            if (raduk::net::LeobenFresh(ls.last, nowU)) {
-                const auto& c = ls.last;
-                r.wxSource    = "leoben";
-                r.wxAgeMin    = (nowU - c.fetchedUnix) / 60.0;
-                r.cloudPct    = c.cloudPct;
-                r.airTempC    = c.TempC();
-                r.humidityPct = c.humidityPct;
-                r.windMs      = c.WindMs();
-                r.gustMs      = c.GustMs();
-                r.dewPointC   = c.DewPointC();
-                r.pressureHpa = raduk::net::StationPressureHpa(
-                    c.PressureMslHpa(), rigc.siteElevationM, c.TempC());
-                if (c.imagingScore >= 0) r.imagingScore = c.imagingScore;
-                r.wxVerdict   = c.goNoGo;
+            const wx::SiteWeather w = weatherNow(nowU);
+            if (w.fresh) {
+                r.wxSource = w.source;
+                r.wxAgeMin = (nowU - w.fetchedUnix) / 60.0;
+                if (w.cloudPct)    r.cloudPct    = *w.cloudPct;
+                if (w.tempC)       r.airTempC    = *w.tempC;
+                if (w.humidityPct) r.humidityPct = *w.humidityPct;
+                if (w.windMs)      r.windMs      = *w.windMs;
+                if (w.gustMs)      r.gustMs      = *w.gustMs;
+                if (w.dewPointC)   r.dewPointC   = *w.dewPointC;
+                if (auto st = w.StationHpa(rigc.siteElevationM)) r.pressureHpa = *st;
+                if (w.imagingScore >= 0) r.imagingScore = w.imagingScore;
+                r.wxVerdict = w.verdict;
             }
         }
     });
@@ -8141,12 +8179,12 @@ static int RunApp(bool useEmulator) {
                     (int)cam.GetControlValue(ControlId::Gain));
                 if (fade.fired) {
                     lastFadeAt = std::chrono::steady_clock::now();   // 139.3
-                    const auto ls = leoben.Get();
-                    const bool fresh = raduk::net::LeobenFresh(ls.last, (int64_t)std::time(nullptr));
-                    const std::wstring msg = FadeMessage(fade, fresh ? ls.last.dewRisk : std::string());
+                    const wx::SiteWeather w = weatherNow((int64_t)std::time(nullptr));
+                    const std::string dew = w.fresh ? w.dewRisk : std::string();
+                    const std::wstring msg = FadeMessage(fade, dew);
                     Log("[FADE] target down %.0f%% in %.0f s (dew risk %s)\n",
                         fade.dropFrac * 100.0, fade.windowSec,
-                        fresh && !ls.last.dewRisk.empty() ? ls.last.dewRisk.c_str() : "unknown");
+                        !dew.empty() ? dew.c_str() : "unknown");
                     notifBar.NotifyWarn(msg);
                 }
             }
@@ -8162,16 +8200,15 @@ static int RunApp(bool useEmulator) {
                                      lastAnalysis.sharpnessPct, lastAnalysis.highlightDN),
                                  targetNow());
         if (seeingTally.Due((int64_t)std::time(nullptr))) {
-            const auto ls = leoben.Get();
-            if (raduk::net::LeobenFresh(ls.last, (int64_t)std::time(nullptr))) {
-                raduk::core::SeeingForecast f;
-                f.seeing7Timer = ls.last.seeing7Timer;
-                f.jet200Kmh = ls.last.wind200hPaKmh;
-                f.jet250Kmh = ls.last.wind250hPaKmh;
-                seeingTally.Forecast(f);
-            } else {
-                seeingTally.ClearForecast();
-            }
+            // Phase 165.2: the forecast counts while it covers the hour,
+            // from whichever source gives it.
+            const wx::SiteWeather w = weatherNow((int64_t)std::time(nullptr));
+            raduk::core::SeeingForecast f;
+            if (w.seeing7Timer)  f.seeing7Timer = *w.seeing7Timer;
+            if (w.wind200hPaKmh) f.jet200Kmh = *w.wind200hPaKmh;
+            if (w.wind250hPaKmh) f.jet250Kmh = *w.wind250hPaKmh;
+            if (f.Any()) seeingTally.Forecast(f);
+            else         seeingTally.ClearForecast();
             slog.Seeing("%s", seeingTally.TakeLine((int64_t)std::time(nullptr)).c_str());
         }
 
@@ -8448,30 +8485,14 @@ static int RunApp(bool useEmulator) {
                     aiState.eafPos   = focuser.GetPosition();
                     aiState.eafTempC = focuser.GetTemperature();
                 }
-                // Weather, measured, from Leoben -- or nothing, and the
-                // context then says it is unknown. No coordinates go in:
-                // the site-precision rule covers this line too.
+                // Weather, measured (phase 165.2: from whichever source
+                // WeatherSource picks) -- or nothing, and the context then
+                // says it is unknown. No coordinates go in: the
+                // site-precision rule covers this line too.
                 {
-                    const auto ls = leoben.Get();
                     const int64_t nowU = (int64_t)std::time(nullptr);
-                    aiState.weather.clear();
-                    if (raduk::net::LeobenFresh(ls.last, nowU)) {
-                        const auto& c = ls.last;
-                        char wb[320];
-                        snprintf(wb, sizeof(wb),
-                                 "%s, imaging score %d/100; cloud %.0f%%, air %.1f C, "
-                                 "humidity %.0f%%, wind %.1f m/s gusting %.1f, "
-                                 "dew point %.1f C (dew risk %s), pressure %.0f hPa at the site; "
-                                 "reading %d min old",
-                                 c.goNoGo.empty() ? "no verdict" : c.goNoGo.c_str(),
-                                 c.imagingScore, c.cloudPct, c.TempC(), c.humidityPct,
-                                 c.WindMs(), c.GustMs(), c.DewPointC(),
-                                 c.dewRisk.empty() ? "unknown" : c.dewRisk.c_str(),
-                                 raduk::net::StationPressureHpa(c.PressureMslHpa(),
-                                     RigConfig::Get().siteElevationM, c.TempC()),
-                                 (int)((nowU - c.fetchedUnix) / 60));
-                        aiState.weather = wb;
-                    }
+                    aiState.weather = wx::AiWeatherLine(weatherNow(nowU), nowU,
+                                                        RigConfig::Get().siteElevationM);
                 }
                 // Phase 144: Jupiter's next hours, rebuilt once a minute.
                 {
@@ -9205,41 +9226,45 @@ static int RunApp(bool useEmulator) {
                     capturer.Config().outputDir);
                 sd.sky          = skyTracker.Evaluate();
 
-                // Leoben's weather: into the status window, and -- when
-                // fresh -- into the ADC model as the real air above the
-                // scope, reduced from sea-level to station pressure.
+                // The weather (phase 165.2: from whichever source
+                // WeatherSource picks): into the status window, and -- when
+                // fresh with pressure and temperature -- into the ADC model
+                // as the real air above the scope, reduced from sea level
+                // to station pressure.
                 {
-                    const auto ls = leoben.Get();
                     const int64_t nowU = (int64_t)std::time(nullptr);
+                    const wx::SiteWeather cw = weatherNow(nowU);
                     auto& w = sd.wx;
-                    w.configured = ls.state != raduk::net::LeobenClient::State::Off;
-                    w.fresh = raduk::net::LeobenFresh(ls.last, nowU);
-                    if (w.fresh) {
-                        const auto& c = ls.last;
-                        w.ageMin   = (int)((nowU - c.fetchedUnix) / 60);
-                        w.score    = c.imagingScore;
-                        w.cloudPct = c.cloudPct;
-                        w.windMph  = c.windMph;
-                        w.tempF    = c.tempF;
-                        strncpy_s(w.verdict, c.goNoGo.c_str(), _TRUNCATE);
-                        strncpy_s(w.dewRisk, c.dewRisk.c_str(), _TRUNCATE);
-                        const double stHpa = raduk::net::StationPressureHpa(
-                            c.PressureMslHpa(), RigConfig::Get().siteElevationM, c.TempC());
-                        raduk::core::ADCAssistant::SetLiveAir(stHpa, c.TempC() + 273.15,
-                                                              c.fetchedUnix);
-                        if (!leobenAirLogged) {
-                            Log("[LEOBEN] ADC now uses live air: %.1f hPa at the site "
-                                "(%.1f at sea level), %.1f C\n",
-                                stHpa, c.PressureMslHpa(), c.TempC());
-                            leobenAirLogged = true;
+                    w.configured = cw.configured;
+                    w.fresh = cw.fresh;
+                    const wx::StatusRowText row = wx::StatusRow(cw, nowU);
+                    strncpy_s(w.line, row.bar.c_str(), _TRUNCATE);
+                    strncpy_s(w.air, row.air.c_str(), _TRUNCATE);
+                    strncpy_s(w.dewRisk, cw.dewRisk.c_str(), _TRUNCATE);
+                    strncpy_s(w.verdict, cw.verdict.c_str(), _TRUNCATE);
+                    w.score  = cw.imagingScore;
+                    w.ageMin = cw.fresh ? (int)((nowU - cw.fetchedUnix) / 60) : -1;
+                    const auto stHpa = cw.fresh ? cw.StationHpa(RigConfig::Get().siteElevationM)
+                                                : std::optional<double>{};
+                    if (stHpa) {
+                        raduk::core::ADCAssistant::SetLiveAir(*stHpa, *cw.tempC + 273.15,
+                                                              cw.fetchedUnix);
+                        if (!wxAirLogged) {
+                            Log("[WX] ADC now uses live air (%s): %.1f hPa at the site "
+                                "(%.1f at sea level), %.1f C\n", cw.source.c_str(),
+                                *stHpa, *cw.pressureMslHpa, *cw.tempC);
+                            wxAirLogged = true;
                         }
-                    } else {
-                        strncpy_s(w.state, raduk::net::LeobenClient::StateText(ls.state), _TRUNCATE);
-                        if (ls.last.valid) strncpy_s(w.state, "last reading is stale", _TRUNCATE);
-                        if (leobenAirLogged) {
-                            Log("[LEOBEN] No fresh reading - ADC back on the standard atmosphere\n");
-                            leobenAirLogged = false;
-                        }
+                    } else if (wxAirLogged) {
+                        Log("[WX] No fresh air reading - ADC back on the standard atmosphere\n");
+                        wxAirLogged = false;
+                    }
+                    // "both": the parity line every 10 minutes, when both
+                    // sources have a fresh reading to compare.
+                    if (wxMode == wx::WeatherMode::Both && nowU >= wxCmpNext) {
+                        wxCmpNext = nowU + 600;
+                        const std::string cmp = wx::WxCompareLine(wxInternal(nowU), wxLeoben(nowU));
+                        if (!cmp.empty()) slog.WxCmp("%s", cmp.c_str());
                     }
                 }
 
@@ -9702,6 +9727,7 @@ static int RunApp(bool useEmulator) {
     }
 
     leoben.Stop();
+    skyWx.Stop();
     previewStreamer.Stop();   // its sink sends through wsServer
     wsServer.Stop();
 

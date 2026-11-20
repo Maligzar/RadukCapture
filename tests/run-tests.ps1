@@ -69,6 +69,7 @@ $Tests = @(
     @{ Name = "leoben_weather";    Sources = @() }
     @{ Name = "sky_weather";       Sources = @() }
     @{ Name = "sky_weather_client"; Sources = @() }
+    @{ Name = "site_weather";      Sources = @() }
     @{ Name = "mutual_events";     Sources = @() }
     @{ Name = "sntp_offset";       Sources = @() }
     @{ Name = "phemu_sheet";       Sources = @() }

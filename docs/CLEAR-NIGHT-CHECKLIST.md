@@ -1414,3 +1414,16 @@ the bench already showed, so the night only has to confirm it. The plan is
     mph, sustained/gust), which were set for the owner's 8SE but never
     measured. Record the band at which detail is lost and the band at
     which the image is unusable, and move the bands to match.
+64. **The weather, fetched here, against Leoben's** (165.2, added
+    2026-11-20). For about five nights, run with `WeatherSource=both`
+    (the default while a `LeobenUrl` is set). The session log gets a
+    `WXCMP` line every 10 minutes while both have a fresh reading:
+    cloud, temperature, dew point, sea-level pressure, wind, gust, dew
+    risk and 7Timer seeing, internal then Leoben, with the difference.
+    The two should agree closely (both read Open-Meteo, at slightly
+    different points), except where Leoben is known to be wrong: its
+    seeing (it never read 7Timer's key) and nights it answered 503. When
+    the nights agree, or the differences are explained, set
+    `WeatherSource=internal`, and Elminster no longer needs to be awake
+    for the scope. Also check the first start with `Offline=1`: the `WX`
+    row says offline and nothing is fetched.

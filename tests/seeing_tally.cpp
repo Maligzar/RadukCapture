@@ -34,7 +34,7 @@ int main() {
         SeeingTally t;
         t.Due(0);
         const std::string none = t.TakeLine(3600);
-        Check(Has(none, "forecast none from Leoben") && Has(none, "measured none"),
+        Check(Has(none, "forecast none given") && Has(none, "measured none"),
               "nothing known says so, both halves", none);
 
         SeeingForecast f;
@@ -57,7 +57,7 @@ int main() {
         t.Forecast(empty);
         Check(Has(t.TakeLine(14400), "7Timer seeing 3"), "an empty forecast does not erase the last one");
         t.ClearForecast();
-        Check(Has(t.TakeLine(18000), "forecast none from Leoben"),
+        Check(Has(t.TakeLine(18000), "forecast none given"),
               "but a stale feed does: an old forecast is never paired with new seeing");
     }
 
