@@ -1613,6 +1613,10 @@ their numbers; a milestone is cut only when its acceptance holds.
 Acceptance: no unexplained drops in the qualification runs, the safety
 paths pass fault injection, and one unattended sky run completes.
 
+16b. **Phase 165 (row 65), the weather without Leoben**: 165.0 and
+    165.1 take a second PC out of the night; 165.2's parity nights
+    decide when Leoben stops being needed.
+
 17. **Phase 146 (row 46), size S**, with **155.1, 155.2 and 155.5's clip
    tool**: the real camera's throughput indoors, and the first real clips
    cut from the 2026-11-07 recordings. **146.0 and 146.1 written
@@ -1903,6 +1907,7 @@ consolidated](#live-sky-debt-consolidated).
 | 58 | **Phase 158: focus through the night** - the strategic review, 2026-11-13 | Bench, then nights | S-M | A focus history with the EAF's temperature, a refocus when focus drifts rather than only every N runs, then temperature compensation. Release 3.5. [`Phase158-Plan-Focus-Through-The-Night.md`](Phase158-Plan-Focus-Through-The-Night.md) |
 | 59 | **Phase 159: QHY cameras** - reopened by the owner 2026-11-13 | Bench, then a QHY camera | M | An `ICamera` backend behind 149.1's capabilities. Release 3.6. [`Phase159-160-Plan-QHY-And-Player-One.md`](Phase159-160-Plan-QHY-And-Player-One.md) |
 | 60 | **Phase 160: Player One cameras** - reopened by the owner 2026-11-13 | Bench, then a Player One camera | M | The same shape on Player One's SDK. Release 3.6 |
+| 65 | **Phase 165: the sky's weather without Leoben** - the owner 2026-11-19 | Bench, CI, then nights | M | Leoben's astroweather ported into RadukCapture under `NetPolicy` (Rule 7), with site and rig from `rig.ini` (Phase 149): parsers and tables, a fetcher with a cache, a source switch with parity nights, a planetary verdict, and Dash reading the app's weather (closes 151.4). [`Phase165-Plan-Sky-Weather-Without-Leoben.md`](Phase165-Plan-Sky-Weather-Without-Leoben.md). Release 3.4 (suggested) |
 | — | **Backlog, unscheduled** - the strategic review, 2026-11-13 | Bench | S each | A cross-session export of every observation record (CSV, JSON), planned for release 3.7. Unplaced: a Stellarium target handoff (its plugin on this PC), lunar feature measurement, and a mosaic quality check |
 | 34 | **Phase 134: panels that dock together** - PLANNED 2026-11-11, defaults approved by the owner 2026-11-11 | Bench, then eyes on a screen | L, in 6 stages | Asked for by the owner: the operator panels (Histogram, Status, Sharpness, Temperature, ADC, both sky maps, GoTo, the player) snap together like Lego. Groups are derived from geometry, move as one and resize along shared edges, and F11 fills a monitor with the group. **134.0 to 134.4a merged (#126 to #129, #131). 134.4b (drag onto the dock, drop zones) and 134.5 (persistence) wait at row 34's place in the order (2026-11-11).** A dock window holds panels in a split tree and can go fullscreen. Panels are positioned, not reparented. Shift+drag pulls one out; the snap distance is 12 px. 134.0 is pure geometry and tests, with no pixel changes. [`Phase134-Plan-Panel-Docking.md`](Phase134-Plan-Panel-Docking.md) |
 | 33 | **Phase 133: field proof for the 2026-11-07 night** - PLANNED 2026-11-08, **ahead of 132.3e at the owner's word** | Bench, then one clear night | M | The night's fixes are merged (#105), but only guiding and the target finder are proven on the sky. Autofocus has not run a sweep on the sky, four guiding fixes are bench-only, and the ~8° pointing error is open. Category 1 and 3 by the ranking above. The emulated mount learns the NexStar behaviours measured that night, and the scenarios gate the guiding fixes indoors. [`Phase133-Plan-Field-Proof.md`](Phase133-Plan-Field-Proof.md) |
