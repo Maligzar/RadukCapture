@@ -11,7 +11,8 @@ test('Dash loads and works with no internet connection', async ({ page }) => {
   // The remote panel's tab may be closed; the page is up when its status reads.
   await expect(page.locator('#rcHeaderStatus')).toHaveText('DISCONNECTED');
   expect(errors, 'script errors').toEqual([]);
-  // Known gap, found 2026-11-15 by this test: Dash fetches a weather forecast
-  // from api.open-meteo.com (owed: 151.4, gate it on Offline and the site).
+  // Found 2026-11-15 by this test: Dash fetched a weather forecast from
+  // api.open-meteo.com for latitude 0, longitude 0. Fixed in 165.4 (closing
+  // 151.4): with no location set, Dash asks nothing (specs/weather.spec.js).
   expect(tried, 'requests that tried to leave this PC').toEqual([]);
 });

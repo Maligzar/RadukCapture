@@ -42,7 +42,7 @@ So nothing in capture, focus, guiding or solving needs the internet today. What 
   - The mutual-event recording (141.1) already proceeds with the clock unconfirmed and says so.
   - Add: an optional GPS time source (a USB GPS receiver's NMEA or PPS), the usual offline way to a confirmed clock. Its hardware and driver are to be chosen with the owner before it is designed. Until then the record states the PC clock's last NTP offset and its age.
 
-- **151.4 Dash asks the internet for the weather** (found 2026-11-15 by `tests/web/specs/offline.spec.js`, Playwright with every outside request refused). `RadukCaptureDashboard.html` fetches a forecast from `api.open-meteo.com`, even with no site set, when it asks for latitude 0, longitude 0. The audit above checked Dash's files, not its requests. Fix: no fetch while `Offline=1` or with no known site; prefer Leoben's weather on the LAN; say "no forecast offline" rather than fail. The spec stays red until then.
+- **151.4 Dash asks the internet for the weather** (**done in 165.4, 3.3.36**: Dash shows the app's weather when connected, and otherwise asks only with a location set and the app not offline; `offline.spec.js` passes and `weather.spec.js` covers the cases) (found 2026-11-15 by `tests/web/specs/offline.spec.js`, Playwright with every outside request refused). `RadukCaptureDashboard.html` fetches a forecast from `api.open-meteo.com`, even with no site set, when it asks for latitude 0, longitude 0. The audit above checked Dash's files, not its requests. Fix: no fetch while `Offline=1` or with no known site; prefer Leoben's weather on the LAN; say "no forecast offline" rather than fail. The spec stays red until then.
 
 ## Rule for new work
 A feature that needs downloaded data must:

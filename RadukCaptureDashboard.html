@@ -770,32 +770,38 @@ body { background:var(--d-void); color:var(--d-text); font-family:'Barlow Conden
     <div class="panel">
       <div class="panel-title">☁ SKY CONDITIONS</div>
       <div id="conditionBars">
-        <div class="condition-row"><div class="cond-label">CLOUD COVER</div><div class="cond-bar-wrap"><div class="cond-bar bar-good" id="bar-cloud" style="width:15%"></div></div><div class="cond-val" id="val-cloud" style="color:var(--d-green)">15%</div></div>
-        <div class="condition-row"><div class="cond-label">TRANSPARENCY</div><div class="cond-bar-wrap"><div class="cond-bar bar-good" id="bar-trans" style="width:82%"></div></div><div class="cond-val" id="val-trans" style="color:var(--d-green)">8.2/10</div></div>
-        <div class="condition-row"><div class="cond-label">SEEING</div><div class="cond-bar-wrap"><div class="cond-bar bar-warn" id="bar-see" style="width:60%"></div></div><div class="cond-val" id="val-see" style="color:var(--d-amber)">2.8″</div></div>
-        <div class="condition-row"><div class="cond-label">HUMIDITY</div><div class="cond-bar-wrap"><div class="cond-bar bar-good" id="bar-hum" style="width:22%"></div></div><div class="cond-val" id="val-hum" style="color:var(--d-green)">22%</div></div>
-        <div class="condition-row"><div class="cond-label">WIND</div><div class="cond-bar-wrap"><div class="cond-bar bar-good" id="bar-wind" style="width:30%"></div></div><div class="cond-val" id="val-wind" style="color:var(--d-green)">8 mph</div></div>
-        <div class="condition-row"><div class="cond-label">TEMP</div><div class="cond-bar-wrap"><div class="cond-bar bar-good" id="bar-temp" style="width:55%"></div></div><div class="cond-val" id="val-temp" style="color:var(--d-green)">62°F</div></div>
-        <div class="condition-row"><div class="cond-label">DEW POINT</div><div class="cond-bar-wrap"><div class="cond-bar bar-good" id="bar-dew" style="width:15%"></div></div><div class="cond-val" id="val-dew" style="color:var(--d-green)">28°F</div></div>
-        <div class="condition-row"><div class="cond-label">SMOKE/AQI</div><div class="cond-bar-wrap"><div class="cond-bar bar-good" id="bar-aqi" style="width:28%"></div></div><div class="cond-val" id="val-aqi" style="color:var(--d-green)">AQI 42</div></div>
+        <div class="condition-row"><div class="cond-label">CLOUD COVER</div><div class="cond-bar-wrap"><div class="cond-bar bar-good" id="bar-cloud" style="width:15%"></div></div><div class="cond-val" id="val-cloud" style="color:var(--d-green)">--</div></div>
+        <div class="condition-row"><div class="cond-label">TRANSPARENCY</div><div class="cond-bar-wrap"><div class="cond-bar bar-good" id="bar-trans" style="width:82%"></div></div><div class="cond-val" id="val-trans" style="color:var(--d-green)">--</div></div>
+        <div class="condition-row"><div class="cond-label">SEEING</div><div class="cond-bar-wrap"><div class="cond-bar bar-warn" id="bar-see" style="width:60%"></div></div><div class="cond-val" id="val-see" style="color:var(--d-amber)">--</div></div>
+        <div class="condition-row"><div class="cond-label">HUMIDITY</div><div class="cond-bar-wrap"><div class="cond-bar bar-good" id="bar-hum" style="width:22%"></div></div><div class="cond-val" id="val-hum" style="color:var(--d-green)">--</div></div>
+        <div class="condition-row"><div class="cond-label">WIND</div><div class="cond-bar-wrap"><div class="cond-bar bar-good" id="bar-wind" style="width:30%"></div></div><div class="cond-val" id="val-wind" style="color:var(--d-green)">--</div></div>
+        <div class="condition-row"><div class="cond-label">TEMP</div><div class="cond-bar-wrap"><div class="cond-bar bar-good" id="bar-temp" style="width:55%"></div></div><div class="cond-val" id="val-temp" style="color:var(--d-green)">--</div></div>
+        <div class="condition-row"><div class="cond-label">DEW POINT</div><div class="cond-bar-wrap"><div class="cond-bar bar-good" id="bar-dew" style="width:15%"></div></div><div class="cond-val" id="val-dew" style="color:var(--d-green)">--</div></div>
+        <div class="condition-row"><div class="cond-label">SMOKE/AQI</div><div class="cond-bar-wrap"><div class="cond-bar bar-good" id="bar-aqi" style="width:28%"></div></div><div class="cond-val" id="val-aqi" style="color:var(--d-green)">--</div></div>
       </div>
       <div class="weather-grid">
-        <div class="weather-cell"><div class="wc-label">PRESSURE</div><div class="wc-val" id="wc-pressure">29.92</div><div class="wc-sub">inHg</div></div>
-        <div class="weather-cell"><div class="wc-label">VISIBILITY</div><div class="wc-val" id="wc-vis">10+ mi</div><div class="wc-sub">EXCELLENT</div></div>
+        <div class="weather-cell"><div class="wc-label">PRESSURE</div><div class="wc-val" id="wc-pressure">--</div><div class="wc-sub">inHg</div></div>
+        <div class="weather-cell"><div class="wc-label">VISIBILITY</div><div class="wc-val" id="wc-vis">--</div><div class="wc-sub">EXCELLENT</div></div>
         <div class="weather-cell"><div class="wc-label">SUNSET</div><div class="wc-val" id="wc-sunset">--:--</div><div class="wc-sub">LOCAL <span class="tz-abbr"></span></div></div>
         <div class="weather-cell"><div class="wc-label">ASTRO DARK</div><div class="wc-val" id="wc-dark">--:--</div><div class="wc-sub">LOCAL <span class="tz-abbr"></span></div></div>
       </div>
+      <!-- Phase 165.4: where the reading came from, a refresh, and Open-Meteo's credit (CC BY 4.0). -->
+      <div style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:9px;font-family:'Space Mono',monospace;color:var(--d-text-dim)">
+        <span id="wxSourceNote" style="flex:1">--</span>
+        <button class="hist-btn" id="wxRefresh" onclick="wxRefresh()" title="Fetch the weather again (the app's, when connected)">↻</button>
+      </div>
+      <div style="font-size:9px;color:var(--d-text-dim);margin-top:2px">Weather data by <a href="https://open-meteo.com/" target="_blank" rel="noopener" style="color:var(--d-text-dim)">Open-Meteo.com</a></div>
     </div>
     <div class="panel">
       <div class="panel-title">💨 WIND</div>
       <div class="wind-compass-wrap">
         <canvas id="windCompass" width="90" height="90"></canvas>
         <div>
-          <div class="ws-speed" id="wind-speed">8</div><div class="ws-unit">mph sustained</div>
-          <div class="ws-dir" id="wind-dir">W · 270°</div>
-          <div class="ws-gust" id="wind-gust">Gusts: 12 mph</div>
-          <div id="wind-gust-gap" style="font-size:10px;color:var(--d-text-dim);margin-top:2px;font-family:'Space Mono',monospace">GAP: 4 mph</div>
-          <div id="wind-suitability" style="font-size:11px;color:var(--d-green);margin-top:5px">✓ Suitable for imaging</div>
+          <div class="ws-speed" id="wind-speed">--</div><div class="ws-unit">mph sustained</div>
+          <div class="ws-dir" id="wind-dir">--</div>
+          <div class="ws-gust" id="wind-gust">Gusts: --</div>
+          <div id="wind-gust-gap" style="font-size:10px;color:var(--d-text-dim);margin-top:2px;font-family:'Space Mono',monospace">GAP: --</div>
+          <div id="wind-suitability" style="font-size:11px;color:var(--d-text-dim);margin-top:5px">--</div>
         </div>
       </div>
       <!-- Wind Stability Score (Star Machine Protocol) -->
@@ -1811,6 +1817,31 @@ const apexStorage = {
 // Default location is unset — user configures via the location panel
 const DEFAULT_LAT=0.0, DEFAULT_LON=0.0, DEFAULT_LABEL="SET YOUR LOCATION";
 let LAT=DEFAULT_LAT, LON=DEFAULT_LON;
+// Phase 165.4 (and 151.4, rule 7): Dash asks the internet for nothing unless a
+// location is set and the app does not say it is offline (rig.ini Offline=1).
+// With the app connected and holding a fresh reading (165.2), the conditions
+// panel shows the app's weather and fetches none of its own.
+let rcWx = null, rcWxAt = 0, rcWxShown = -1, rcNetOffline = false;
+function dashLocationSet(){ return !(LAT === DEFAULT_LAT && LON === DEFAULT_LON); }
+function rcTelemetryLive(){ return rcWxAt > 0 && Date.now() - rcWxAt < 30000; }
+function dashMayFetch(){
+  if (!dashLocationSet()) return 'no location';
+  if (rcTelemetryLive() && rcNetOffline) return 'offline';
+  return '';
+}
+function rcAppWeather(){ return (rcWx && rcWx.wx_fresh && rcTelemetryLive()) ? rcWx : null; }
+function rcTakeWeather(d){
+  if (!('wx_configured' in d)) return;        // an app from before 3.3.36
+  rcWx = d; rcWxAt = Date.now(); rcNetOffline = !!d.net_offline;
+  if (d.wx_fresh && d.wx_fetched_unix !== rcWxShown) {
+    rcWxShown = d.wx_fetched_unix;
+    try { fetchWeather(); } catch(e) {}
+  }
+}
+function wxRefresh(){
+  if (rcWs && rcWs.readyState === WebSocket.OPEN) rcSendCmd('weather_refresh', '');
+  fetchWeather();
+}
 let SITE_LABEL=DEFAULT_LABEL, SITE_ELEV="";
 // Site sky-quality details (user-entered; blank = not set)
 let SITE_BORTLE=0, SITE_SQM="", SITE_SKY_NOTES="";
@@ -2433,6 +2464,7 @@ function rcHandleData(data) {
   rcRunning = !!data.rc_running;
   rcSetStatus(true, rcRunning, data.camera || null);
   rcShowFocuserTrust(data);   // 157.0e: hidden unless the focuser's number is in doubt
+  rcTakeWeather(data);        // 165.4: the app's weather and its offline switch
 
   if (rcRunning) {
     // Camera
@@ -3139,9 +3171,11 @@ function renderHourly(weatherData){
     if(!weatherData?.hourly?.time) return null;
     const idx = weatherData.hourly.time.findIndex(t => Math.abs(omLocalToDate(t).getTime()-h.getTime()) < 1800000);
     if(idx < 0) return null;
-    const cloud = weatherData.hourly.cloud_cover?.[idx] ?? 20;
-    const hum   = weatherData.hourly.relative_humidity_2m?.[idx] ?? 40;
-    const wind  = weatherData.hourly.wind_speed_10m?.[idx] ?? 8;
+    // 165.4: a missing value gives no score, not a guessed one.
+    const cloud = weatherData.hourly.cloud_cover?.[idx] ?? null;
+    const hum   = weatherData.hourly.relative_humidity_2m?.[idx] ?? null;
+    const wind  = weatherData.hourly.wind_speed_10m?.[idx] ?? null;
+    if (cloud === null || hum === null || wind === null) return null;
     const moon  = moonPhase(h);
     const gst = weatherData.hourly.wind_gusts_10m?.[idx] ?? null;
       return computeScore(cloud, hum, wind, moon.illumination, gst);
@@ -3408,7 +3442,13 @@ function updateScoreBadge() {
 
   if (isImagingHour) {
     // We're in imaging hours — show live current score
-    const score = window.apexLiveScore ?? 50;
+    const score = window.apexLiveScore;
+    if (score === null || score === undefined) {   // 165.4: no reading, no score (it showed 50)
+      scoreEl.textContent = '--'; scoreEl.style.color = 'var(--d-text-dim)';
+      if(badgeTitleEl) badgeTitleEl.textContent = 'IMAGING SCORE · NOW';
+      labelEl.textContent = 'NO READING'; labelEl.style.color = 'var(--d-text-dim)';
+      return;
+    }
     scoreEl.textContent = score;
     if(badgeTitleEl) badgeTitleEl.textContent = 'IMAGING SCORE · NOW';
     if(score>=75){labelEl.textContent='EXCELLENT';labelEl.style.color='var(--d-green)';scoreEl.style.color='var(--d-green)';}
@@ -3462,38 +3502,81 @@ function updateBar(id,val,max,type){
   if(valEl)valEl.style.color=g?'var(--d-green)':w?'var(--d-amber)':'var(--d-red)';
 }
 
-async function fetchWeather(){
-  try{
-    const url=`https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover,pressure_msl,visibility,dew_point_2m&hourly=cloud_cover&temperature_unit=fahrenheit&wind_speed_unit=mph&forecast_days=2&timezone=${encodeURIComponent(TIMEZONE)}`;
-    const r=await fetch(url),data=await r.json(),c=data.current;
-    const cloud=c.cloud_cover||15,hum=c.relative_humidity_2m||22,wind=c.wind_speed_10m||8,windDir=c.wind_direction_10m||270,windGust=c.wind_gusts_10m||12,temp=Math.round(c.temperature_2m||62),dew=Math.round(c.dew_point_2m||28);
-    updateBar('cloud',cloud,100,'cloud');updateBar('hum',hum,100,'humidity');updateBar('wind',wind,30,'wind');updateBar('dew',dew,80,'dew');
-    document.getElementById('val-cloud').textContent=cloud+'%';document.getElementById('val-hum').textContent=hum+'%';document.getElementById('val-wind').textContent=Math.round(wind)+' mph';document.getElementById('val-temp').textContent=temp+'°F';document.getElementById('val-dew').textContent=dew+'°F';
-    document.getElementById('wc-pressure').textContent=(c.pressure_msl/33.863).toFixed(2);document.getElementById('wc-vis').textContent=c.visibility>=16000?'10+ mi':Math.round(c.visibility/1609)+' mi';
-    const dn=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
-    document.getElementById('wind-speed').textContent=Math.round(wind);document.getElementById('wind-dir').textContent=`${dn[Math.round(windDir/22.5)%16]} · ${Math.round(windDir)}°`;
-    const gustEl=document.getElementById('wind-gust');
-    gustEl.textContent=`Gusts: ${Math.round(windGust)} mph`;
-    // Color gust text based on WSS tier thresholds
-    gustEl.style.color = windGust<=14 ? 'var(--d-green)' : windGust<=22 ? 'var(--d-amber)' : 'var(--d-red)';
+// Phase 165.4: one reading for the conditions panel, in Dash's units (F, mph,
+// inHg), any field possibly null. A null shows "--": nothing is guessed (this
+// code used to show 15% cloud for a reply with no cloud figure, and score a
+// made-up sky when the fetch failed).
+function wxNum(v){ return (typeof v === 'number' && isFinite(v)) ? v : null; }
+function wxFromApp(d){
+  const f = c => c === null ? null : c * 9 / 5 + 32;
+  const mph = m => m === null ? null : m / 0.44704;
+  const msl = wxNum(d.wx_msl_hpa);
+  return { cloud: wxNum(d.wx_cloud_pct), hum: wxNum(d.wx_humidity_pct),
+           wind: mph(wxNum(d.wx_wind_ms)), windGust: mph(wxNum(d.wx_gust_ms)), windDir: null,
+           temp: f(wxNum(d.wx_temp_c)), dew: f(wxNum(d.wx_dew_c)),
+           pressureInHg: msl === null ? null : msl / 33.863, visMi: null,
+           source: 'FROM RADUKCAPTURE (' + (d.wx_source === 'leoben' ? 'LEOBEN' : 'ITS OWN FETCH') +
+                   ', ' + d.wx_age_min + ' MIN)' };
+}
+function wxFromOpenMeteo(c){
+  const msl = wxNum(c.pressure_msl), vis = wxNum(c.visibility);
+  return { cloud: wxNum(c.cloud_cover), hum: wxNum(c.relative_humidity_2m),
+           wind: wxNum(c.wind_speed_10m), windGust: wxNum(c.wind_gusts_10m), windDir: wxNum(c.wind_direction_10m),
+           temp: wxNum(c.temperature_2m), dew: wxNum(c.dew_point_2m),
+           pressureInHg: msl === null ? null : msl / 33.863, visMi: vis === null ? null : vis / 1609.344,
+           source: 'FROM OPEN-METEO, ASKED BY THIS BROWSER' };
+}
+function wxSetText(id, v, fmt){ const el = document.getElementById(id); if (el) el.textContent = v === null ? '--' : fmt(v); }
+function wxSetSource(text){ const el = document.getElementById('wxSourceNote'); if (el) el.textContent = text; }
 
-    // Gust gap indicator
-    const gapEl = document.getElementById('wind-gust-gap');
-    if (gapEl) {
+function renderConditions(r){
+  const v = r || {};
+  const n = k => (v[k] === undefined ? null : v[k]);
+  const cloud = n('cloud'), hum = n('hum'), wind = n('wind'), windGust = n('windGust'),
+        windDir = n('windDir'), temp = n('temp'), dew = n('dew');
+  const bar = (id, val, max, type) => {
+    if (val !== null) { updateBar(id, val, max, type); return; }
+    const b = document.getElementById('bar-' + id); if (b) { b.style.width = '0%'; b.className = 'cond-bar'; }
+    const e = document.getElementById('val-' + id); if (e) e.style.color = 'var(--d-text-dim)';
+  };
+  bar('cloud', cloud, 100, 'cloud'); bar('hum', hum, 100, 'humidity'); bar('wind', wind, 30, 'wind'); bar('dew', dew, 80, 'dew');
+  wxSetText('val-cloud', cloud, x => Math.round(x) + '%');
+  wxSetText('val-hum', hum, x => Math.round(x) + '%');
+  wxSetText('val-wind', wind, x => Math.round(x) + ' mph');
+  wxSetText('val-temp', temp, x => Math.round(x) + '°F');
+  wxSetText('val-dew', dew, x => Math.round(x) + '°F');
+  wxSetText('wc-pressure', n('pressureInHg'), x => x.toFixed(2));
+  wxSetText('wc-vis', n('visMi'), x => x >= 9.95 ? '10+ mi' : Math.round(x) + ' mi');
+  wxSetText('wind-speed', wind, x => String(Math.round(x)));
+  const dn = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  wxSetText('wind-dir', windDir, x => `${dn[Math.round(x / 22.5) % 16]} · ${Math.round(x)}°`);
+  const gustEl = document.getElementById('wind-gust');
+  if (gustEl) {
+    gustEl.textContent = windGust === null ? 'Gusts: --' : `Gusts: ${Math.round(windGust)} mph`;
+    gustEl.style.color = windGust === null ? 'var(--d-text-dim)'
+      : windGust <= 14 ? 'var(--d-green)' : windGust <= 22 ? 'var(--d-amber)' : 'var(--d-red)';
+  }
+  const gapEl = document.getElementById('wind-gust-gap');
+  if (gapEl) {
+    if (wind === null || windGust === null) { gapEl.textContent = 'GAP: --'; gapEl.style.color = 'var(--d-text-dim)'; }
+    else {
       const gap = Math.round(windGust - wind);
       gapEl.textContent = `GAP: ${gap} mph${gap > 10 ? ' ⚠ UNPREDICTABLE' : ''}`;
       gapEl.style.color = gap > 10 ? 'var(--d-red)' : gap > 6 ? 'var(--d-amber)' : 'var(--d-text-dim)';
     }
+  }
 
-    // Wind Stability Score (Star Machine Protocol)
+  // Wind Stability Score (Star Machine Protocol): only with a wind and a gust.
+  const wssScoreEl = document.getElementById('wind-stability-score');
+  const wssLabelEl = document.getElementById('wind-stability-label');
+  const wssVerdictEl = document.getElementById('wind-stability-verdict');
+  const wssBarEl = document.getElementById('wind-stability-bar');
+  const wssTierEl = document.getElementById('wind-score-tier');
+  const wssPenaltyEl = document.getElementById('wind-penalty-breakdown');
+  const suitEl = document.getElementById('wind-suitability');
+  if (wind !== null && windGust !== null) {
     const wss = computeWindStabilityScore(wind, windGust, {focalPenalty:true, payloadPenalty:true});
     const wssCol = wss.score >= 85 ? 'var(--d-green)' : wss.score >= 65 ? 'var(--d-accent)' : wss.score >= 40 ? 'var(--d-amber)' : 'var(--d-red)';
-    const wssScoreEl    = document.getElementById('wind-stability-score');
-    const wssLabelEl    = document.getElementById('wind-stability-label');
-    const wssVerdictEl  = document.getElementById('wind-stability-verdict');
-    const wssBarEl      = document.getElementById('wind-stability-bar');
-    const wssTierEl     = document.getElementById('wind-score-tier');
-    const wssPenaltyEl  = document.getElementById('wind-penalty-breakdown');
     if (wssScoreEl)   { wssScoreEl.textContent = wss.score; wssScoreEl.style.color = wssCol; }
     if (wssLabelEl)   { wssLabelEl.textContent = wss.verdict; wssLabelEl.style.color = wssCol; }
     if (wssVerdictEl) { wssVerdictEl.textContent = `BASE ${wss.base} · TIER: ${wss.tier}`; }
@@ -3506,21 +3589,63 @@ async function fetchWeather(){
       if (wss.gustGapDeduct) parts.push(`−${wss.gustGapDeduct}pts gust gap (${wss.gustGap}mph)`);
       wssPenaltyEl.textContent = parts.length ? 'PENALTIES: ' + parts.join(' · ') : 'NO PENALTIES APPLIED';
     }
+    if (suitEl) {
+      if (wss.score >= 85)      { suitEl.textContent='✓ GO — High-res imaging viable';      suitEl.style.color='var(--d-green)'; }
+      else if (wss.score >= 65) { suitEl.textContent='⚠ CAUTION — Lucky imaging / short exp'; suitEl.style.color='var(--d-accent)'; }
+      else if (wss.score >= 40) { suitEl.textContent='⚠ LOW RES ONLY — focal reducer recommended'; suitEl.style.color='var(--d-amber)'; }
+      else                      { suitEl.textContent='✗ NO-GO — Do not deploy 8SE';          suitEl.style.color='var(--d-red)'; }
+    }
+  } else {
+    if (wssScoreEl)   { wssScoreEl.textContent = '--'; wssScoreEl.style.color = 'var(--d-text-dim)'; }
+    if (wssLabelEl)   { wssLabelEl.textContent = 'NO WIND READING'; wssLabelEl.style.color = 'var(--d-text-dim)'; }
+    if (wssVerdictEl) wssVerdictEl.textContent = '';
+    if (wssBarEl)     wssBarEl.style.width = '0%';
+    if (wssTierEl)    wssTierEl.textContent = '';
+    if (wssPenaltyEl) wssPenaltyEl.textContent = '';
+    if (suitEl)       { suitEl.textContent = '-- no wind reading'; suitEl.style.color = 'var(--d-text-dim)'; }
+  }
+  drawWindCompass(windDir === null ? 0 : windDir, wind === null ? 0 : wind);
+  // The live score needs cloud, humidity and wind; without them there is none.
+  if (cloud !== null && hum !== null && wind !== null) {
+    const m = moonPhase(new Date());
+    updateScore(computeScore(cloud, hum, wind, m.illumination, windGust === null ? undefined : windGust));
+  } else {
+    updateScore(null);
+  }
+  // Update ADC altitude display with Jupiter alt
+  const jup = getPlanetsByAltitude(new Date()).find(p => p.name === 'Jupiter');
+  // (The page has no adcAlt; the old code threw here whenever Jupiter was up,
+  // and its catch then showed made-up conditions. Guarded since 165.4.)
+  const adcAltEl = document.getElementById('adcAlt');
+  if (jup && jup.alt > 0 && adcAltEl) { adcAltEl.textContent = jup.alt + '°'; updateADC(); }
+}
 
-    // Dynamic suitability label (now consistent with WSS verdict)
-    const suitEl=document.getElementById('wind-suitability');
-    if (wss.score >= 85)      { suitEl.textContent='✓ GO — High-res imaging viable';      suitEl.style.color='var(--d-green)'; }
-    else if (wss.score >= 65) { suitEl.textContent='⚠ CAUTION — Lucky imaging / short exp'; suitEl.style.color='var(--d-accent)'; }
-    else if (wss.score >= 40) { suitEl.textContent='⚠ LOW RES ONLY — focal reducer recommended'; suitEl.style.color='var(--d-amber)'; }
-    else                      { suitEl.textContent='✗ NO-GO — Do not deploy 8SE';          suitEl.style.color='var(--d-red)'; }
-    drawWindCompass(windDir,wind);
-    const m=moonPhase(new Date());updateScore(computeScore(cloud,hum,wind,m.illumination,windGust));
-    // Update ADC altitude display with Jupiter alt
-    const jup=getPlanetsByAltitude(new Date()).find(p=>p.name==='Jupiter');
-    if(jup&&jup.alt>0){document.getElementById('adcAlt').textContent=jup.alt+'°';updateADC();}
-    renderHourly(data);window.lastWeatherData=data;const st=getSunTimes(new Date());renderTwilightCloud(st);return{cloud,hum,wind,windDir,windGust};
-  }catch(e){
-    drawWindCompass(270,8);const m=moonPhase(new Date());updateScore(computeScore(15,22,8,m.illumination));renderHourly(null);
+async function fetchWeather(){
+  const app = rcAppWeather();
+  if (app) {
+    const r = wxFromApp(app);
+    renderConditions(r); wxSetSource(r.source);
+    return r;
+  }
+  const why = dashMayFetch();
+  if (why) {
+    renderConditions(null); renderHourly(null);
+    wxSetSource(why === 'offline' ? 'NO FORECAST OFFLINE (RIG.INI OFFLINE=1)'
+                                  : 'NO FORECAST: SET YOUR LOCATION (OR CONNECT TO RADUKCAPTURE)');
+    return null;
+  }
+  try {
+    const url=`https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover,pressure_msl,visibility,dew_point_2m&hourly=cloud_cover&temperature_unit=fahrenheit&wind_speed_unit=mph&forecast_days=2&timezone=${encodeURIComponent(TIMEZONE)}`;
+    const res = await fetch(url), data = await res.json();
+    if (!data || !data.current) throw new Error((data && data.reason) || 'no current conditions in the reply');
+    const r = wxFromOpenMeteo(data.current);
+    renderConditions(r); wxSetSource(r.source);
+    renderHourly(data); window.lastWeatherData = data;
+    const st = getSunTimes(new Date()); renderTwilightCloud(st);
+    return r;
+  } catch(e) {
+    renderConditions(null); renderHourly(null);
+    wxSetSource('WEATHER NOT REACHABLE: ' + String(e && e.message || e).toUpperCase());
     return null;
   }
 }
@@ -3551,7 +3676,9 @@ async function refreshAll(){
   await fetchWeather();
   updateMoon();updateSunTimes();renderLightPollution();renderSeeingBars();renderNASAEvents();renderFAANotices();
   setTimeout(()=>{ try{ refreshSkyUI(); }catch(e){} }, 3500);
-  document.getElementById('val-aqi').textContent='AQI 42';document.getElementById('val-trans').textContent='8.2/10';document.getElementById('val-see').textContent='2.8″';
+  // Phase 165.4: there is no source for these yet, so they say so (they read
+  // AQI 42, 8.2/10 and 2.8" whatever the sky did).
+  document.getElementById('val-aqi').textContent='--';document.getElementById('val-trans').textContent='--';document.getElementById('val-see').textContent='--';
   document.getElementById('lastUpdate').textContent=now.toLocaleTimeString('en-US',{timeZone:TIMEZONE,hour:'2-digit',minute:'2-digit'});
 }
 
@@ -4111,6 +4238,14 @@ function recordReliabilityComparison(date, actualCloud, actualScore) {
 async function loadForecast() {
   const strip = document.getElementById('fcastStrip');
   const nb    = document.getElementById('fcastNightband');
+  // Phase 165.4 (rule 7): no location, or the app offline, and nothing is asked.
+  const why = dashMayFetch();
+  if (why) {
+    strip.innerHTML = '<div class="fcast-loading">' + (why === 'offline'
+      ? 'NO FORECAST OFFLINE (RIG.INI OFFLINE=1)' : 'NO FORECAST: SET YOUR LOCATION FIRST') + '</div>';
+    nb.innerHTML = '';
+    return;
+  }
   strip.innerHTML = '<div class="fcast-loading">◌ FETCHING MULTI-SOURCE FORECAST DATA...</div>';
   nb.innerHTML = '';
   document.getElementById('fcastDetailContent').style.display = 'none';
@@ -4936,8 +5071,8 @@ function doDetectLocation() {
       document.getElementById('locDetectPreview').textContent =
         locPendingLat.toFixed(5)+'°N  ' + Math.abs(locPendingLon).toFixed(5)+'°W';
       locPendingLabel = 'DETECTED LOCATION';
-      // Try reverse geocode for a nice label
-      fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat='+locPendingLat+'&lon='+locPendingLon)
+      // Try reverse geocode for a nice label (not when the app is offline)
+      if (!(rcTelemetryLive() && rcNetOffline)) fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat='+locPendingLat+'&lon='+locPendingLon)
         .then(r=>r.json()).then(d=>{
           const city = d.address?.city||d.address?.town||d.address?.village||d.address?.county||'';
           const state = d.address?.state_code||d.address?.state||'';
@@ -4958,6 +5093,10 @@ function doDetectLocation() {
 async function doGeocodeAddress() {
   const addr = document.getElementById('locAddressInput').value.trim();
   if (!addr) { locSetStatus('locAddressStatus','⚠ Please enter an address','err'); return; }
+  if (rcTelemetryLive() && rcNetOffline) {
+    locSetStatus('locAddressStatus','⚠ Offline (rig.ini Offline=1): enter the coordinates by hand','err');
+    return;
+  }
   locSetStatus('locAddressStatus','◌ Looking up coordinates...','info');
   document.getElementById('locAddressPreview').textContent='';
   try {
