@@ -2050,6 +2050,14 @@ After 30 minutes without a fresh reading, the ADC goes back to the standard
 atmosphere and the record leaves the weather out rather than write a stale
 sky.
 
+**In the browser dashboard.** The SKY CONDITIONS panel shows the app's
+weather when the dashboard is connected, and says where it came from. Not
+connected, the dashboard asks Open-Meteo itself, but only once a location is
+set in it. When the app has `Offline=1`, the dashboard asks the internet for
+nothing, not even its forecast tab or an address lookup, and says
+`NO FORECAST OFFLINE`. A value the reading does not give shows `--`. The ↻
+beside the source asks the app for a fresh reading.
+
 ---
 
 ## Hardware Reference
@@ -3453,6 +3461,7 @@ un-soak.ps1` runs the emulator for hours through GoTo, lock, autofocus and runs,
 | 3.3.33 | 165 (plan) | A plan to stop depending on Leoben for the weather. RadukCapture will fetch and score the sky itself (Open-Meteo, 7Timer, NWS), always through the offline switch, so a night at the scope no longer needs the gaming PC awake. Site and focal length come from `rig.ini`; a missing value stays missing rather than being guessed. Leoben stays available as a source, side by side for a few nights, until the readings agree. No code yet: see `docs/Phase165-Plan-Sky-Weather-Without-Leoben.md`. |
 | 3.3.34 | 165.0a, 165.1 | The weather, read and fetched by RadukCapture itself, not yet switched on. `core/SkyWeather.h` reads Open-Meteo's current conditions, 7Timer's astronomy forecast and NWS alerts, and keeps Leoben's dew, wind, cloud-layer and dust thresholds in metric. A value that is missing or unreadable stays unknown: no cloud figure is not 15% cloud, and a clear night's 24 km visibility is a number (Leoben's weather broke on it). 7Timer's seeing is now read from the key 7Timer actually sends, and its wind is a class, not knots. `core/SkyWeatherClient.h` asks the three services on their own cadences through the offline switch, never without a site, sends the site rounded to about 1 km, keeps each source's last good reply, and caches them so a restart offline still has the last weather with its age. Gated by `sky_weather` (75 checks) and `sky_weather_client` (42), on replies captured for public places. 165.2 connects it to the app. |
 | 3.3.35 | 165.2 | RadukCapture now fetches the weather itself. `WeatherSource=` in `rig.ini` picks `internal`, `leoben`, `both` or `off`; with it unset, a rig with a `LeobenUrl` runs on `both` and one without on `internal`. In `both`, Leoben stands in whenever the internal fetch has no fresh reading, and every 10 minutes a `WXCMP` line in the session log compares the two, for a few parity nights. Everything that used Leoben's weather now reads whichever source is chosen: the ADC's live air, the dew risk on a fade, the hourly `SEEING` line (7Timer's forecast now reaches it; Leoben's never did), the observation record, the status window's `WX` row (which now names the source) and the assistant. Nothing is fetched without a site or with `Offline=1`. Gated by `site_weather` (40 checks). |
+| 3.3.36 | 165.4 | The browser dashboard shows the app's weather. Connected, its SKY CONDITIONS panel takes the reading the app uses and names the source (RadukCapture's own fetch or Leoben), with no request of its own. Not connected, it asks Open-Meteo only once a location is set (it used to ask for latitude 0, longitude 0 on every load). With `Offline=1` in the app, it asks the internet nothing at all, forecast tab and address lookups included. A value not given shows `--`. Several made-up numbers are gone: 15% cloud when a reply had none, AQI 42, transparency 8.2/10 and seeing 2.8" that never came from any source, and an imaging score of 50 with no reading. New ↻ (`weather_refresh`) asks the app to fetch now. Open-Meteo is credited under the panel. Closes 151.4. Gated by `specs/weather.spec.js` and `offline.spec.js` (Playwright, desktop and phone) and `telemetry_night`. |
 
 ---
 

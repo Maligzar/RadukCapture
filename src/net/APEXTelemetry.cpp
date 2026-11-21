@@ -93,6 +93,33 @@ std::string APEXTelemetry::ToJSON() const {
     j << "\"nightplan_ticked\":"     << jsonStr(nightplan_ticked) << ",";
     j << "\"nightplan_candidates\":" << jsonStr(nightplan_candidates) << ",";
     j << "\"nightplan_rows\":"       << jsonStr(nightplan_rows) << ",";
+    // Phase 165.4: the weather. A NaN reading goes out as null.
+    {
+        auto num = [&](const char* k, double v, int prec) {
+            j << "\"" << k << "\":";
+            if (std::isfinite(v)) j << std::setprecision(prec) << v << std::setprecision(3);
+            else j << "null";
+            j << ",";
+        };
+        j << "\"wx_configured\":"   << (wx_configured ? "true" : "false") << ",";
+        j << "\"wx_fresh\":"        << (wx_fresh ? "true" : "false") << ",";
+        j << "\"wx_source\":"       << jsonStr(wx_source) << ",";
+        j << "\"wx_state\":"        << jsonStr(wx_state) << ",";
+        j << "\"wx_age_min\":"      << wx_age_min << ",";
+        j << "\"wx_fetched_unix\":" << wx_fetched_unix << ",";
+        num("wx_cloud_pct", wx_cloud_pct, 0);
+        num("wx_temp_c", wx_temp_c, 1);
+        num("wx_humidity_pct", wx_humidity_pct, 0);
+        num("wx_wind_ms", wx_wind_ms, 2);
+        num("wx_gust_ms", wx_gust_ms, 2);
+        num("wx_dew_c", wx_dew_c, 1);
+        num("wx_msl_hpa", wx_msl_hpa, 1);
+        num("wx_seeing_7timer", wx_seeing_7timer, 0);
+        j << "\"wx_dew_risk\":"     << jsonStr(wx_dew_risk) << ",";
+        j << "\"wx_verdict\":"      << jsonStr(wx_verdict) << ",";
+        j << "\"wx_score\":"        << wx_score << ",";
+        j << "\"net_offline\":"     << (net_offline ? "true" : "false") << ",";
+    }
 
     // Histogram — 256-element array, downsampled to 64 buckets for bandwidth
     // Each bucket sums 4 adjacent bins. Client expects 256 values — pad back out.

@@ -42,6 +42,33 @@ int main() {
     Check(doubt.find("\"eaf_trusted\":false") != std::string::npos &&
           doubt.find("\"eaf_saved_position\":166700") != std::string::npos, "in doubt: said, with the saved number");
     Check(doubt.find("was last at \\\"166700\\\"") != std::string::npos, "and the problem's text escaped as JSON");
+
+    // Phase 165.4: the weather Dash shows instead of fetching its own.
+    Check(off.find("\"wx_configured\":false") != std::string::npos &&
+          off.find("\"wx_fresh\":false") != std::string::npos &&
+          off.find("\"wx_cloud_pct\":null") != std::string::npos &&
+          off.find("\"wx_temp_c\":null") != std::string::npos &&
+          off.find("\"net_offline\":false") != std::string::npos, "no weather: said, and the readings null");
+    APEXTelemetry w;
+    w.wx_configured = true;
+    w.wx_fresh = true;
+    w.wx_source = "internal";
+    w.wx_age_min = 4;
+    w.wx_cloud_pct = 100;
+    w.wx_temp_c = 8.8;
+    w.wx_wind_ms = 1.194;
+    w.wx_dew_risk = "elevated";
+    w.net_offline = true;
+    const std::string wj = w.ToJSON();
+    Check(wj.find("\"wx_source\":\"internal\"") != std::string::npos &&
+          wj.find("\"wx_cloud_pct\":100,") != std::string::npos &&
+          wj.find("\"wx_temp_c\":8.8,") != std::string::npos &&
+          wj.find("\"wx_wind_ms\":1.19,") != std::string::npos, "a reading goes out in SI, at its precision");
+    Check(wj.find("\"wx_gust_ms\":null") != std::string::npos, "a reading not given stays null");
+    Check(wj.find("\"net_offline\":true") != std::string::npos, "offline is said, so Dash asks nothing");
+    Check(wj.find("\"histogram\":[0,0,") != std::string::npos, "the fields after it are unchanged");
+    Check(wj.find(":nan") == std::string::npos && wj.find(":inf") == std::string::npos &&
+          wj.find(":-nan") == std::string::npos, "never a bare nan or inf");
     printf("\n%s\n", g_fail == 0 ? "ALL CHECKS PASSED" : "SOME CHECKS FAILED");
     return g_fail == 0 ? 0 : 1;
 }

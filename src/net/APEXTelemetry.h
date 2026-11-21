@@ -36,6 +36,8 @@
 #include <sstream>
 #include "core/Paths.h"
 #include <iomanip>
+#include <limits>
+#include <cmath>
 
 namespace raduk::net {
 
@@ -142,6 +144,29 @@ struct APEXTelemetry {
     std::string nightplan_ticked;
     std::string nightplan_candidates;
     std::string nightplan_rows;
+
+    // ── Phase 165.4: the weather the app uses (core/SiteWeather.h), so Dash
+    // shows it instead of fetching its own. SI and Celsius; a value the
+    // reading did not give is NaN and goes out as null. No coordinates.
+    // net_offline: rig.ini Offline=1, so Dash asks the internet nothing.
+    bool        wx_configured   = false;
+    bool        wx_fresh        = false;
+    std::string wx_source;          // "internal" | "leoben"
+    std::string wx_state;           // why there is no fresh reading
+    int         wx_age_min      = -1;
+    int64_t     wx_fetched_unix = 0;
+    double      wx_cloud_pct    = std::numeric_limits<double>::quiet_NaN();
+    double      wx_temp_c       = std::numeric_limits<double>::quiet_NaN();
+    double      wx_humidity_pct = std::numeric_limits<double>::quiet_NaN();
+    double      wx_wind_ms      = std::numeric_limits<double>::quiet_NaN();
+    double      wx_gust_ms      = std::numeric_limits<double>::quiet_NaN();
+    double      wx_dew_c        = std::numeric_limits<double>::quiet_NaN();
+    double      wx_msl_hpa      = std::numeric_limits<double>::quiet_NaN();
+    double      wx_seeing_7timer = std::numeric_limits<double>::quiet_NaN();
+    std::string wx_dew_risk;
+    std::string wx_verdict;
+    int         wx_score        = -1;
+    bool        net_offline     = false;
 
     // ── Session events (cleared after each broadcast) ─────────
     std::vector<SessionEvent> session_events;

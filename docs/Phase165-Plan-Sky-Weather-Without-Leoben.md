@@ -159,6 +159,22 @@ This replaces Leoben's deep-sky score, for the planetary use.
 - **`SeeingTally`** says "none given" rather than "none from Leoben".
 - **Checks:** `tests/site_weather.cpp` (40 checks). CI builds `main.cpp` and `StatusWindow.h` but cannot run them; the run on the PC and five parity nights are checklist item 64.
 
+## 165.4, as built (2026-11-20, 3.3.36)
+
+Built ahead of 165.3: the verdict's jet-stream input waits on Open-Meteo's hourly reply, while Dash's fetch broke rule 7 today.
+
+- **Telemetry** gains the weather the app uses: `wx_configured`, `wx_fresh`, `wx_source`, `wx_state`, `wx_age_min`, `wx_fetched_unix`, the readings in SI (null when not given), `wx_dew_risk`, `wx_verdict`, `wx_score` and `net_offline` (rig.ini `Offline=1`). There are no coordinates. `telemetry_night` checks the fields.
+- **`weather_refresh`** calls `SkyWeatherClient::RefreshNow()`, so `Offline=1` still asks nothing.
+- **Dash:**
+  - **The gate.** `dashMayFetch()` allows an outside request only with a location set and live telemetry not saying `net_offline`. It covers the conditions panel, the forecast tab (Open-Meteo, GFS, 7Timer) and the address lookups (OpenStreetMap). The lookups are asked only on request, and never while offline.
+  - **The app's reading.** While the app is connected with a fresh reading, the conditions panel shows it, with its source, and fetches nothing.
+  - **Missing values** show `--`. Gone: the defaults (15% cloud, 22% humidity, 8 mph wind, 62 F, a 28 F dew point), the made-up score after a failed fetch, the fixed AQI 42, transparency 8.2/10 and seeing 2.8", the score 50 with no reading, and the hourly fallback's guessed values.
+  - **A bug the old fallback hid.** `renderConditions` wrote to an `adcAlt` element the page does not have, so whenever Jupiter was up the old code threw inside its `try`, and the catch then showed made-up conditions.
+  - **Open-Meteo** is credited under the panel, as its CC BY 4.0 terms ask.
+- **Checks:** `specs/weather.spec.js` (5 cases) and `offline.spec.js` pass on desktop and phone, as do the existing no-app specs (16 of 16).
+- **Still made up in Dash, owed:** the NASA events and FAA notices panels are fixed lists, including "AQI 42 — Good" and a nearby airport's notice. The wind stability score keeps Leoben's 8SE-specific deductions (phase 149's rule: the rig belongs in rig.ini).
+- **Leoben serves a copy of Dash** (its Phase 95, `third_party/radukcapture/`, copied byte for byte). That copy changes only when Leoben re-syncs it.
+
 ## Checks
 
 - **g++, with ASan and UBSan:**

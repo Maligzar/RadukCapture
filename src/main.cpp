@@ -7484,6 +7484,16 @@ static int RunApp(bool useEmulator) {
                     slog.Focuser("APEX: position %s: %d%s", restore ? "set back" : "accepted",
                                  focuser.GetPosition(), ok ? "" : " (failed)");
                 }
+            } else if (rc.cmd == "weather_refresh") {
+                // Phase 165.4: Dash's weather card asks for a fetch now.
+                // Offline=1 still asks nothing (SatDesk::HttpGet keeps it).
+                if (wx::ModeUsesInternal(wxMode)) {
+                    skyWx.RefreshNow();
+                    Log("[WS] Remote weather_refresh\n");
+                } else {
+                    Log("[WS] Remote weather_refresh: WeatherSource is %s, nothing to fetch here\n",
+                        wx::WeatherModeText(wxMode));
+                }
             } else if (rc.cmd == "autofocus_abort") {
                 if (core.afCtl.Busy()) {
                     abortAutofocus();
@@ -9501,6 +9511,33 @@ static int RunApp(bool useEmulator) {
                 telemetry.eaf_trusted        = !focuser.IsOpen() || focuser.PositionTrusted();
                 telemetry.eaf_saved_position = focuser.IsOpen() ? focuser.SavedPosition() : -1;
                 telemetry.eaf_trust_problem  = telemetry.eaf_trusted ? std::string() : focuser.TrustProblem();
+                // Phase 165.4: the weather the app uses, for Dash to show
+                // rather than fetch its own; and the offline switch, so Dash
+                // asks the internet nothing when the app does not.
+                {
+                    const int64_t nowU = (int64_t)std::time(nullptr);
+                    const wx::SiteWeather cw = weatherNow(nowU);
+                    const double nan = std::numeric_limits<double>::quiet_NaN();
+                    auto v = [&](const std::optional<double>& o) { return o ? *o : nan; };
+                    telemetry.wx_configured   = cw.configured;
+                    telemetry.wx_fresh        = cw.fresh;
+                    telemetry.wx_source       = cw.source;
+                    telemetry.wx_state        = cw.state;
+                    telemetry.wx_age_min      = cw.fresh ? (int)((nowU - cw.fetchedUnix) / 60) : -1;
+                    telemetry.wx_fetched_unix = cw.fresh ? cw.fetchedUnix : 0;
+                    telemetry.wx_cloud_pct    = v(cw.cloudPct);
+                    telemetry.wx_temp_c       = v(cw.tempC);
+                    telemetry.wx_humidity_pct = v(cw.humidityPct);
+                    telemetry.wx_wind_ms      = v(cw.windMs);
+                    telemetry.wx_gust_ms      = v(cw.gustMs);
+                    telemetry.wx_dew_c        = v(cw.dewPointC);
+                    telemetry.wx_msl_hpa      = v(cw.pressureMslHpa);
+                    telemetry.wx_seeing_7timer = v(cw.seeing7Timer);
+                    telemetry.wx_dew_risk     = cw.dewRisk;
+                    telemetry.wx_verdict      = cw.verdict;
+                    telemetry.wx_score        = cw.imagingScore;
+                    telemetry.net_offline     = RigConfig::Get().offline != 0;
+                }
 
                 if (mount && mount->IsConnected()) {
                     double ra=0, dec=0;

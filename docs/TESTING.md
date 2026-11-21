@@ -63,7 +63,7 @@ Every control a person needs at the telescope is reachable from Dash. A new feat
 - the control has a stable `id`;
 - a Playwright test drives it.
 
-Today Dash sends `start_capture`, `stop_capture`, `set_gain`, `set_exposure`, `set_gamma`, `autofocus`, `autofocus_abort`, `calibrate_focus`, `move_eaf`, `move_eaf_rel`, `centroid_start`, `centroid_lock`, `centroid_roi`, `centroid_reset`, `cables_dressed`, `mount_stop`, `jog`, `load_profile`, `goto_target` and `moonmap` (main.cpp's WebSocket command handler). Controls with no Dash equivalent yet are listed in "Owed" below, as they are found.
+Today Dash sends `start_capture`, `stop_capture`, `set_gain`, `set_exposure`, `set_gamma`, `autofocus`, `autofocus_abort`, `calibrate_focus`, `move_eaf`, `move_eaf_rel`, `centroid_start`, `centroid_lock`, `centroid_roi`, `centroid_reset`, `cables_dressed`, `mount_stop`, `jog`, `load_profile`, `goto_target`, `moonmap` and `weather_refresh` (main.cpp's WebSocket command handler). Controls with no Dash equivalent yet are listed in "Owed" below, as they are found.
 
 ### Setting it up on the imaging PC
 Node and Playwright are installed on StarMachine. Once, in the repository:
@@ -103,10 +103,11 @@ Results go to `tests\web\results\dash-results.json`. Phase 156's bundle picks th
 | `offline.spec.js` | nothing running | Dash loads with no internet, no script errors, and no request leaves the PC |
 | `live.spec.js` (`@live`) | the app running | Dash connects with the token, live telemetry arrives, and START/STOP CAPTURE works from the browser |
 | `acquire-wide.spec.js` (`@live`) | the app running | Dash loads the Star profile (640x480), CENTROID widens the frame and the ROI row reads `WIDE`, RESET puts 640x480 back (157.0c) |
+| `weather.spec.js` | nothing | Dash's weather (165.4): no location and no app asks nothing; with a location Dash asks Open-Meteo (answered by the test) and shows `--` for a value not given; the app's telemetry replaces Dash's own fetch; the app offline stops the panel and the forecast tab, and ↻ sends `weather_refresh` |
 | `moon-map.spec.js` (`@live`) | the app running | Dash's MOON MAP: NEW shows a grid with one square a section, a click picks one, MARK turns it green and counts it, CLEAR undoes that, and the empty project is discarded (162). The run itself is `tests\scenarios\moon-map.scn` |
 
 ### Found by it already
-**Dash fetches a weather forecast from `api.open-meteo.com`.** It does this even with no site set, asking for latitude 0, longitude 0. That breaks rule 7, airplane mode. The Phase 151 audit missed it, because it checked Dash's files and not its requests. `offline.spec.js` fails on it until it is fixed: owed as 151.4, gate the fetch on `Offline` and a known site, or take the weather from Leoben.
+**Dash fetched a weather forecast from `api.open-meteo.com`.** It did this even with no site set, asking for latitude 0, longitude 0, which breaks rule 7 (airplane mode). The Phase 151 audit missed it, because it checked Dash's files and not its requests. **Fixed in 165.4 (3.3.36), closing 151.4.** Dash now takes the weather from the app when connected, and otherwise asks only with a location set and the app not offline. `offline.spec.js` passes; `weather.spec.js` covers the rest.
 
 ### Writing a new spec
 1. **Use Dash's own controls by `id`.** Examples: `#rcRecBtn`, `#rcHeaderStatus`, `#rcFPS`.
@@ -132,7 +133,6 @@ GitHub's runner cannot drive the window: the exe stalled in early start-up there
 Phase 156 runs these as test groups, chosen for what is being observed. Its live-sky groups drive the app through Dash, so the same Playwright specs grow into the sky tests. The results mark the checklist, and the night is handed to Claude Code.
 
 ## Owed
-- **151.4:** gate Dash's weather fetch (above).
 - **Dash controls for what has none yet.** These are listed as each phase adds or finds them. Candidates now:
   - the `[RUNS]` sequence;
   - the mutual-event recording;
