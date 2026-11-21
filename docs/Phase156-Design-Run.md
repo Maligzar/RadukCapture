@@ -2,7 +2,20 @@
 
 Written 2026-11-21 at the owner's request, before any of it is built. The rules are done: `core/SkyRun.h` (PR #186) decides pre-flight, which groups apply, the order, and what to do on a result, a lost target, clouds, a stall or the end of the dark window. This document is about the part that **acts**: who carries out each step on the night, and what each group actually does, minute by minute.
 
-Nothing here is built. The open questions at the end need the owner's answers first.
+The owner answered the open questions on 2026-11-21 (below), and A is being built.
+
+## The owner's answers (2026-11-21)
+
+1. **The dark window:** the Sun below **-10°**, as proposed. It is a setting, `SkyDarkSunAltDeg` (default -10).
+2. **Unattended focuser moves:** **yes**, the run may defocus by ±700 steps on its own for item 47, inside the travel guard.
+3. **The exposure ladder's gain:** **yes**, the run sets gain itself to bring the highlight near 70%.
+4. **The star-field group's star:** **from a list the owner gives**, `SkyStars=Vega,Arcturus,...` in his order of preference. With no list, the group is not available tonight, and says so.
+5. **How much of a night:** **the whole dark window** may be used.
+6. **The handoff:** **yes**. Claude Code analyses the bundle and opens a draft PR, and never merges.
+7. **The `collected` status:** **yes**. It is in `SkyRun.h` and the checklist updater, where it leads a pass on the same item, since it asks something of the owner.
+
+The owner did not choose between A and B outright. His answers fit A, the recommendation, so A is what is built: the app runs the night, and Dash starts it and shows it.
+
 
 ## 1. The question: where the run lives
 

@@ -131,10 +131,10 @@ int main() {
     Supervisor s;
     s.Begin(plan, false);
     Check(s.Next(0) == Action::StartNext && s.Current()->group == "planet", "it starts the first pending");
-    Check(s.Result(true, "fine pass +12", {{1, "sharpness p99", 61, 0, false, "%"}}, 600) == Action::StartNext &&
+    Check(s.Result(Status::Passed, "fine pass +12", {{1, "sharpness p99", 61, 0, false, "%"}}, 600) == Action::StartNext &&
           s.Current()->group == "tracking" && s.Current()->target == "Saturn",
           "a pass, then the next: tracking, on the same setting target");
-    Check(s.Result(false, "Autorun did not start", {}, 900) == Action::StartNext, "a failure is recorded and passed over");
+    Check(s.Result(Status::Failed, "Autorun did not start", {}, 900) == Action::StartNext, "a failure is recorded and passed over");
     const std::string third = s.Current()->group;
     Check(s.Clouds("target signal collapsed", 1000) == Action::Hold && s.Holding(), "clouds: hold");
     Check(s.Tick(false, 1100) == Action::Hold, "still held before the recheck");
@@ -164,6 +164,22 @@ int main() {
     dk.Clouds("cloud", 100);
     Check(dk.DarkEnds(400) == Action::Park && !dk.Holding(), "the dark window closes in a hold: park");
     Check(dk.StopReason() == "the dark window closed", "and says so");
+
+    printf("\n5b. Collected, the star list and the dark window (the owner, 2026-11-21)\n");
+    Supervisor co;
+    co.Begin(plan, false);
+    co.Next(0);
+    co.Result(Status::Collected, "4 ladder recordings", {}, 100);
+    Check(co.Plan()[0].status == Status::Collected && std::string(StatusText(Status::Collected)) == "collected",
+          "a group can end collected: the evidence gathered, your eye owed");
+    co.Result(Status::NotReached, "nonsense", {}, 200);
+    Check(co.Plan()[1].status == Status::Failed, "a result that is not passed or collected counts as failed");
+    const auto stars = ParseStarList(" Vega, Arcturus ,,Capella ");
+    Check(stars.size() == 3 && stars[0] == "Vega" && stars[1] == "Arcturus" && stars[2] == "Capella",
+          "the owner's star list, in his order, trimmed");
+    Check(ParseStarList("").empty(), "an empty list is no stars");
+    Check(IsDark(-10.5) && !IsDark(-9.5) && kDefaultDarkSunAltDeg == -10.0, "dark below -10 degrees by default");
+    Check(IsDark(-13, -12) && !IsDark(-11, -12), "and the threshold is a setting");
 
     printf("\n6. results.json\n");
     const std::string j = ResultsJson(s, "20261121", "3.3.38");

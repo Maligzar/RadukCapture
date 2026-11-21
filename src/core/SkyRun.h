@@ -147,6 +147,31 @@ inline bool WithinLimits(const Limits& l, double altDeg, double azDeg, std::stri
     return true;
 }
 
+// rig.ini SkyStars=Vega,Arcturus,Capella  -- the star-field group's
+// stars, from the owner's own list (2026-11-21), in his order of
+// preference. Names are trimmed; empty entries dropped.
+inline std::vector<std::string> ParseStarList(const std::string& text) {
+    std::vector<std::string> out;
+    size_t p = 0;
+    while (p <= text.size()) {
+        size_t c = text.find(',', p);
+        if (c == std::string::npos) c = text.size();
+        std::string n = text.substr(p, c - p);
+        const size_t a = n.find_first_not_of(" \t"), b = n.find_last_not_of(" \t");
+        if (a != std::string::npos) out.push_back(n.substr(a, b - a + 1));
+        p = c + 1;
+    }
+    return out;
+}
+
+// rig.ini SkyDarkSunAltDeg (default -10, the owner, 2026-11-21): the run
+// works while the Sun is below it, waits for it before starting, and
+// parks when the Sun rises past it.
+inline constexpr double kDefaultDarkSunAltDeg = -10.0;
+inline bool IsDark(double sunAltDeg, double thresholdDeg = kDefaultDarkSunAltDeg) {
+    return sunAltDeg < thresholdDeg;
+}
+
 // ── Pre-flight (156.1) ───────────────────────────────────────
 
 struct PreFlightIn {
@@ -261,13 +286,18 @@ inline Applies Applicable(const Group& g, const Target& t, unsigned devices, con
 
 // ── The plan: what runs, in what order ───────────────────────
 
-enum class Status { Pending, Running, Passed, Failed, SkippedHorizon, Clouded, AbortedStall, NotReached, NotAvailable };
+// Collected (the owner, 2026-11-21): the evidence is gathered and a
+// person's judgment is owed. Passed is kept for items with a criterion a
+// machine can check, so an item judged by eye is never marked passed just
+// because its recording happened.
+enum class Status { Pending, Running, Passed, Collected, Failed, SkippedHorizon, Clouded, AbortedStall, NotReached, NotAvailable };
 
 inline const char* StatusText(Status s) {
     switch (s) {
         case Status::Pending:        return "pending";
         case Status::Running:        return "running";
         case Status::Passed:         return "passed";
+        case Status::Collected:      return "collected";
         case Status::Failed:         return "failed";
         case Status::SkippedHorizon: return "skipped-horizon";
         case Status::Clouded:        return "clouded";
@@ -387,11 +417,12 @@ public:
         return Action::Park;
     }
 
-    // The running group's own result.
-    Action Result(bool passed, const std::string& detail, std::vector<Measure> measures, double now) {
+    // The running group's own result: Passed, Collected or Failed.
+    Action Result(Status outcome, const std::string& detail, std::vector<Measure> measures, double now) {
         Entry* e = Running();
         if (!e) return Action::None;
-        e->status = passed ? Status::Passed : Status::Failed;
+        if (outcome != Status::Passed && outcome != Status::Collected) outcome = Status::Failed;
+        e->status = outcome;
         e->detail = detail;
         e->measures = std::move(measures);
         e->endSec = now;

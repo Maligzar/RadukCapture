@@ -27,7 +27,7 @@ import sys
 START = "<!-- sky-run:start -->"
 END = "<!-- sky-run:end -->"
 LABEL = {
-    "passed": "PASSED", "failed": "FAILED", "skipped-horizon": "SKIPPED, outside the horizon limits or slew bounds",
+    "passed": "PASSED", "collected": "COLLECTED, your eye owed", "failed": "FAILED", "skipped-horizon": "SKIPPED, outside the horizon limits or slew bounds",
     "clouded": "CLOUDED", "aborted-stall": "ABORTED, a device stalled", "not-reached": "NOT REACHED",
     "not-available": "NOT AVAILABLE",
 }
@@ -35,7 +35,8 @@ LABEL = {
 # A failure leads; then a pass, since a group that could not run (clouded,
 # not reached, skipped, not available) tested nothing; the line still lists
 # every test, so a skipped half of an item stays in view.
-RANK = ["failed", "aborted-stall", "passed", "clouded", "not-reached", "skipped-horizon", "not-available"]
+# Collected (the owner, 2026-11-21) leads a pass: it asks something of you.
+RANK = ["failed", "aborted-stall", "collected", "passed", "clouded", "not-reached", "skipped-horizon", "not-available"]
 HEADING = re.compile(r"^## (\d+)\.\s")
 NUMBERED = re.compile(r"^(\d+)\.\s+\*\*")
 SKYLINE = re.compile(r"^\s*\*\*Sky run [0-9]{8}: ")
@@ -227,6 +228,12 @@ def self_test():
     out4, _, _ = update(SAMPLE, _res(mixed))
     check("Sky run 20261121: PASSED** (passed: planet on Saturn: ok; skipped: moon: low)" in out4,
           "a pass leads a skip on one item, and both are listed")
+    col = [{"group": "planet", "target": "Saturn", "status": "collected", "detail": "4 ladder recordings", "items": [47], "measures": []},
+           {"group": "tracking", "target": "Saturn", "status": "passed", "detail": "lock held", "items": [47], "measures": []}]
+    out5, _, _ = update(SAMPLE, _res(col))
+    check("**Sky run 20261121: COLLECTED, your eye owed** (collected: planet on Saturn: 4 ladder recordings; passed: tracking" in out5,
+          "collected leads a pass on one item: your eye is owed")
+    check("| 47 | COLLECTED |" in out5, "and reads COLLECTED in the table")
     try:
         update(SAMPLE, _res(tests, emulator=True))
         check(False, "an emulator run is refused")

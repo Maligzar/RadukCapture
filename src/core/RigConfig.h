@@ -476,6 +476,12 @@ struct RigConfig {
     //   SkySlewAz=0..360                      the azimuth range (0..360: no limit,
     //                                         set on purpose; 300..60 wraps north)
     std::string skyHorizon, skySlewAltMax, skySlewAz;
+    // The star-field group's stars, from the owner's list, in his order:
+    //   SkyStars=Vega,Arcturus,Capella
+    // and the dark window: the run works while the Sun is below this.
+    //   SkyDarkSunAltDeg=-10
+    std::string skyStars;
+    double      skyDarkSunAltDeg = -10.0;
 
     // Phase 141.1, the PHEMU event recording. The time server the PC
     // clock is checked against before and after an event (UDP 123), and
@@ -874,6 +880,8 @@ private:
         cfg.skyHorizon    = rs("SkyHorizon", "");
         cfg.skySlewAltMax = rs("SkySlewAltMax", "");
         cfg.skySlewAz     = rs("SkySlewAz", "");
+        cfg.skyStars      = rs("SkyStars", "");
+        cfg.skyDarkSunAltDeg = rf("SkyDarkSunAltDeg", cfg.skyDarkSunAltDeg);
         cfg.timeServer  = rs("TimeServer", cfg.timeServer);
         cfg.offline     = (int)rf("Offline", cfg.offline) != 0 ? 1 : 0;
         if (cfg.timeServer.empty()) cfg.timeServer = "pool.ntp.org";

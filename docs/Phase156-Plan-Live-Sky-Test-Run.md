@@ -141,10 +141,10 @@ This first PR is the part every later one stands on: the decisions, as pure code
   - It refuses an emulator run.
   - Running it twice changes nothing more.
 - **Checks:**
-  - `tests/sky_run.cpp` (59 checks) passes under g++ with ASan and UBSan. It is 156.5's dress rehearsal of every decision. On the way it caught a parser that read `300..60` as `300.` and a dangling JSON reader in the test itself.
+  - `tests/sky_run.cpp` (65 checks) passes under g++ with ASan and UBSan. It is 156.5's dress rehearsal of every decision. On the way it caught a parser that read `300..60` as `300.` and a dangling JSON reader in the test itself.
   - The updater's self-test (CI) passes.
   - A round trip ran: the supervisor's `results.json`, through the updater, onto a copy of the real checklist, twice with no change, with `unverified_report` still reading all 64 items.
-- **Next:** how the run carries out its rules is set out for review in [`Phase156-Design-Run.md`](Phase156-Design-Run.md): the app running it with Dash starting and showing it (recommended) against Playwright running it through Dash, each group's steps, a proposed `collected` status for items only an eye can judge, and seven open questions. Nothing further is built until the owner answers.
+- **Next:** how the run carries out its rules is set out for review in [`Phase156-Design-Run.md`](Phase156-Design-Run.md): the app running it with Dash starting and showing it (recommended) against Playwright running it through Dash, each group's steps, a proposed `collected` status for items only an eye can judge, and seven open questions. The owner answered on 2026-11-21: the app runs the night (design A), `collected` is adopted, and the star-field group uses his own `SkyStars` list; `SkyDarkSunAltDeg` defaults to -10. These are in `SkyRun.h` (65 checks) and the updater.
 
 ## Rules
 - **Rule 7, airplane mode.** The run itself needs no internet. Leoben is on the LAN. If there is no connection, the handoff commits locally and pushes when one returns.
