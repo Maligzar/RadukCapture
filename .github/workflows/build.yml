@@ -91,6 +91,10 @@ jobs:
       - name: Validation report self-test
         run: python tools/validation_report.py --self-test
 
+      # Phase 156.3b: the sky run's checklist marker, and its refusals.
+      - name: Sky checklist update self-test
+        run: python tools/sky_checklist_update.py --self-test
+
       - name: Emulator build
         run: |
           cmake -S . -B build_emu -DRADUK_EMULATOR=ON

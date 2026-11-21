@@ -469,6 +469,14 @@ struct RigConfig {
     //   WeatherSource=internal
     std::string weatherSource;
 
+    // Phase 156.1: the unattended sky run's hard limits. It refuses to start
+    // until all three are set (core/SkyRun.h), and never widens them.
+    //   SkyHorizon=0:15,90:25,180:20,270:15   azimuth:lowest altitude, interpolated
+    //   SkySlewAltMax=85                      the highest altitude it may slew to
+    //   SkySlewAz=0..360                      the azimuth range (0..360: no limit,
+    //                                         set on purpose; 300..60 wraps north)
+    std::string skyHorizon, skySlewAltMax, skySlewAz;
+
     // Phase 141.1, the PHEMU event recording. The time server the PC
     // clock is checked against before and after an event (UDP 123), and
     // the name IMCCE's observation sheet gives this site and telescope:
@@ -863,6 +871,9 @@ private:
         cfg.leobenUrl   = rs("LeobenUrl", "");
         cfg.leobenToken = rs("LeobenToken", "");
         cfg.weatherSource = rs("WeatherSource", "");
+        cfg.skyHorizon    = rs("SkyHorizon", "");
+        cfg.skySlewAltMax = rs("SkySlewAltMax", "");
+        cfg.skySlewAz     = rs("SkySlewAz", "");
         cfg.timeServer  = rs("TimeServer", cfg.timeServer);
         cfg.offline     = (int)rf("Offline", cfg.offline) != 0 ? 1 : 0;
         if (cfg.timeServer.empty()) cfg.timeServer = "pool.ntp.org";

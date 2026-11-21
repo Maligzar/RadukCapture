@@ -113,6 +113,39 @@ A sky test should not take over a night, and only real-sky results count. So the
   The flags for a headless run are confirmed against the installed Claude Code's `--help` when this is built. Its print mode, `-p`, is recalled, not verified here.
 - **156.5 The dress rehearsal, in CI.** The same sky scenarios run against the emulator (`--sky --emulate`): the skips, the cloud hold, the stall stop and the park are tested on every push, not first under the sky. This needs 153.0's headless harness.
 
+## 156.1, 156.2, 156.3 and 156.3b, the rules as built (2026-11-21, 3.3.38)
+
+This first PR is the part every later one stands on: the decisions, as pure code, tested on CI. Driving the groups through Dash (the next PR) only carries them out.
+
+- **`src/core/SkyRun.h`** (pure):
+  - **Limits.** The app had no horizon limit or slew bound, only Autorun's 20° minimum altitude, so this defines them:
+    - `SkyHorizon`: an azimuth:altitude profile, interpolated through north;
+    - `SkySlewAltMax`: the highest altitude a slew may reach;
+    - `SkySlewAz`: an azimuth range; a range like `300..60` wraps north, and `0..360` means no limit, set on purpose.
+
+    None has a default, so an unset one refuses the run, as the owner's terms require.
+  - **Pre-flight (156.1).** The run does not start, and lists every reason, unless all of these hold: the site and both limits are set, the mount is connected and aligned, the camera answers, and the disk has room for the planned recordings.
+  - **Groups.** The plan's five groups, each tagged with what it needs and its checklist items. `Applicable()` says why a group cannot run. A target that fits but lies outside the limits, or sets before the group could finish, is a horizon skip. A missing device, or a target of the wrong kind, makes the group not available.
+  - **The plan.** Groups that can run come first, the soonest-setting target first. The rest are kept in the plan with their reasons.
+  - **The supervisor (156.2).** It turns the night's events into actions:
+    - a result: record it, start the next;
+    - a lost target: that test fails, the next starts;
+    - clouds: hold, re-check every 5 minutes, and retry the clouded test once the sky clears;
+    - a stalled device: stop and park, and mark the rest not reached;
+    - the dark window closing: park, and mark the rest not reached;
+    - the end of the list: park.
+  - **`results.json` (156.3).** It carries every entry with its status, detail, items and measures. An emulator run is marked as such.
+- **`tools/sky_checklist_update.py` (156.3b)** writes one status line under each item the night touched, replacing that item's previous line, and a "Last sky run" table between markers.
+  - When several tests touched one item, a failure leads. Otherwise a pass leads, since a group that could not run tested nothing. Every test is still listed, so a skipped half of an item stays in view.
+  - A clouded attempt that was retried is replaced by its retry.
+  - It refuses an emulator run.
+  - Running it twice changes nothing more.
+- **Checks:**
+  - `tests/sky_run.cpp` (59 checks) passes under g++ with ASan and UBSan. It is 156.5's dress rehearsal of every decision. On the way it caught a parser that read `300..60` as `300.` and a dangling JSON reader in the test itself.
+  - The updater's self-test (CI) passes.
+  - A round trip ran: the supervisor's `results.json`, through the updater, onto a copy of the real checklist, twice with no change, with `unverified_report` still reading all 64 items.
+- **Next PR:** the groups driven through Dash with Playwright (the owner, 2026-11-15), the `TESTS` control, pre-flight from the live rig, the bundle in `field-results/<night>/`, and 156.4's handoff.
+
 ## Rules
 - **Rule 7, airplane mode.** The run itself needs no internet. Leoben is on the LAN. If there is no connection, the handoff commits locally and pushes when one returns.
 - **Phase 149's rules.** Nothing in the sky tests names a camera model, resolution or plate scale. The expected values come from the rig and the register.
