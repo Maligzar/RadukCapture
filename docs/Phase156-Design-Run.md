@@ -20,6 +20,8 @@ The owner answered the open questions on 2026-11-21 (below), and A is being buil
 
 **Built in 156.2b (3.3.40):** the planet group. Three things settled while building it: each checklist item now carries its own status (one status for the group would have marked the ladder passed whenever throughput passed); the ladder's gain is found by bisection over the camera's own range, since gain units differ by make; and item 13's rate is judged against the camera's own median frame rate, because no profile states an expected rate. A failed sweep sends the focuser back before anything is recorded.
 
+**Corrected 2026-11-21, by the owner's rule:** Dash is a secondary option, for an iPhone or iPad and for automated testing, never in place of the app. Wherever this document says "Dash starts it and shows it", read: **the app starts it and shows it, and Dash mirrors that.** 156.2a built SKY RUN's controls only in Dash. 156.2c adds them to the app, before 156.4 ([Phase 166](Phase166-Plan-App-First.md)).
+
 The owner did not choose between A and B outright. His answers fit A, the recommendation, so A is what is built: the app runs the night, and Dash starts it and shows it.
 
 
