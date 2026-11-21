@@ -224,6 +224,58 @@ def backlash(runs):
     return out + [""], rec
 
 
+def unimodal(scores):
+    """The fine curve rises and falls once: one interior local maximum, and
+    it is the highest point."""
+    if len(scores) < 3:
+        return False
+    peaks = [i for i in range(1, len(scores) - 1) if scores[i] > scores[i - 1] and scores[i] > scores[i + 1]]
+    best = max(range(len(scores)), key=lambda i: scores[i])
+    return len(peaks) == 1 and peaks[0] == best
+
+
+def fine_pass(runs):
+    out = ["## The fine pass (items 47 and 58)", ""]
+    rows = [(r["night"], f) for r in runs for f in r.get("focus", []) if f.get("fine_passes", 0) > 0]
+    if not rows:
+        return out + ["No fine passes recorded (files from before 3.3.37 do not carry them).", ""], {}
+    used = [f for _, f in rows if f.get("fine_used")]
+    offs = [f["fine_peak"] - f["coarse_peak"] for f in used if f.get("coarse_peak", -1) >= 0 and f.get("fine_peak", -1) >= 0]
+    fades = [f for _, f in rows if f.get("fade_action")]
+    curves = [f for _, f in rows if len(f.get("fine_score", [])) >= 3]
+    uni = [f for f in curves if unimodal(f["fine_score"])]
+    spreads = [x for f in curves for x in f.get("fine_spread", []) if x is not None and x >= 0]
+    out.append(f"{len(rows)} sweeps ran a fine pass; its result was used in {len(used)}.")
+    res = {"used": len(used), "runs": len(rows)}
+    if offs:
+        med, lo, hi = median_ci(offs)
+        out.append(f"Fine minus coarse: median {med:+.0f} steps (95% CI {lo:+.0f} to {hi:+.0f}), "
+                   f"range {min(offs):+d} to {max(offs):+d}.")
+        res["offset"] = med
+    if fades:
+        acts = {a: sum(1 for f in fades if f["fade_action"] == a) for a in ("steady", "corrected", "gave up")}
+        ratios = [f["fade_ratio"] for f in fades if f.get("fade_ratio")]
+        out.append(f"Fade check: {acts['steady']} steady, {acts['corrected']} corrected, {acts['gave up']} gave up"
+                   + (f"; ratio median x{statistics.median(ratios):.2f}, range x{min(ratios):.2f}-x{max(ratios):.2f}" if ratios else "")
+                   + ". On a clear, steady night a ratio far from 1 means the target moved in the frame, not a fade.")
+        res["fades"] = acts
+    if curves:
+        out.append(f"The last fine curve rose and fell once in {len(uni)} of {len(curves)} sweeps.")
+        res["unimodal"] = (len(uni), len(curves))
+    if spreads:
+        noise = statistics.median(spreads)
+        contrast = [(max(f["fine_score"]) - min(f["fine_score"])) / statistics.median(f["fine_score"])
+                    for f in curves if statistics.median(f["fine_score"]) > 0]
+        line = f"Edge metric noise floor: a point's frames spread by {noise * 100:.1f}% of their median (median over {len(spreads)} points)"
+        if contrast:
+            c = statistics.median(contrast)
+            line += f"; a fine curve's own contrast is {c * 100:.0f}%, {c / noise:.1f}x the noise" if noise > 0 else ""
+            res["snr"] = c / noise if noise > 0 else None
+        out.append(line + ".")
+        res["noise"] = noise
+    return out + [""], res
+
+
 def exposure(runs, lo_dn=150, hi_dn=230, max_clip=0.1):
     out = ["## Exposure and the band (item 55)", "",
            f"Per target, the exposures that kept the target's highlight in {lo_dn}-{hi_dn} DN with under "
@@ -259,7 +311,7 @@ def report(runs):
     nights = sorted({r["night"] for r in runs})
     lines = ["# Validation report", "",
              f"{len(runs)} file(s), {len(nights)} night(s): {', '.join(nights) or 'none'}.", ""]
-    for section in (plate_scale, sharpness, seeing_bar, backlash, exposure):
+    for section in (plate_scale, sharpness, seeing_bar, backlash, fine_pass, exposure):
         part, _ = section(runs)
         lines += part
     lines.append("A recommendation is evidence for the owner to act on; nothing here changes a setting.")
@@ -327,6 +379,23 @@ def self_test():
                       "band_floor_ms": 4, "band_ceil_ms": 9}}
     _, res = exposure([_run("20261120", targets=ex)])
     check(res.get("Jupiter") == (2, 3), "exposure: two of three samples in range")
+
+    # The fine pass: offsets, fades, curve shape, noise.
+    fp = lambda coarse, fine, scores, spread, act="steady", ratio=1.02: {
+        "success": True, "fine_passes": 1, "fine_used": fine >= 0, "coarse_peak": coarse, "fine_peak": fine,
+        "fade_action": act, "fade_ratio": ratio, "fine_score": scores, "fine_spread": spread, "best": fine}
+    up_down = [0.2, 0.3, 0.45, 0.5, 0.44, 0.31, 0.2]
+    zigzag = [0.2, 0.4, 0.3, 0.5, 0.35, 0.45, 0.2]
+    _, res = fine_pass([_run("20261120", focus=[fp(1000, 1030, up_down, [0.02] * 7),
+                                                fp(1000, 1040, zigzag, [0.03] * 7, "corrected", 0.85),
+                                                fp(1000, -1, up_down, [0.02] * 7)])])
+    check(res["runs"] == 3 and res["used"] == 2, "fine pass: runs and uses counted")
+    check(abs(res["offset"] - 35) <= 5, "fine pass: the offset from the coarse peak")
+    check(res["fades"] == {"steady": 2, "corrected": 1, "gave up": 0}, "fine pass: the fade checks counted")
+    check(res["unimodal"] == (2, 3), "fine pass: a zigzag curve is not counted as rising and falling once")
+    check(abs(res["noise"] - 0.02) < 1e-9 and res["snr"] > 10, "fine pass: the noise floor and the curve's contrast over it")
+    out, res = fine_pass([_run("20261120", focus=[{"success": True, "best": 1}])])
+    check(res == {} and "before 3.3.37" in out[2], "fine pass: old files say they carry none")
 
     text = report([_run("20261120")])
     check(text.startswith("# Validation report") and "nothing here changes a setting" in text, "the report runs on an empty night")

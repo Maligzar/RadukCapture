@@ -4936,9 +4936,23 @@ static int RunApp(bool useEmulator) {
             fr.best = result.bestPosition;
             fr.bestSharp = result.bestSharpness;
             fr.improvement = result.improvement;
-            fr.backlashMeasured = autofocus.MeasuredBacklash();
+            // 155.4b: this sweep's own figures. MeasuredBacklash() keeps the
+            // last sweep that measured one, so a sweep that did not would
+            // have repeated it; the diagnostics are cleared every sweep.
+            const raduk::core::AFDiagnostics& d = autofocus.Diagnostics();
+            fr.backlashMeasured = d.backlashThisSweep;
             fr.backlashInUse = autofocus.BacklashInUse();
             fr.message = result.message;
+            fr.coarsePeak = d.coarsePeak;
+            fr.finePeak = d.finePeak;
+            fr.fineUsed = d.fineUsed;
+            fr.finePasses = d.finePasses;
+            fr.fadesCorrected = d.fadesCorrected;
+            fr.fadeRatio = d.fadeRatio;
+            fr.fadeAction = d.fadeAction;
+            fr.finePos = d.finePos;
+            fr.fineScore.assign(d.fineScore.begin(), d.fineScore.end());
+            fr.fineSpread.assign(d.fineSpread.begin(), d.fineSpread.end());
             std::lock_guard<std::mutex> lk(valMu);
             valLog.AddFocus(fr);
         }

@@ -21,9 +21,11 @@
 //                  percentage of the night's best, item 37) would have
 //                  fallen
 //    focus         every autofocus result: where it started and ended, the
-//                  gain, the backlash it measured against the one in use
-//                  (items 47 and 58); the fine pass's own figures follow
-//                  in 155.4b
+//                  gain, the backlash it measured on that sweep against the
+//                  one in use (items 47 and 58), and (155.4b) the fine
+//                  pass's own figures: the coarse and fine peaks, the fade
+//                  check, the last fine curve and each point's frame spread
+//                  (the edge metric's noise floor)
 //    exposure      the target's highlight and clipped share against the
 //                  exposure, beside the profile's band (item 55)
 //
@@ -86,8 +88,17 @@ struct FocusRun {
     bool    success = false, fineOnly = false;
     int     start = 0, best = 0;
     double  bestSharp = 0, improvement = 0;
-    int     backlashMeasured = 0, backlashInUse = 0;
+    int     backlashMeasured = 0, backlashInUse = 0;   // measured: on THIS sweep, -1 none
     std::string message;
+    // 155.4b: the fine pass's own figures (AutofocusRoutine's AFDiagnostics).
+    int     coarsePeak = -1, finePeak = -1;
+    bool    fineUsed = false;
+    int     finePasses = 0, fadesCorrected = 0;
+    double  fadeRatio = 0;
+    std::string fadeAction;
+    std::vector<int>    finePos;     // the last fine pass, in the order travelled
+    std::vector<double> fineScore;
+    std::vector<double> fineSpread;  // each point's frame spread / its median
 };
 
 struct SeeingSample   { int64_t ms; double v; };
@@ -203,7 +214,17 @@ public:
                  ",\"best_sharp\":" + Num(r.bestSharp, 4) + ",\"improvement\":" + Num(r.improvement, 4) +
                  ",\"backlash_measured\":" + std::to_string(r.backlashMeasured) +
                  ",\"backlash_in_use\":" + std::to_string(r.backlashInUse) +
-                 ",\"message\":" + Str(r.message) + "}";
+                 ",\"message\":" + Str(r.message) +
+                 ",\"coarse_peak\":" + std::to_string(r.coarsePeak) +
+                 ",\"fine_peak\":" + std::to_string(r.finePeak) +
+                 ",\"fine_used\":" + (r.fineUsed ? "true" : "false") +
+                 ",\"fine_passes\":" + std::to_string(r.finePasses) +
+                 ",\"fades_corrected\":" + std::to_string(r.fadesCorrected) +
+                 ",\"fade_ratio\":" + Num(r.fadeRatio, 3) +
+                 ",\"fade_action\":" + Str(r.fadeAction) +
+                 ",\"fine_pos\":" + IntArr(r.finePos) +
+                 ",\"fine_score\":" + NumArr(r.fineScore, 4) +
+                 ",\"fine_spread\":" + NumArr(r.fineSpread, 4) + "}";
         }
         j += "],\n\"targets\":{";
         bool firstT = true;
@@ -246,6 +267,16 @@ private:
         char b[48];
         std::snprintf(b, sizeof(b), "%.*f", prec, v);
         return b;
+    }
+    static std::string IntArr(const std::vector<int>& v) {
+        std::string o = "[";
+        for (size_t i = 0; i < v.size(); i++) o += (i ? "," : "") + std::to_string(v[i]);
+        return o + "]";
+    }
+    static std::string NumArr(const std::vector<double>& v, int prec) {
+        std::string o = "[";
+        for (size_t i = 0; i < v.size(); i++) o += (i ? "," : "") + Num(v[i], prec);
+        return o + "]";
     }
     static std::string Str(const std::string& s) {
         std::string o = "\"";

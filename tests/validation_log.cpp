@@ -82,6 +82,11 @@ int main() {
     fr.unixSec = 1795300200; fr.target = "Jupiter"; fr.success = true; fr.start = 167000; fr.best = 168010;
     fr.bestSharp = 0.71; fr.improvement = 0.3; fr.backlashMeasured = 152; fr.backlashInUse = 200;
     fr.message = "Complete: \"peak\" at 168010";
+    fr.coarsePeak = 167980; fr.finePeak = 168010; fr.fineUsed = true; fr.finePasses = 1;
+    fr.fadesCorrected = 0; fr.fadeRatio = 1.03; fr.fadeAction = "steady";
+    fr.finePos = {167900, 167950, 168000, 168050, 168100};
+    fr.fineScore = {0.21, 0.33, 0.41, 0.34, 0.22};
+    fr.fineSpread = {0.03, 0.02, 0.025, 0.02, 0.03};
     r.AddFocus(fr);
     Check(r.Focus().size() == 1, "an autofocus run kept");
 
@@ -98,6 +103,12 @@ int main() {
     const JVal* focus = root.Get("focus");
     Check(focus && focus->a.size() == 1 && focus->a[0].Get("backlash_measured")->n == 152 &&
           focus->a[0].Get("message")->s == "Complete: \"peak\" at 168010", "the run, its message escaped and back");
+    const JVal* f0 = focus && !focus->a.empty() ? &focus->a[0] : nullptr;
+    Check(f0 && f0->Get("coarse_peak")->n == 167980 && f0->Get("fine_peak")->n == 168010 &&
+          f0->Get("fine_used")->b && f0->Get("fade_action")->s == "steady" && f0->Get("fade_ratio")->n == 1.03,
+          "155.4b: the fine pass's peaks and fade check");
+    Check(f0 && f0->Get("fine_pos")->a.size() == 5 && f0->Get("fine_score")->a[2].n == 0.41 &&
+          f0->Get("fine_spread")->a.size() == 5, "155.4b: the fine curve and its spreads");
     const JVal* tj = root.Get("targets") ? root.Get("targets")->Get("Jupiter") : nullptr;
     Check(tj && tj->Get("sharpness")->Get("5.00|300")->a.size() == (size_t)kSharpBins, "the histogram, all 101 bins");
     Check(tj && tj->Get("seeing")->a.size() == 12 && tj->Get("seeing")->a[0].a[0].n == 0.0,
