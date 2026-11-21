@@ -37,7 +37,7 @@ static void Check(bool ok, const std::string& what, const std::string& detail = 
 struct Rig {
     double now = 0;
     // the night
-    bool   siteSet = true, horizonSet = true, slewSet = true, aligned = true;
+    bool   siteSet = true, horizonSet = true, slewSet = true, aligned = true, parkSet = true;
     double sunAlt = -15;            // degrees; a scenario can make it rise
     double sunriseAt = 1e9;         // the Sun crosses -10 at this time
     int    sensorW = 3840, sensorH = 2160;
@@ -73,6 +73,7 @@ struct Rig {
             std::string w;
             if (horizonSet) sr::ParseHorizon("0:15", p.limits.horizon, w);
             if (slewSet) sr::ParseSlewBounds("85", "0..360", p.limits, w);
+            if (parkSet) sr::ParsePark("0:5", p.park, w);
             p.mountConnected = true; p.mountAligned = aligned; p.cameraOk = true;
             p.freeGB = 200; p.plannedGB = 10;
         };
@@ -157,10 +158,10 @@ int main() {
 
     printf("\n1. Pre-flight on the rig\n");
     {
-        Rig r; r.horizonSet = false; r.aligned = false;
+        Rig r; r.horizonSet = false; r.aligned = false; r.parkSet = false;
         SkyRunController c;
         Check(!Start(c, r) && c.phase() == SkyRunController::Phase::Refused, "refused");
-        Check(c.Refusals().size() == 2, "with every reason", std::to_string(c.Refusals().size()));
+        Check(c.Refusals().size() == 3, "with every reason: horizon, park, alignment", std::to_string(c.Refusals().size()));
         c.Tick(1);
         Check(r.boxes.empty() && !r.parkCalled && r.slewEnds < 0, "and nothing moved");
     }

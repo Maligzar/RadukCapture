@@ -172,11 +172,44 @@ inline bool IsDark(double sunAltDeg, double thresholdDeg = kDefaultDarkSunAltDeg
     return sunAltDeg < thresholdDeg;
 }
 
+// rig.ini SkyParkAltAz=az:alt (the owner, 2026-11-21): where the run parks
+// the tube, at the end, on a stall, at dawn or on STOP. The app converts it
+// to RA/Dec for the moment, GoTos it with the ordinary slew and turns
+// tracking off (the app had no park before 156.2a). No default.
+struct ParkPosition { bool set = false; double azDeg = 0, altDeg = 0; };
+
+inline bool ParsePark(const std::string& text, ParkPosition& p, std::string& why) {
+    p = ParkPosition{};
+    why.clear();
+    double az = 0, alt = 0;
+    char extra = 0;
+    if (text.find_first_not_of(" \t") == std::string::npos) { why = "SkyParkAltAz is not set"; return false; }
+    if (std::sscanf(text.c_str(), " %lf : %lf %c", &az, &alt, &extra) != 2) {
+        why = "SkyParkAltAz \"" + text + "\" is not az:alt"; return false;
+    }
+    if (az < 0 || az >= 360 || alt < 0 || alt > 90) {
+        why = "SkyParkAltAz \"" + text + "\" is outside az 0-360, alt 0-90"; return false;
+    }
+    p.set = true; p.azDeg = az; p.altDeg = alt;
+    return true;
+}
+
+// The park slew keeps to the slew bounds (the altitude ceiling, the
+// azimuth range for the cables), but not to the horizon limits: those are
+// for imaging over the trees, and a low park is deliberate.
+inline bool ParkWithinBounds(const ParkPosition& p, const Limits& l, std::string* why = nullptr) {
+    if (!p.set) { if (why) *why = "no park position"; return false; }
+    Limits noHorizon = l;
+    noHorizon.horizon = {{0.0, 0.0}};
+    return WithinLimits(noHorizon, p.altDeg, p.azDeg, why);
+}
+
 // ── Pre-flight (156.1) ───────────────────────────────────────
 
 struct PreFlightIn {
     bool   siteSet = false;
     Limits limits;
+    ParkPosition park;
     bool   mountConnected = false, mountAligned = false;
     bool   cameraOk = false, focuserOk = false, solverOk = false;
     double freeGB = 0, plannedGB = 0;
@@ -190,6 +223,11 @@ inline std::vector<std::string> PreFlight(const PreFlightIn& in) {
     if (!in.siteSet) no.push_back("the site is not set in rig.ini");
     if (in.limits.horizon.empty()) no.push_back("the horizon limits are not set (rig.ini SkyHorizon)");
     if (!in.limits.slewSet) no.push_back("the slew bounds are not set (rig.ini SkySlewAltMax and SkySlewAz)");
+    if (!in.park.set) no.push_back("the park position is not set (rig.ini SkyParkAltAz)");
+    else if (in.limits.slewSet) {
+        std::string why;
+        if (!ParkWithinBounds(in.park, in.limits, &why)) no.push_back("the park position is outside the slew bounds: it is " + why);
+    }
     if (!in.mountConnected) no.push_back("the mount is not connected");
     else if (!in.mountAligned) no.push_back("the mount is not aligned");
     if (!in.cameraOk) no.push_back("the camera does not answer");
