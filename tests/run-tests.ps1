@@ -72,6 +72,7 @@ $Tests = @(
     @{ Name = "site_weather";      Sources = @() }
     @{ Name = "validation_log";    Sources = @() }
     @{ Name = "sky_run";           Sources = @() }
+    @{ Name = "sky_run_controller"; Sources = @() }
     @{ Name = "mutual_events";     Sources = @() }
     @{ Name = "sntp_offset";       Sources = @() }
     @{ Name = "phemu_sheet";       Sources = @() }

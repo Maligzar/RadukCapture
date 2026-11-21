@@ -479,6 +479,17 @@ public:
         return Action::Park;
     }
 
+    // STOP, from Dash or the app (156.2a): the running test and the rest
+    // are not reached, the reason is the owner's, and the run parks.
+    Action Stopped(const std::string& reason, double now) {
+        Entry* e = Running();
+        if (e) { e->status = Status::NotReached; e->detail = "stopped: " + reason; e->endSec = now; }
+        m_holding = false;
+        m_stopReason = reason;
+        MarkRestNotReached();
+        return Action::Park;
+    }
+
     // The dark window closed: whatever is left is not reached; park.
     Action DarkEnds(double now) {
         Entry* e = Running();
