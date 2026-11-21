@@ -67,6 +67,8 @@ The readout's telemetry block runs **only while a Dash client is connected**. An
 
 **166.4 (size S):** read the telemetry block for anything else the app itself needs, and move it out. Add a scenario that drives the app with no Dash connected and checks that the app's own readouts change.
 
+**166.4's audit, done 2026-11-21:** everything else in the block only formats data for Dash (the disk, the weather fields, the mount, the night plan and Moon map rows, the tracker). `pendingEvents`, which the block clears, is never filled, so nothing grows while Dash is away. Still owed: the scenario with no Dash connected.
+
 ## Order
 166.0 first: it's small, and it stops new debt. Then 156.2c before 156.4, then 166.1 and 166.2, then 166.3. All of it belongs to release 3.4, whose acceptance includes an unattended sky run, which should be started from the app.
 
