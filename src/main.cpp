@@ -9387,6 +9387,26 @@ static int RunApp(bool useEmulator) {
                 skyRec.active = skyRun.phase() == raduk::app::SkyRunController::Phase::Running ||
                                 skyRun.phase() == raduk::app::SkyRunController::Phase::Holding;
                 skyRun.Tick(core.Clock().Now());
+                // Phase 156.2c: the app's own SKY RUN window. Here, not in the
+                // telemetry block, which runs only while Dash is connected.
+                skyRunWindow.Update(raduk::app::BuildSkyRunView(skyRun));
+                // Phase 166.2: the same state on the mount window's PARK, and
+                // a failure said once, with its reason (Dash used to be the
+                // only place that showed either).
+                {
+                    using PS = raduk::app::ParkController::State;
+                    static PS lastPark = PS::Idle;
+                    const PS ps = park.state();
+                    const wchar_t* label = ps == PS::Slewing ? L"PARKING..." : ps == PS::Parked ? L"PARKED"
+                                         : ps == PS::Failed ? L"PARK FAILED"
+                                         : (!RigConfig::Get().skyParkAltAz.empty() ? L"PARK" : L"PARK (unset)");
+                    mountCtrl.SetParkLabel(label);
+                    if (ps == PS::Failed && lastPark != PS::Failed)
+                        notifBar.NotifyWarn(L"Park failed: " + raduk::core::ToWide(park.reason()));
+                    if (ps == PS::Parked && lastPark != PS::Parked)
+                        notifBar.NotifyInfo(L"Parked: tracking off");
+                    lastPark = ps;
+                }
                 if (park.parked() && mount && mount->IsConnected()) {
                     double pAlt = 0, pAz = 0;
                     if (mount->GetAltAz(pAlt, pAz)) park.WatchPosition(pAlt, pAz);
@@ -10078,7 +10098,6 @@ static int RunApp(bool useEmulator) {
                     telemetry.skyrun_refusals = ref;
                     telemetry.skyrun_rows     = skyRun.PlanRows();
                     telemetry.skyrun_reason   = skyRun.Supervisor().StopReason();
-                    skyRunWindow.Update(raduk::app::BuildSkyRunView(skyRun));   // phase 156.2c
                 }
 
                 if (mount && mount->IsConnected()) {

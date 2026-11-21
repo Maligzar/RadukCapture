@@ -1697,8 +1697,9 @@ paths pass fault injection, and one unattended sky run completes.
    2026-11-21): the rule enforced on CI (every remote command has a native
    control), then **SKY RUN in the app**, ahead of 156.4, so the first real
    sky run is started from the app. Then 166.1 (the weather view and ↻ in
-   the app), 166.2 (park state in the mount window), 166.3 (Dash computes
-   nothing of its own). Plan in [`Phase166-Plan-App-First.md`](Phase166-Plan-App-First.md).
+   the app), 166.2 (park state in the mount window; written 3.3.41),
+   166.3 (Dash computes nothing of its own), 166.4 (nothing the app needs
+   is computed only while Dash is connected). Plan in [`Phase166-Plan-App-First.md`](Phase166-Plan-App-First.md).
    The remaining 156 groups (the star field, then Jupiter and the Moon) are
    renumbered 156.2d and 156.2e.
 

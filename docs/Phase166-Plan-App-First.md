@@ -1,6 +1,6 @@
 # Phase 166: the app first, Dash second
 
-Written 2026-11-21 at the owner's direction. Status: `PARTIAL`: 166.0 and 156.2c `WRITTEN` (3.3.41).
+Written 2026-11-21 at the owner's direction. Status: `PARTIAL`: 166.0, 156.2c and 166.2 `WRITTEN` (3.3.41).
 
 ## The owner's rule (2026-11-21)
 
@@ -52,7 +52,7 @@ Dash's card stays, mirroring the window. It's numbered in 156 because it finishe
 - **↻ in the app.** Dash's refresh becomes the mirror.
 - The scenario runner presses ↻; Dash's `weather.spec.js` is unchanged.
 
-### 166.2: park state in the app (size S)
+### 166.2: park state in the app (size S) — `WRITTEN` 2026-11-21 (3.3.41)
 - The mount window shows PARKING, PARKED (tracking off) or PARK FAILED with the reason, beside the PARK button, from `ParkController`.
 - A disabled PARK button says why, the same as Dash: no `SkyParkAltAz`.
 - A scenario for each state.
@@ -61,6 +61,11 @@ Dash's card stays, mirroring the window. It's numbered in 156 because it finishe
 - Remove the placeholder NASA and FAA panels, or replace them with what the app knows, if it knows anything.
 - The wind score comes from the app's verdict (`SiteWeather`), not from deductions written for one telescope.
 - A Dash spec checks that, with no app connected, the page shows no sky or rig figure it made up.
+
+### A second kind of debt, found while building 166.2
+The readout's telemetry block runs **only while a Dash client is connected**. Anything the app computes there, it computes for Dash alone. 156.2c's first wiring put the SKY RUN window's refresh there, so the app's own window would have frozen without Dash. It was moved to the readout tick before any of it shipped. 166.0's check reads commands, so it cannot see this.
+
+**166.4 (size S):** read the telemetry block for anything else the app itself needs, and move it out. Add a scenario that drives the app with no Dash connected and checks that the app's own readouts change.
 
 ## Order
 166.0 first: it's small, and it stops new debt. Then 156.2c before 156.4, then 166.1 and 166.2, then 166.3. All of it belongs to release 3.4, whose acceptance includes an unattended sky run, which should be started from the app.
@@ -72,7 +77,7 @@ Dash's card stays, mirroring the window. It's numbered in 156 because it finishe
 | skyrun_start | SKY RUN window START (Shift+R) | done (156.2c) |
 | skyrun_stop | SKY RUN window STOP (Shift+R) | done (156.2c) |
 | weather_refresh | owed | 166.1 |
-| park | mount window PARK | done (state owed, 166.2) |
+| park | mount window PARK, with its state on the button | done (166.2) |
 | autofocus | AUTO FOCUS | done |
 | autofocus_abort | AUTO FOCUS (second press) | done |
 | calibrate_focus | CALIBRATE FOCUS | done |
