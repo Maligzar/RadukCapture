@@ -1261,6 +1261,12 @@ body { background:var(--d-void); color:var(--d-text); font-family:'Barlow Conden
           <button class="rc-ctrl-btn cyan" style="flex:none;width:32px;height:28px;padding:0" onclick="rcSendCmd('jog','S')">S</button>
           <div></div>
         </div>
+        <!-- Phase 156.2a: park, a slew to rig.ini SkyParkAltAz, then tracking off.
+             Two taps, because a phone in a pocket should not move the scope. -->
+        <div id="rcParkRow" style="display:none;text-align:center;margin-top:4px">
+          <button class="rc-ctrl-btn amber" id="rcParkBtn" style="flex:none;width:120px;height:26px" onclick="rcParkPress()" title="Slew to the park position (rig.ini SkyParkAltAz), then tracking off">PARK</button>
+          <div id="rcParkState" style="font-size:10px;margin-top:3px;color:var(--d-text-dim)"></div>
+        </div>
       </div>
     </div>
 
@@ -1838,6 +1844,43 @@ function rcTakeWeather(d){
     try { fetchWeather(); } catch(e) {}
   }
 }
+// Phase 156.2a: park. The first tap arms for 4 s, the second sends.
+let rcParkArmedUntil = 0;
+function rcParkPress(){
+  const btn = document.getElementById('rcParkBtn');
+  if (!btn || btn.disabled) return;
+  const now = Date.now();
+  if (now < rcParkArmedUntil) {
+    rcParkArmedUntil = 0;
+    btn.textContent = 'PARK';
+    rcSendCmd('park', '');
+    return;
+  }
+  rcParkArmedUntil = now + 4000;
+  btn.textContent = 'TAP AGAIN TO PARK';
+  setTimeout(() => {
+    if (Date.now() >= rcParkArmedUntil && btn.textContent !== 'PARK') { rcParkArmedUntil = 0; btn.textContent = 'PARK'; }
+  }, 4100);
+}
+function rcRenderPark(data){
+  const row = document.getElementById('rcParkRow');
+  if (!row) return;
+  // An app from before park says nothing about it: no control, rather than one that does nothing.
+  if (typeof data.park_state !== 'string') { row.style.display = 'none'; return; }
+  row.style.display = '';
+  const btn = document.getElementById('rcParkBtn');
+  const st  = document.getElementById('rcParkState');
+  const set = data.park_set === true;
+  btn.disabled = !set || data.park_state === 'slewing';
+  let text = '', col = 'var(--d-text-dim)';
+  if (!set)                                { text = 'No park position: set SkyParkAltAz=az:alt in rig.ini'; col = 'var(--d-amber)'; }
+  else if (data.park_state === 'slewing')  { text = 'Parking: slewing to the park position'; col = 'var(--d-accent)'; }
+  else if (data.park_state === 'parked')   { text = 'PARKED, tracking off'; col = 'var(--d-green)'; }
+  else if (data.park_state === 'failed')   { text = 'Park failed: ' + (data.park_reason || 'no reason given'); col = 'var(--d-red)'; }
+  st.textContent = text;
+  st.style.color = col;
+}
+
 function wxRefresh(){
   if (rcWs && rcWs.readyState === WebSocket.OPEN) rcSendCmd('weather_refresh', '');
   fetchWeather();
@@ -2533,6 +2576,7 @@ function rcHandleData(data) {
     rcSetVal('rcDEC',      data.mount_dec || '+-- -- --');
     const trkEl = document.getElementById('rcTracking');
     if (trkEl) { trkEl.textContent = data.mount_tracking || '--'; trkEl.className = data.mount_tracking && data.mount_tracking !== 'OFF' ? 'rv-green' : 'rv-dim'; }
+    rcRenderPark(data);   // phase 156.2a
     // Capture
     const capturing = !!data.recording;
     rcUpdateCaptureDisplay(capturing, data);

@@ -93,6 +93,9 @@ std::string APEXTelemetry::ToJSON() const {
     j << "\"nightplan_ticked\":"     << jsonStr(nightplan_ticked) << ",";
     j << "\"nightplan_candidates\":" << jsonStr(nightplan_candidates) << ",";
     j << "\"nightplan_rows\":"       << jsonStr(nightplan_rows) << ",";
+    j << "\"park_state\":"   << jsonStr(park_state) << ",";
+    j << "\"park_reason\":"  << jsonStr(park_reason) << ",";
+    j << "\"park_set\":"     << (park_set ? "true" : "false") << ",";
     // Phase 165.4: the weather. A NaN reading goes out as null.
     {
         auto num = [&](const char* k, double v, int prec) {

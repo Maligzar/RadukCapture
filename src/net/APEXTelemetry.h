@@ -145,6 +145,14 @@ struct APEXTelemetry {
     std::string nightplan_candidates;
     std::string nightplan_rows;
 
+    // Phase 156.2a: park (app/ParkController.h). park_state is idle,
+    // slewing, parked or failed; park_reason says why it failed; park_set
+    // is whether rig.ini SkyParkAltAz is set at all. The position itself
+    // is not sent.
+    std::string park_state = "idle";
+    std::string park_reason;
+    bool        park_set = false;
+
     // ── Phase 165.4: the weather the app uses (core/SiteWeather.h), so Dash
     // shows it instead of fetching its own. SI and Celsius; a value the
     // reading did not give is NaN and goes out as null. No coordinates.

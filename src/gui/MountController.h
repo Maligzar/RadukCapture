@@ -61,6 +61,7 @@ public:
     void SetEmergencyStopCallback(std::function<void()> cb) {
         m_onEmergencyStop = cb;
     }
+    void SetParkCallback(std::function<void()> cb) { m_onPark = std::move(cb); }
     // Fired when user picks an alignment star.
     // Caller should: mount->SyncRADec(ra,dec) + skyMap.SetMountPosition(ra,dec,true)
     void SetAlignCallback(std::function<void(double ra_h, double dec_deg,
@@ -206,6 +207,7 @@ private:
         ID_LBL_SKY, ID_CANVAS_SKY,
         ID_BTN_ALIGN,
         ID_CANVAS_MOTION,
+        ID_BTN_PARK,
         ID_LBL_RA, ID_LBL_DEC, ID_LBL_TRK,
         // Align popup
         ID_ALIGN_LIST   = 200,
@@ -672,8 +674,13 @@ private:
         SetWindowTheme(m_btnStop, L"", L"");
 
         // Align button — full width, gold accent
-        m_btnAlign = MakeBtn(L"\u2605  ALIGN", x, y, w, 24, ID_BTN_ALIGN);
+        // and PARK beside it (156.2a). Sharing ALIGN's row keeps every
+        // other control where it was, so the measured CLIENT_H holds.
+        const int halfW = (w - 4) / 2;
+        m_btnAlign = MakeBtn(L"\u2605  ALIGN", x, y, halfW, 24, ID_BTN_ALIGN);
         SetWindowTheme(m_btnAlign, L"", L"");
+        m_btnPark = MakeBtn(L"PARK", x + halfW + 4, y, w - halfW - 4, 24, ID_BTN_PARK);
+        SetWindowTheme(m_btnPark, L"", L"");
         y += 28;
 
         // Motion plot. Owner-drawn STATIC: at FINE rate a short press
@@ -1023,6 +1030,10 @@ private:
             case ID_BTN_RATE7: self->SetJogRate(7); if (self->m_onRateChange) self->m_onRateChange(7); return 0;
             case ID_BTN_RATE5: self->SetJogRate(5); if (self->m_onRateChange) self->m_onRateChange(5); return 0;
             case ID_BTN_ALIGN: self->ShowAlignPopup(); return 0;
+            // Park slews to rig.ini SkyParkAltAz and turns tracking off.
+            // The work is the owner's (main.cpp), so the button and the
+            // Dash command and the sky run all park the same way.
+            case ID_BTN_PARK: if (self->m_onPark) self->m_onPark(); return 0;
             }
             return 0;
         }
@@ -1159,9 +1170,11 @@ private:
     HWND m_btnRate7 = nullptr;
     HWND m_btnRate5 = nullptr;
     HWND m_btnAlign = nullptr;
+    HWND m_btnPark  = nullptr;
 
     std::function<void(int, int, bool, int)>                 m_onJog;
     std::function<void()>                                    m_onEmergencyStop;
+    std::function<void()>                                    m_onPark;
     std::function<void(int)>                                 m_onRateChange;
     std::function<void(double, double, const std::string&)>  m_onAlign;
 };

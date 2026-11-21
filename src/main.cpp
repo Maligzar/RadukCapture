@@ -117,6 +117,7 @@
 #include "gui/MoonTileMaker.h"    // phase 162e: a captured section's picture
 #include "gui/WicImage.h"
 #include "app/NightPlanController.h"   // phase 163: a night of planets and stars
+#include "app/ParkController.h"       // phase 156.2a: park, a slew to SkyParkAltAz
 #include "gui/StatusWindow.h"
 #include "gui/ConfirmToast.h"
 #include "gui/ADCAlignWindow.h"
@@ -5242,6 +5243,57 @@ static int RunApp(bool useEmulator) {
         }
     });
 
+    // Phase 156.2a: park, as the owner chose. The mount has none of its
+    // own, so it is a GoTo to rig.ini SkyParkAltAz for this moment, then
+    // tracking off. The PARK button, Dash's park and the sky run all use
+    // this one controller.
+    raduk::app::ParkHooks parkHooks;
+    parkHooks.parkText  = [] { return raduk::core::RigConfig::Get().skyParkAltAz; };
+    parkHooks.limits    = [](raduk::core::skyrun::Limits& l, std::string& why) {
+        const auto& rc = raduk::core::RigConfig::Get();
+        if (!raduk::core::skyrun::ParseSlewBounds(rc.skySlewAltMax, rc.skySlewAz, l, why)) return false;
+        std::string hw;   // the horizon is not needed to park; kept when it parses
+        raduk::core::skyrun::ParseHorizon(rc.skyHorizon, l.horizon, hw);
+        return true;
+    };
+    parkHooks.connected = [&] { return mount && mount->IsConnected(); };
+    parkHooks.aligned   = [&] { return mount && mount->IsAligned(); };
+    parkHooks.toRADec   = [](double alt, double az, double& ra, double& dec) {
+        if (!raduk::core::RigConfig::Get().SiteIsSet()) return false;
+        raduk::core::AltAzToRADecNow(alt, az, ra, dec);
+        return true;
+    };
+    parkHooks.beforeSlew = [&] {
+        // What would fight the slew, or follow the target away from it.
+        gotoPanel.StopSatellite("park");
+        autorun.Abort("park");
+        moonMap.Stop("park");
+        nightPlan.Stop("park");
+        tracker.Reset();
+        controls.SetSkyMapLocked(false);
+        controls.SetPlanetLockState(false);
+    };
+    parkHooks.gotoRADec  = [&](double ra, double dec) { return mount && mount->GoToRADec(ra, dec); };
+    parkHooks.slewing    = [&] { return mount && mount->IsSlewing(); };
+    parkHooks.cancelSlew = [&] { if (mount) mount->CancelGoTo(); };
+    parkHooks.trackingOff = [&] { return mount && mount->SetTrackingMode(IMount::OFF); };
+    parkHooks.log = [&](const std::string& line) {
+        Log("%s\n", line.c_str());
+        slog.Mount("%s", line.c_str());
+    };
+    raduk::app::ParkController park(parkHooks);
+    auto requestPark = [&](const char* from) {
+        std::string why;
+        const double nowS = core.Clock().Now();
+        if (park.Request(nowS, why)) {
+            notifBar.NotifyInfo(L"Parking: slewing to the park position");
+        } else {
+            notifBar.NotifyWarn(L"Park refused: " + std::wstring(why.begin(), why.end()));
+        }
+        Log("[PARK] requested from %s\n", from);
+    };
+    mountCtrl.SetParkCallback([&] { requestPark("the mount window"); });
+
     // Shared by ESC and the MountController STOP button. Both must halt the
     // centroid-tracker correction thread, not just the active slews —
     // otherwise the guide loop restarts the mount within 250-500ms of the
@@ -5254,6 +5306,7 @@ static int RunApp(bool useEmulator) {
         autorun.Abort("emergency stop");
         moonMap.Stop("emergency stop");   // phase 162
         nightPlan.Stop("emergency stop"); // phase 163
+        park.Unpark("emergency stop");    // phase 156.2a: cancels a park slew
         if (capturer.IsRecording()) {
             capturer.StopRecording(false);  // emergency stop - do not auto-stack
             usbMgr.SetCapturing(false);
@@ -7580,6 +7633,9 @@ static int RunApp(bool useEmulator) {
                     slog.Focuser("APEX: position %s: %d%s", restore ? "set back" : "accepted",
                                  focuser.GetPosition(), ok ? "" : " (failed)");
                 }
+            } else if (rc.cmd == "park") {
+                // Phase 156.2a: the same park as the mount window's PARK.
+                requestPark("Dash");
             } else if (rc.cmd == "weather_refresh") {
                 // Phase 165.4: Dash's weather card asks for a fetch now.
                 // Offline=1 still asks nothing (SatDesk::HttpGet keeps it).
@@ -8991,6 +9047,12 @@ static int RunApp(bool useEmulator) {
                     for (const auto& n : notes) Log("%s", n.c_str());
                 }
                 nightPlan.Tick();   // phase 163
+                // Phase 156.2a: the park slew, and a move off the park.
+                park.Tick(core.Clock().Now());
+                if (park.parked() && mount && mount->IsConnected()) {
+                    double pAlt = 0, pAz = 0;
+                    if (mount->GetAltAz(pAlt, pAz)) park.WatchPosition(pAlt, pAz);
+                }
                 // A hand recording of a section the map's GOTO went to.
                 if (moonRec.donePending) {
                     moonRec.donePending = false;
@@ -9665,6 +9727,10 @@ static int RunApp(bool useEmulator) {
                     telemetry.wx_score        = cw.imagingScore;
                     telemetry.net_offline     = RigConfig::Get().offline != 0;
                 }
+                // Phase 156.2a: park.
+                telemetry.park_state  = raduk::app::ParkController::Name(park.state());
+                telemetry.park_reason = park.reason();
+                telemetry.park_set    = !RigConfig::Get().skyParkAltAz.empty();
 
                 if (mount && mount->IsConnected()) {
                     double ra=0, dec=0;
