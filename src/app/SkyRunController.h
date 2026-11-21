@@ -19,10 +19,14 @@
 //            then retry), STOP from Dash or the app
 //    Park    through the app's own path, then write results.json
 //
-//  Groups are built here one at a time. This stage has the TRACKING group
-//  (items 48 to 50), whose every check a machine can judge; the others
-//  are in the plan, and a group with no steps yet ends "not-available:
-//  its steps are not built yet", so nothing is ever faked as run.
+//  Groups are built here one at a time: the TRACKING group (156.2a, items
+//  48 to 50) and the PLANET group (156.2b, items 1, 13, 47, 55, 58). The
+//  others are in the plan, and a group with no steps yet ends
+//  "not-available: its steps are not built yet", so nothing is ever faked
+//  as run. The planet group says how each item came out (Entry::itemStatus):
+//  throughput passes or fails on numbers; autofocus's repeatability, the
+//  fine pass, the exposure ladder and sharpness are COLLECTED, the evidence
+//  gathered and the owner's eye owed.
 //
 //  Phase 149: nothing here names a sensor size. The box change (3840,
 //  1280, 640 on the owner's camera) is the whole sensor, a third and a
@@ -44,6 +48,18 @@ namespace sr = raduk::core::skyrun;
 
 // The tracker as the tracking group sees it.
 enum class LockState { None, Acquiring, Locked, Failed };
+
+// A finished recording, as the planet group reads it (CaptureManager's
+// drop ledger, core/DropLedger.h).
+struct RecordingOutcome {
+    bool        ok = false;              // it ran its length and stopped normally
+    uint64_t    frames = 0;
+    uint64_t    unexplained = 0;         // implied missing that nobody accounts for
+    uint64_t    droppedSdk = 0, droppedBuffer = 0;
+    double      effectiveFps = 0;        // frames over the run's span
+    double      expectedFps = 0;         // the profile's rate; 0: not known
+    std::string file, why;
+};
 
 struct SkyRunHooks {
     // The night.
@@ -72,6 +88,24 @@ struct SkyRunHooks {
     std::function<bool(double fracOfHalf)>           nudgeToEdge;  // put the target this far toward an edge
     std::function<void()>                            park;
     std::function<bool()>                            parked;
+    // 156.2b, the planet group.
+    std::function<int()>                             focuserPos;
+    std::function<bool(int target, std::string& why)> moveFocuser;  // inside the travel guard, or refused
+    std::function<bool()>                            focuserMoving;
+    std::function<bool(std::string& why)>            startAutofocus; // AE settles first (AutofocusController)
+    // Each sweep's result, numbered like the calibration's: seq rises by
+    // one per completed or failed sweep; pos is where it left the focuser.
+    std::function<void(int& seq, bool& ok, int& pos, std::string& msg)> lastAutofocus;
+    std::function<bool(double seconds, std::string& why)> startRecording;
+    std::function<bool()>                            recording;
+    std::function<void()>                            stopRecording;
+    std::function<void(int& seq, RecordingOutcome& out)> lastRecording;
+    std::function<void()>                            saveCamera;     // exposure, gain, AE: put back at the end
+    std::function<void()>                            restoreCamera;
+    std::function<bool(int us)>                      setExposureUs;
+    std::function<bool(int gain)>                    setGain;
+    std::function<void(int& lo, int& hi)>            gainRange;      // the camera's own, whatever its units
+    std::function<double()>                          highlightFrac;  // the target's highlight, 0..1 of full scale; NaN: not seen
     // Reporting.
     std::function<void(const std::string&)>          log;          // a [SKYRUN] line
     std::function<void(const std::string& json)>     writeResults; // results.json, at the end
@@ -90,6 +124,18 @@ public:
     static constexpr double kRecentredPx     = 20;
     static constexpr double kJogPx           = 200;
     static constexpr double kCalibrateLimitSec = 300;   // widen, calibrate, lock
+    // The planet group (156.2b), from docs/Phase156-Design-Run.md section 3.
+    static constexpr int    kDefocusSteps     = 700;    // the owner's answer 2
+    static constexpr double kFocuserMoveLimitSec = 120;
+    static constexpr double kAutofocusLimitSec = 900;
+    static constexpr double kThroughputSec    = 60;     // item 13
+    static constexpr double kLadderSec        = 90;     // item 55, each exposure
+    static constexpr double kRecordGraceSec   = 60;     // a recording's stop after its length
+    static constexpr double kHighlightTarget  = 0.70;   // the owner's answer 3
+    static constexpr double kHighlightTol     = 0.07;
+    static constexpr double kGainSettleSec    = 2;
+    static constexpr int    kGainSteps        = 8;      // bisection over the camera's range
+    static constexpr double kFpsReached       = 0.90;   // of the profile's rate
 
     void SetHooks(SkyRunHooks h) { m_h = std::move(h); }
 
@@ -138,6 +184,7 @@ public:
     void Abort(const std::string& why, double now) {
         if (m_phase == Phase::Idle || m_phase == Phase::Done || m_phase == Phase::Refused) return;
         m_stoppedByOwner = true;
+        CleanUp();
         m_sup.Stopped(why, now);
         m_phase = Phase::Done;
         m_stepText = "stopped, not parked";
@@ -211,8 +258,9 @@ private:
     void Act(sr::Action a, double now) {
         switch (a) {
             case sr::Action::StartNext: BeginGroup(now); m_phase = Phase::Running; break;
-            case sr::Action::Hold:      m_phase = Phase::Holding; m_stepText = "holding: clouds"; break;
+            case sr::Action::Hold:      CleanUp(); m_phase = Phase::Holding; m_stepText = "holding: clouds"; break;
             case sr::Action::Park:
+                CleanUp();
                 m_phase = Phase::Parking;
                 m_stepText = "parking";
                 Log("parking: " + m_sup.StopReason());
@@ -228,6 +276,7 @@ private:
         m_step = 0;
         m_stepStart = now;
         m_measures.clear();
+        m_items.clear();
         m_target = sr::Target{};
         if (!e) return;
         for (const auto& t : m_targets) if (t.name == e->target) m_target = t;
@@ -236,20 +285,48 @@ private:
 
     void Finish(sr::Status s, const std::string& detail, double now) {
         const sr::Entry* e = m_sup.Current();
+        CleanUp();
         Log("group " + (e ? e->group : std::string("?")) + ": " + sr::StatusText(s) + (detail.empty() ? "" : " (" + detail + ")"));
-        Act(m_sup.Result(s, detail, m_measures, now), now);
+        Act(m_sup.Result(s, detail, m_measures, now, m_items), now);
+    }
+
+    // Leaving a group however it ends (a result, clouds, a park, the
+    // emergency stop): a recording it started is stopped, and the camera
+    // it changed is put back as it was.
+    void CleanUp() {
+        if (m_recStarted && m_h.recording && m_h.recording() && m_h.stopRecording) m_h.stopRecording();
+        m_recStarted = false;
+        if (m_cameraSaved && m_h.restoreCamera) m_h.restoreCamera();
+        m_cameraSaved = false;
+    }
+    void ItemStatus(int item, sr::Status st) {
+        for (auto& [n, s] : m_items) if (n == item) { s = st; return; }
+        m_items.push_back({item, st});
     }
 
     void StepGroup(double now) {
         const sr::Entry* e = m_sup.Current();
         if (!e) return;
         if (e->group == "tracking") { StepTracking(now); return; }
+        if (e->group == "planet")   { StepPlanet(now); return; }
     }
 
 public:
     // The groups this build can carry out. The plan marks the rest
     // not-available, with the reason.
-    static bool Built(const std::string& group) { return group == "tracking"; }
+    static bool Built(const std::string& group) { return group == "tracking" || group == "planet"; }
+
+    // The exposure ladder's gain search, by bisection over the camera's own
+    // range, so it holds for any make whatever its gain units (phase 149).
+    // Returns the next gain to try, and narrows [lo, hi]; `done` when the
+    // highlight is within tolerance or the range is spent.
+    static int NextGain(int gain, double highlight, int& lo, int& hi, bool& done) {
+        done = false;
+        if (std::isfinite(highlight) && std::fabs(highlight - kHighlightTarget) <= kHighlightTol) { done = true; return gain; }
+        if (!std::isfinite(highlight) || highlight < kHighlightTarget) lo = gain; else hi = gain;
+        if (hi - lo <= 1) { done = true; return (!std::isfinite(highlight) || highlight < kHighlightTarget) ? hi : lo; }
+        return lo + (hi - lo) / 2;
+    }
 
 private:
 
@@ -376,6 +453,258 @@ private:
         }
     }
 
+    // ── The planet group: items 1, 13, 47, 55, 58 (156.2b) ───
+    //   0 GoTo           1 the slew ends, lock      2 locked: save the camera,
+    //   3 to +700        4 sweep from +700          5 to -700
+    //   6 sweep from -700 10 focuser lands          7 throughput, 60 s
+    //   8, 9 each rung of the exposure ladder
+    static constexpr int kLadderUs[4] = {2000, 5000, 10000, 15000};
+
+    int AfSeq() const {
+        int seq = 0, pos = 0; bool ok = false; std::string msg;
+        if (m_h.lastAutofocus) m_h.lastAutofocus(seq, ok, pos, msg);
+        return seq;
+    }
+    int RecSeq() const {
+        int seq = 0; RecordingOutcome o;
+        if (m_h.lastRecording) m_h.lastRecording(seq, o);
+        return seq;
+    }
+    bool StartRec(double sec, std::string& why) {
+        m_recSeq0 = RecSeq();
+        if (!m_h.startRecording || !m_h.startRecording(sec, why)) return false;
+        m_recStarted = true;
+        return true;
+    }
+    // A recording has ended: true, with its outcome. A recording that ran
+    // past its length and grace is stopped and reported as not ended well.
+    bool RecDone(double now, double sec, RecordingOutcome& out, bool& overdue) {
+        overdue = false;
+        int seq = 0;
+        if (m_h.lastRecording) m_h.lastRecording(seq, out);
+        if (seq > m_recSeq0 && !(m_h.recording && m_h.recording())) { m_recStarted = false; return true; }
+        if (Elapsed(now) > sec + kRecordGraceSec) {
+            if (m_h.stopRecording) m_h.stopRecording();
+            m_recStarted = false;
+            overdue = true;
+            return true;
+        }
+        return false;
+    }
+    // Move to the next defocus start, or skip autofocus if the move is refused.
+    void DefocusTo(int pass, double now) {
+        const int target = m_focus0 + (pass == 0 ? kDefocusSteps : -kDefocusSteps);
+        std::string why;
+        if (!m_h.moveFocuser || !m_h.moveFocuser(target, why)) {
+            m_afOk[pass] = false;
+            m_afMsg[pass] = "the focuser refused the move to " + std::to_string(target) + ": " + why;
+            if (pass == 0) { DefocusTo(1, now); return; }
+            AfterFocus(now);
+            return;
+        }
+        m_afPass = pass;
+        m_step = pass == 0 ? 3 : 5;
+        m_stepStart = now;
+        m_stepText = std::string("focuser to ") + (pass == 0 ? "+" : "-") + std::to_string(kDefocusSteps) + " (item 47)";
+    }
+    void AfterFocus(double now) {
+        if (m_afOk[0] && m_afOk[1]) {
+            ItemStatus(47, sr::Status::Collected);   // both completed; what repeatability is good is the owner's call
+            ItemStatus(58, sr::Status::Collected);   // each fine pass's figures are in the validation log
+            Measure(47, "autofocus repeatability, from +700 and -700", std::fabs((double)(m_afPos[0] - m_afPos[1])), " steps");
+            Measure(47, "best focus from +700", m_afPos[0], "");
+            Measure(47, "best focus from -700", m_afPos[1], "");
+        } else {
+            ItemStatus(47, sr::Status::Failed);
+            ItemStatus(58, sr::Status::Failed);
+            m_afNote = !m_afOk[0] ? "sweep from +700: " + m_afMsg[0] : "sweep from -700: " + m_afMsg[1];
+        }
+        // A failed last sweep leaves the focuser 700 steps out; put it back
+        // at the best focus found, or where it started, before anything else
+        // is recorded (and for every group after this one).
+        if (!m_afOk[1] && m_h.moveFocuser) {
+            const int back = m_afOk[0] ? m_afPos[0] : m_focus0;
+            std::string w;
+            if (m_h.moveFocuser(back, w)) Log("focuser back to " + std::to_string(back) + " after a failed sweep");
+            else Log("focuser could not go back to " + std::to_string(back) + ": " + w);
+        }
+        m_step = 10; m_stepStart = now; m_stepText = "focuser settling before throughput";
+    }
+    void StartThroughput(double now) {
+        std::string why;
+        if (!StartRec(kThroughputSec, why)) {
+            ItemStatus(13, sr::Status::Failed);
+            m_recNote = "the throughput recording would not start: " + why;
+            BeginLadder(now);
+            return;
+        }
+        m_step = 7; m_stepStart = now; m_stepText = "throughput: 60 s at the profile's frame (item 13)";
+    }
+    void BeginLadder(double now) {
+        m_rung = 0;
+        m_ladderDone = 0;
+        StartRung(now);
+    }
+    void StartRung(double now) {
+        if (m_rung >= 4) { EndPlanet(now); return; }
+        if (m_h.setExposureUs) m_h.setExposureUs(kLadderUs[m_rung]);
+        m_gainLo = 0; m_gainHi = 0;
+        if (m_h.gainRange) m_h.gainRange(m_gainLo, m_gainHi);
+        m_gain = m_gainLo + (m_gainHi - m_gainLo) / 2;
+        if (m_h.setGain) m_h.setGain(m_gain);
+        m_gainTries = 0;
+        m_step = 8; m_stepStart = now;
+        char b[96];
+        std::snprintf(b, sizeof(b), "exposure ladder: %d ms, gain to bring the highlight near 70%% (item 55)", kLadderUs[m_rung] / 1000);
+        m_stepText = b;
+    }
+    void EndPlanet(double now) {
+        ItemStatus(55, m_ladderDone == 4 ? sr::Status::Collected : sr::Status::Failed);
+        // Sharpness is measured from every frame by the validation log (155.4).
+        ItemStatus(1, sr::Status::Collected);
+        std::string detail;
+        auto add = [&](const std::string& t) { if (!t.empty()) detail += (detail.empty() ? "" : "; ") + t; };
+        add(m_afNote);
+        add(m_recNote);
+        char b[64];
+        std::snprintf(b, sizeof(b), "%d of 4 ladder recordings", m_ladderDone);
+        add(b);
+        add("sharpness and the fine passes in the validation log");
+        Finish(sr::OverallOf(m_items), detail, now);
+    }
+
+    void StepPlanet(double now) {
+        auto lockHeld = [&] { return m_h.lockState && m_h.lockState() == LockState::Locked; };
+        switch (m_step) {
+            case 0: {
+                m_afNote.clear(); m_recNote.clear();
+                std::string why;
+                if (!m_h.gotoTarget || !m_h.gotoTarget(m_target, why)) { Finish(sr::Status::Failed, "GoTo refused: " + why, now); return; }
+                Next(now, "slewing to " + m_target.name);
+                return;
+            }
+            case 1:
+                if (m_h.slewing && m_h.slewing()) {
+                    if (Elapsed(now) > kSlewLimitSec) Finish(sr::Status::Failed, "the slew did not finish", now);
+                    return;
+                }
+                { std::string why;
+                  if (!m_h.startLock || !m_h.startLock(why)) { Finish(sr::Status::Failed, "lock refused: " + why, now); return; } }
+                Next(now, "PLANET LOCK");
+                return;
+            case 2:
+                if (m_h.lockState && m_h.lockState() == LockState::Failed) { Finish(sr::Status::Failed, "lock failed", now); return; }
+                if (!lockHeld()) {
+                    if (Elapsed(now) > kLockLimitSec) Finish(sr::Status::Failed, "lock not made in 5 minutes", now);
+                    return;
+                }
+                if (m_h.saveCamera) { m_h.saveCamera(); m_cameraSaved = true; }
+                m_focus0 = m_h.focuserPos ? m_h.focuserPos() : 0;
+                m_afOk[0] = m_afOk[1] = false;
+                DefocusTo(0, now);
+                return;
+            case 3: case 5: {   // the defocus move lands, then the sweep
+                if (m_h.focuserMoving && m_h.focuserMoving()) {
+                    if (Elapsed(now) > kFocuserMoveLimitSec) {
+                        m_afMsg[m_afPass] = "the focuser did not arrive in 2 minutes";
+                        if (m_afPass == 0) DefocusTo(1, now); else AfterFocus(now);
+                    }
+                    return;
+                }
+                m_afSeq0 = AfSeq();
+                std::string why;
+                if (!m_h.startAutofocus || !m_h.startAutofocus(why)) {
+                    m_afMsg[m_afPass] = "autofocus would not start: " + why;
+                    if (m_afPass == 0) DefocusTo(1, now); else AfterFocus(now);
+                    return;
+                }
+                m_step++; m_stepStart = now;
+                m_stepText = std::string("autofocus from ") + (m_afPass == 0 ? "+" : "-") + std::to_string(kDefocusSteps) + " (items 47, 58)";
+                return;
+            }
+            case 4: case 6: {   // the sweep's result
+                int seq = 0, pos = 0; bool ok = false; std::string msg;
+                if (m_h.lastAutofocus) m_h.lastAutofocus(seq, ok, pos, msg);
+                if (seq <= m_afSeq0) {
+                    if (Elapsed(now) > kAutofocusLimitSec) {
+                        m_afMsg[m_afPass] = "no result in 15 minutes";
+                        if (m_afPass == 0) DefocusTo(1, now); else AfterFocus(now);
+                    }
+                    return;
+                }
+                m_afOk[m_afPass] = ok;
+                m_afPos[m_afPass] = pos;
+                m_afMsg[m_afPass] = msg;
+                if (m_afPass == 0) DefocusTo(1, now); else AfterFocus(now);
+                return;
+            }
+            case 7: {   // throughput
+                RecordingOutcome o; bool overdue = false;
+                if (!RecDone(now, kThroughputSec, o, overdue)) return;
+                if (overdue || !o.ok) {
+                    ItemStatus(13, sr::Status::Failed);
+                    m_recNote = overdue ? "the throughput recording did not stop" : "the throughput recording ended early: " + o.why;
+                } else {
+                    const bool rate = o.expectedFps <= 0 || o.effectiveFps >= kFpsReached * o.expectedFps;
+                    const bool clean = o.unexplained == 0;
+                    ItemStatus(13, clean && rate ? sr::Status::Passed : sr::Status::Failed);
+                    Measure(13, "unexplained drops", (double)o.unexplained, "", 0);
+                    Measure(13, "frame rate", o.effectiveFps, " fps", o.expectedFps > 0 ? o.expectedFps : NAN);
+                    if (!clean) m_recNote = std::to_string(o.unexplained) + " unexplained drops in 60 s (item 13)";
+                    else if (!rate) {
+                        char b[96];
+                        std::snprintf(b, sizeof(b), "%.1f fps against the profile's %.1f (item 13)", o.effectiveFps, o.expectedFps);
+                        m_recNote = b;
+                    }
+                }
+                BeginLadder(now);
+                return;
+            }
+            case 8: {   // a rung: the gain, by bisection, until the highlight sits near 70%
+                if (Elapsed(now) < kGainSettleSec) return;
+                const double h = m_h.highlightFrac ? m_h.highlightFrac() : NAN;
+                m_lastHighlight = h;
+                bool done = false;
+                const int g = NextGain(m_gain, h, m_gainLo, m_gainHi, done);
+                if (!done && ++m_gainTries < kGainSteps) {
+                    m_gain = g;
+                    if (m_h.setGain) m_h.setGain(m_gain);
+                    m_stepStart = now;
+                    return;
+                }
+                if (g != m_gain) { m_gain = g; if (m_h.setGain) m_h.setGain(m_gain); }
+                std::string why;
+                if (!StartRec(kLadderSec, why)) {
+                    Log("ladder rung " + std::to_string(kLadderUs[m_rung] / 1000) + " ms: the recording would not start: " + why);
+                    m_rung++; StartRung(now);
+                    return;
+                }
+                m_step = 9; m_stepStart = now;
+                return;
+            }
+            case 10:    // the focuser has landed (after a failed sweep it is moving back)
+                if (m_h.focuserMoving && m_h.focuserMoving() && Elapsed(now) < kFocuserMoveLimitSec) return;
+                StartThroughput(now);
+                return;
+            case 9: {   // the rung's 90 s recording
+                RecordingOutcome o; bool overdue = false;
+                if (!RecDone(now, kLadderSec, o, overdue)) return;
+                const double ms = kLadderUs[m_rung] / 1000.0;
+                if (!overdue && o.ok) {
+                    m_ladderDone++;
+                    Measure(55, "ladder " + std::to_string((int)ms) + " ms: gain", m_gain, "");
+                    if (std::isfinite(m_lastHighlight))
+                        Measure(55, "ladder " + std::to_string((int)ms) + " ms: highlight", m_lastHighlight * 100.0, "%", kHighlightTarget * 100.0);
+                } else {
+                    Log("ladder rung " + std::to_string((int)ms) + " ms: " + (overdue ? "did not stop" : "ended early: " + o.why));
+                }
+                m_rung++;
+                StartRung(now);
+                return;
+            }
+        }
+    }
+
     int CalSeq() const {
         int seq = 0; bool ok = false; std::string msg;
         if (m_h.lastCalibration) m_h.lastCalibration(seq, ok, msg);
@@ -423,6 +752,16 @@ private:
     bool   m_emulator = false, m_stoppedByOwner = false;
     int    m_step = 0, m_box = 0, m_calSeq0 = 0;
     double m_stepStart = 0;
+    std::vector<std::pair<int, sr::Status>> m_items;
+    // The planet group's state.
+    bool   m_cameraSaved = false, m_recStarted = false;
+    int    m_focus0 = 0, m_afSeq0 = 0, m_recSeq0 = 0, m_afPass = 0;
+    int    m_afPos[2] = {0, 0};
+    bool   m_afOk[2] = {false, false};
+    std::string m_afMsg[2];
+    int    m_rung = 0, m_gain = 0, m_gainLo = 0, m_gainHi = 0, m_gainTries = 0, m_ladderDone = 0;
+    double m_lastHighlight = NAN;
+    std::string m_afNote, m_recNote;
 };
 
 } // namespace raduk::app
