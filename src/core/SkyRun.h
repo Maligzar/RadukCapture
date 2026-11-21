@@ -34,6 +34,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -170,6 +171,22 @@ inline std::vector<std::string> ParseStarList(const std::string& text) {
 inline constexpr double kDefaultDarkSunAltDeg = -10.0;
 inline bool IsDark(double sunAltDeg, double thresholdDeg = kDefaultDarkSunAltDeg) {
     return sunAltDeg < thresholdDeg;
+}
+
+// Minutes until a target falls below the horizon limit (or under the
+// ground with no horizon set), sampled every stepMin up to maxMin; maxMin
+// or more means it stays up that long. at(dtMin, alt, az) gives the
+// target's position dtMin minutes from now. Zero when it is already below.
+inline double MinutesUntilBelow(const std::function<void(double, double&, double&)>& at,
+                                const std::vector<HorizonPoint>& horizon,
+                                double maxMin = 360, double stepMin = 5) {
+    for (double m = 0; m <= maxMin; m += stepMin) {
+        double alt = 0, az = 0;
+        at(m, alt, az);
+        const double floor = horizon.empty() ? 0.0 : MinAltAt(horizon, az);
+        if (alt < floor) return m;
+    }
+    return 1e9;
 }
 
 // rig.ini SkyParkAltAz=az:alt (the owner, 2026-11-21): where the run parks

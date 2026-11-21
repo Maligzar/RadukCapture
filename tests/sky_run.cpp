@@ -195,6 +195,18 @@ int main() {
     Check(ParseStarList("").empty(), "an empty list is no stars");
     Check(IsDark(-10.5) && !IsDark(-9.5) && kDefaultDarkSunAltDeg == -10.0, "dark below -10 degrees by default");
     Check(IsDark(-13, -12) && !IsDark(-11, -12), "and the threshold is a setting");
+    {   // 156.2a: when a target sets, against the horizon limit
+        std::vector<HorizonPoint> h; std::string w;
+        ParseHorizon("0:20,180:40", h, w);
+        auto sinking = [](double startAlt, double az) {
+            return [=](double m, double& alt, double& a) { alt = startAlt - m * 0.25; a = az; };
+        };
+        Check(MinutesUntilBelow(sinking(30, 0), h) == 45, "reaches a 20-degree horizon at 40 min: first sample under it, 45");
+        Check(MinutesUntilBelow(sinking(30, 180), h) == 0, "already under a 40-degree horizon: 0");
+        Check(MinutesUntilBelow(sinking(30, 0), {}) == 125, "no horizon set: the ground (125)");
+        auto steady = [](double, double& alt, double& a) { alt = 60; a = 90; };
+        Check(MinutesUntilBelow(steady, h) >= 1e8, "stays up: never");
+    }
 
     printf("\n6. results.json\n");
     const std::string j = ResultsJson(s, "20261121", "3.3.38");
