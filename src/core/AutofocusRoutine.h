@@ -144,6 +144,27 @@ struct AFSample {
 };
 
 // ── Result ────────────────────────────────────────────────────
+// Phase 155.4b: what one sweep measured, beyond its result, for the
+// validation log (core/ValidationLog.h). Filled on the sweep's thread and
+// read in the completion callback, which runs on that thread too. -1 or
+// empty is "not measured on this sweep".
+struct AFDiagnostics {
+    int   coarsePeak = -1;          // the coarse (HFD) sweep's position
+    int   finePeak = -1;            // the fine pass's fit, when it gave one
+    bool  fineUsed = false;         // the final position came from the fine pass
+    int   dirOutward = -1, dirInward = -1;   // each direction's peak (139.0)
+    int   backlashThisSweep = -1;   // outward minus inward, on THIS sweep
+    int   finePasses = 0;
+    float fadeRatio = 0.0f;         // the last fine pass's centre-again ratio
+    std::string fadeAction;         // "steady" | "corrected" | "gave up"
+    int   fadesCorrected = 0;       // fine passes this sweep that corrected for a fade
+    // The last fine pass, in the order travelled: position, edge score,
+    // and each point's frame-to-frame spread relative to its median.
+    std::vector<int>   finePos;
+    std::vector<float> fineScore;
+    std::vector<float> fineSpread;
+};
+
 struct AFResult {
     bool  success      = false;
     int   bestPosition = 0;
@@ -247,6 +268,7 @@ public:
 
         // Reap the previous (finished) scan thread before starting a new one
         if (m_thread.joinable()) m_thread.join();
+        m_diag = AFDiagnostics{};   // 155.4b: this sweep's figures only, once the last thread is gone
         // Phase 161.1: running from this instant, not from whenever the
         // thread gets to say so. In that gap IsRunning() was false with a
         // sweep on its way: a second Start() would have joined a live
@@ -349,6 +371,12 @@ public:
     int         BestPosition() const { return m_bestPosition.load(); }
     // Phase 139.0: the last sweep's outward minus inward peak, -1 if none.
     int         MeasuredBacklash() const { return m_measuredBacklash.load(); }
+    // Phase 155.4: the backlash this sweep used, for the validation log.
+    // Read it from the completion callback, which runs on the sweep's thread.
+    int         BacklashInUse() const { return m_params.backlash; }
+    // Phase 155.4b: this sweep's own figures. Read from the completion
+    // callback (the sweep's thread); a new Start() clears them.
+    const AFDiagnostics& Diagnostics() const { return m_diag; }
     float       BestSharpness()const { return m_bestSharpness.load(); }
 
     // Status text — safe to read from any thread (atomic string via index trick)
@@ -566,8 +594,11 @@ private:
             auto P = [](const CurvePeak& c) { return c.ok ? (int)std::lround(c.pos) : -1; };
             Emit("[AF] Direction fits: outward=%d inward=%d averaged=%d (-1: no peak)\n",
                  P(df.out), P(df.back), P(df.mean));
+            m_diag.dirOutward = P(df.out);
+            m_diag.dirInward = P(df.back);
             if (df.haveBacklash) {
                 m_measuredBacklash.store((int)std::lround(df.backlash));
+                m_diag.backlashThisSweep = (int)std::lround(df.backlash);
                 Emit("[AF] Backlash measured on this sweep: %d steps (outward peak minus "
                      "inward); in use: %d. Set FocuserBacklashSteps in rig.ini once "
                      "several sweeps agree.\n", (int)std::lround(df.backlash), m_params.backlash);
@@ -658,6 +689,7 @@ private:
                 Finish(false, m_startPosition, 0.0f, startSharpness, MoveFailure());
                 return;
             }
+            m_diag.coarsePeak = bestPos;   // 155.4b
             int endBest = -1;
             int fine = FineSweep(bestPos, span, nullptr, &endBest);
             if (fine < 0 && endBest >= 0 && !m_abortFlag.load()) {
@@ -669,6 +701,8 @@ private:
                 return;
             }
             if (fine >= 0) {
+                m_diag.finePeak = fine;
+                m_diag.fineUsed = true;
                 Emit("[AF] Fine pass: %d (coarse %d, %+d)\n", fine, bestPos, fine - bestPos);
                 bestPos = fine;
                 fineUsed = true;
@@ -1059,6 +1093,13 @@ private:
         Emit("[AF] Fine pass: %d points across %d steps round %d, travelling %s, %d frames a "
              "point, edge metric at the %.0fth percentile\n", (int)pts.size(), span, center,
              dir > 0 ? "outward" : "inward", m_params.fineFrames, m_params.finePercentile * 100.0f);
+        // 155.4b: this pass's points replace the last pass's.
+        m_diag.finePasses++;
+        m_diag.finePos.clear();
+        m_diag.fineScore.clear();
+        m_diag.fineSpread.clear();
+        m_diag.fadeRatio = 0.0f;
+        m_diag.fadeAction.clear();
         if (Over() > 0) {
             int pre = pts.front() - dir * Over();
             pre = (std::max)(m_params.minStepBound, (std::min)(m_params.maxStepBound, pre));
@@ -1089,6 +1130,9 @@ private:
             pos.push_back(pts[k]);
             sc.push_back(p);
             tAt.push_back(since());
+            m_diag.finePos.push_back(pts[k]);
+            m_diag.fineScore.push_back(p);
+            m_diag.fineSpread.push_back(m_lastSpread);
         }
 
         // Phase 145.5: the centre again, approached the final way, to see
@@ -1100,11 +1144,15 @@ private:
             const float again = ScoreHere(&got);
             const double tEnd = since();
             const float ratio = (got >= (std::max)(3, m_params.fineFrames / 2)) ? FadeRatio(sc[c], again) : 1.0f;
+            m_diag.fadeRatio = ratio;   // 155.4b
+            m_diag.fadeAction = FadeVerdict(ratio) == FadeAction::None ? "steady"
+                              : FadeVerdict(ratio) == FadeAction::Correct ? "corrected" : "gave up";
             switch (FadeVerdict(ratio)) {
             case FadeAction::None:
                 Emit("[AF] Fine pass fade check: centre %.4f then %.4f (x%.2f), steady\n", sc[c], again, ratio);
                 break;
             case FadeAction::Correct:
+                m_diag.fadesCorrected++;   // 155.4b
                 Emit("[AF] Fine pass fade: centre %.4f then %.4f (x%.2f) over %.0f s; scores corrected "
                      "for a linear change\n", sc[c], again, ratio, tEnd - tAt[c]);
                 sc = FadeCorrect(sc, tAt, ratio, tAt[c], tEnd);
@@ -1155,6 +1203,8 @@ private:
                    "start nearer focus or on a sharper part of the surface");
             return;
         }
+        m_diag.finePeak = fine;   // 155.4b
+        m_diag.fineUsed = true;
         m_state.store(AFState::Moving);
         SetStatus("Moving to best focus...");
         if (!DriveFinal(fine)) {
@@ -1440,6 +1490,14 @@ private:
         std::vector<float> got;
         { std::lock_guard<std::mutex> lk(m_fastMutex); got = m_fastScores; }
         if (n) *n = (int)got.size();
+        // 155.4b: the frames' spread at this point, relative to their
+        // median: half the 16th-84th percentile range (a robust sigma).
+        // It is the edge metric's noise floor, measured where it is used.
+        {
+            const float med = ScorePercentile(got, 0.5f);
+            m_lastSpread = (got.size() >= 3 && med > 0.0f)
+                ? 0.5f * (ScorePercentile(got, 0.84f) - ScorePercentile(got, 0.16f)) / med : 0.0f;
+        }
         return ScorePercentile(got, m_params.finePercentile);
     }
 
@@ -1669,6 +1727,8 @@ private:
 
     int              m_startPosition = 0;
     std::vector<AFSample>  m_samples;
+    AFDiagnostics          m_diag;          // 155.4b: the sweep's thread only
+    float                  m_lastSpread = 0.0f;
 
     // Sharpness sample accumulator — written by main thread, read by scan thread
     mutable std::mutex     m_sharpnessMutex;

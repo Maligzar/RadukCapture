@@ -87,6 +87,10 @@ jobs:
       - name: Unverified register in step
         run: python tools/unverified_report.py --check
 
+      # Phase 155.4: the multi-night validation report's own checks.
+      - name: Validation report self-test
+        run: python tools/validation_report.py --self-test
+
       - name: Emulator build
         run: |
           cmake -S . -B build_emu -DRADUK_EMULATOR=ON

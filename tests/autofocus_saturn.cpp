@@ -72,6 +72,9 @@ struct RunOpts {
 };
 
 static std::atomic<int> g_fadeCorrected{0};
+// Phase 155.4b: the last run's diagnostics, copied in the completion
+// callback (the sweep's thread), as the app reads them.
+static AFDiagnostics g_diag;
 
 // slack > 0: the knob's slack (phase 139). The score follows the MIRROR,
 // and the result is where the mirror ends up, which is what the image
@@ -100,7 +103,7 @@ static int Run(int start, bool capped, std::string& msg, double fadePerSec = 0.0
     });
     std::atomic<bool> done{false};
     AFResult res;
-    af.SetOnComplete([&](AFResult r) { res = r; done.store(true); });
+    af.SetOnComplete([&](AFResult r) { res = r; g_diag = af.Diagnostics(); done.store(true); });
 
     std::mt19937 rng(start * 7 + (capped ? 1 : 0));
     std::mt19937 rngE(start * 13 + 5);
@@ -191,6 +194,8 @@ int main() {
         // reading is present and not wrong-signed, and their mean reads
         // the slack.
         CHECK(meas >= 0 && meas < 1200, "%s: the sweep reported a slack (%d)", c.name, meas);
+        CHECK(g_diag.backlashThisSweep == meas, "%s: 155.4b's per-sweep backlash agrees (%d against %d)",
+              c.name, g_diag.backlashThisSweep, meas);
         if (meas >= 0) { measSum += meas; ++measN; }
     }
     {
@@ -209,6 +214,19 @@ int main() {
         for (int st : { kFocus + 900, kFocus - 2500 }) {
             const int c = Run(st, false, m1, 0.0, 0, nullptr, coarse);
             const int b = Run(st, false, m2, 0.0, 0, nullptr, both);
+            // 155.4b: the fine pass's figures, as the validation log reads them.
+            CHECK(g_diag.coarsePeak >= 0 && g_diag.finePasses >= 1, "from %d: the coarse peak and a fine pass are recorded", st);
+            if (g_diag.fineUsed) {
+                CHECK(g_diag.finePeak >= 0 && g_diag.finePos.size() >= 3 &&
+                      g_diag.finePos.size() == g_diag.fineScore.size() &&
+                      g_diag.fineScore.size() == g_diag.fineSpread.size(),
+                      "from %d: the fine curve recorded whole (%zu points)", st, g_diag.finePos.size());
+                CHECK(!g_diag.fadeAction.empty() && g_diag.fadeRatio > 0.0f,
+                      "from %d: the fade check recorded ('%s', x%.2f)", st, g_diag.fadeAction.c_str(), g_diag.fadeRatio);
+                bool spreadOk = true;
+                for (float sp : g_diag.fineSpread) spreadOk = spreadOk && sp >= 0.0f && sp < 1.0f;
+                CHECK(spreadOk, "from %d: each point's spread is a sane fraction", st);
+            }
             std::printf("   from %d: coarse alone %+d, with the fine pass %+d %s\n",
                         st, c - kFocus, b - kFocus, m2.c_str());
             worstC = (std::max)(worstC, std::abs(c - kFocus));
@@ -226,6 +244,8 @@ int main() {
         const int end = Run(kFocus + 700, false, m, 0.0, 0, nullptr, o);
         std::printf("   ended %+d from focus %s\n", end - kFocus, m.c_str());
         CHECK(std::abs(end - kFocus) <= 400, "fallback: ended %+d steps from focus", end - kFocus);
+        CHECK(!g_diag.fineUsed && g_diag.finePeak == -1 && g_diag.coarsePeak >= 0,
+              "fallback: recorded as the coarse result, no fine peak");
     }
 
     std::printf("7. the Moon: the fine pass alone\n");
@@ -235,6 +255,8 @@ int main() {
         const int end = Run(kFocus + 800, false, m, 0.0, 0, nullptr, o);
         std::printf("   from %d ended %+d from focus %s\n", kFocus + 800, end - kFocus, m.c_str());
         CHECK(std::abs(end - kFocus) <= 150, "fine only: ended %+d steps from focus", end - kFocus);
+        CHECK(g_diag.coarsePeak == -1 && g_diag.fineUsed && g_diag.finePeak >= 0,
+              "fine only: no coarse peak recorded, the fine one is");
     }
 
     std::printf("8. finishing inward (FocuserFinalDirection=in), 400 steps of slack\n");
@@ -265,13 +287,17 @@ int main() {
         std::string m;
         int worst = 0;
         g_fadeCorrected.store(0);
+        int diagCorrected = 0;
         for (int st : { kFocus + 900, kFocus - 2500 }) {
             const int end = Run(st, false, m, 0.0, 0, nullptr, o);
+            diagCorrected += g_diag.fadesCorrected;
             std::printf("   from %d ended %+d from focus %s\n", st, end - kFocus, m.c_str());
             worst = (std::max)(worst, std::abs(end - kFocus));
         }
         std::printf("   fine passes corrected for a fade: %d\n", g_fadeCorrected.load());
         CHECK(g_fadeCorrected.load() >= 1, "the fade was never seen and corrected");
+        CHECK(diagCorrected == g_fadeCorrected.load(),
+              "155.4b: every corrected fade is recorded (%d recorded, %d logged)", diagCorrected, g_fadeCorrected.load());
         CHECK(worst <= 150, "a fade inside the fine pass: worst %d steps from focus", worst);
     }
 
