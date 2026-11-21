@@ -1,0 +1,30 @@
+# Phase 156.2c: SKY RUN started and stopped from the app's own window.
+#
+# The limits and a park are set, and the dark window is made always open
+# (SkyDarkSunAltDeg=90), so START begins at once. A far-north site keeps
+# Capella and Deneb above a 10-degree horizon at any hour, so a group
+# always has a target. STOP from the window ends the run and parks.
+
+name    Sky run: started and stopped from the app's window
+timeout 360
+
+rig     SiteLatDeg=60
+rig     SiteLonDeg=0
+rig     SkyHorizon=0:10
+rig     SkySlewAltMax=85
+rig     SkySlewAz=0..360
+rig     SkyParkAltAz=180:20
+rig     SkyDarkSunAltDeg=90
+rig     SkyStars=Capella,Deneb
+
+expect 30  [SCENARIO] Sky run
+wait   3
+press  SKYRUN:SHOW
+press  SKYRUN:START
+expect 10  [SKYRUN] started:
+expect 30  [SKYRUN] group
+shot   running
+press  SKYRUN:STOP
+expect 10  [SKYRUN] parking: STOP pressed
+expect 240 [SKYRUN] parked;
+shot   parked

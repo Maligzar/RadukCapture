@@ -143,6 +143,7 @@ public:
     void SetADCAlignHandler(std::function<void()> h) { m_onADCAlign = h; }
     // Shift+D — the stand-alone status window (disk, buffer, FPS, lost).
     void SetStatusToggleHandler(std::function<void()> h) { m_onStatusToggle = h; }
+    void SetSkyRunToggleHandler(std::function<void()> h) { m_onSkyRunToggle = h; }   // phase 156.2c
     void SetJogHandler(std::function<void(int,int,bool)> h)  { m_onJog              = h; }
     void SetAutofocusToggleHandler(std::function<void()> h)  { m_onAutofocusToggle  = h; }
 
@@ -312,6 +313,7 @@ private:
     std::function<void()>               m_onOverlayToggle;
     std::function<void()>               m_onADCAlign;
     std::function<void()>               m_onStatusToggle;
+    std::function<void()>               m_onSkyRunToggle;
     std::function<void(int,int,bool)>   m_onJog;
     std::function<void()>               m_onAutofocusToggle;
     std::function<void()>               m_onMove;

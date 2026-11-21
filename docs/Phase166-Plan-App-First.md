@@ -1,6 +1,6 @@
 # Phase 166: the app first, Dash second
 
-Written 2026-11-21 at the owner's direction. Status: `PARTIAL`: 166.0 `WRITTEN` (3.3.41).
+Written 2026-11-21 at the owner's direction. Status: `PARTIAL`: 166.0 and 156.2c `WRITTEN` (3.3.41).
 
 ## The owner's rule (2026-11-21)
 
@@ -37,7 +37,7 @@ Under rule 2 these go, or come from the app.
 - **A parity check on CI.** `tools/app_first_check.py` reads every `rc.cmd == "..."` in `main.cpp` and a table in this file (below), and fails if a remote command has no native control listed. A new remote command then can't land without its native control, or at least without saying where it is.
 - **No app change.** The table starts with the three debts marked `owed`. The check allows `owed` rows only while their stage is open, by stage number.
 
-### 156.2c: SKY RUN in the app (size M), ahead of 156.4
+### 156.2c: SKY RUN in the app (size M), ahead of 156.4 — `WRITTEN` 2026-11-21 (3.3.41)
 The sky run's own surface, native. A window opened from the action registry (with a hotkey, like the Status window) and from the GoTo panel's Tonight tab:
 - the pre-flight list, each line ticked or crossed, with every refusal's reason;
 - the plan, with each group's status, and each item's status (156.2b);
@@ -69,8 +69,8 @@ Dash's card stays, mirroring the window. It's numbered in 156 because it finishe
 
 | command | native | stage |
 |---|---|---|
-| skyrun_start | owed | 156.2c |
-| skyrun_stop | owed | 156.2c |
+| skyrun_start | SKY RUN window START (Shift+R) | done (156.2c) |
+| skyrun_stop | SKY RUN window STOP (Shift+R) | done (156.2c) |
 | weather_refresh | owed | 166.1 |
 | park | mount window PARK | done (state owed, 166.2) |
 | autofocus | AUTO FOCUS | done |

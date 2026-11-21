@@ -1,0 +1,16 @@
+# Phase 156.2c: SKY RUN in the app refuses, and says why.
+#
+# The emulator's rig.ini has none of the sky run's limits or a park, so
+# START in the app's own window refuses with every reason, and nothing
+# moves (the owner's rule, 2026-11-21: the app is the instrument, Dash a
+# remote; this is the app's control, not Dash's).
+
+name    Sky run: refused from the app's window, with every reason
+timeout 120
+
+expect 30  [SCENARIO] Sky run
+wait   3
+press  SKYRUN:SHOW
+press  SKYRUN:START
+expect 10  [SKYRUN] refused:
+shot   refused

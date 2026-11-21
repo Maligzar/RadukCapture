@@ -120,6 +120,7 @@
 #include "app/ParkController.h"       // phase 156.2a: park, a slew to SkyParkAltAz
 #include "app/SkyRunController.h"     // phase 156.2a: the unattended sky run
 #include "gui/StatusWindow.h"
+#include "gui/SkyRunWindow.h"      // phase 156.2c: SKY RUN, in the app
 #include "gui/ConfirmToast.h"
 #include "gui/ADCAlignWindow.h"
 #include "core/ADCAlignment.h"
@@ -2375,6 +2376,10 @@ static int RunApp(bool useEmulator) {
     // everything around it -- see StatusWindow.h.
     raduk::gui::StatusWindow statusWindow;
     statusWindow.Create(window.Handle(), 320, 320, 900, 220);
+    // Phase 156.2c: SKY RUN's own window (Shift+R). The app is the
+    // instrument; Dash's card mirrors this one (the owner, 2026-11-21).
+    raduk::gui::SkyRunWindow skyRunWindow;
+    skyRunWindow.Create(window.Handle(), 360, 260, 560, 520);
 
     // Phase 35: the ADC alignment tool. Starts hidden -- it is a job you
     // do once at the start of a session, not something you watch all
@@ -2468,6 +2473,7 @@ static int RunApp(bool useEmulator) {
         { "share",  shareView.Handle()  },
         { "objectpanel", objectPanel.Handle() },
         { "moonmap", moonMapWindow.Handle() },
+        { "skyrun", skyRunWindow.Handle() },
     };
     bool s_restoredAnyPanel = false;
     // ── Phase 101: apply the saved open/closed state ──────────
@@ -2502,6 +2508,7 @@ static int RunApp(bool useEmulator) {
         { "share",       [&](bool v){ v ? shareView.Show()      : shareView.Hide(); } },
         { "objectpanel", [&](bool v){ v ? objectPanel.Show()    : objectPanel.Hide(); } },
         { "moonmap",     [&](bool v){ v ? moonMapWindow.Show()  : moonMapWindow.Hide(); } },
+        { "skyrun",      [&](bool v){ v ? skyRunWindow.Show()   : skyRunWindow.Hide(); } },
     };
     //
     // A named lambda because it has to run twice. The first pass has to
@@ -2544,7 +2551,8 @@ static int RunApp(bool useEmulator) {
              { "skymap", skyMap.Handle() }, { "skymap2", skyMap2.Handle() }, { "goto", gotoPanel.Handle() },
              { "histogram", histWindow.Handle() }, { "sharpness", sharpWindow.Handle() },
              { "temperature", tempWindow.Handle() }, { "status", statusWindow.Handle() },
-             { "adcalign", adcAlignWindow.Handle() }, { "moonmap", moonMapWindow.Handle() } })
+             { "adcalign", adcAlignWindow.Handle() }, { "moonmap", moonMapWindow.Handle() },
+             { "skyrun", skyRunWindow.Handle() } })
         raduk::gui::panel_dock::Register(h, role);
     raduk::gui::panel_dock::SetEnabled(RigConfig::Get().panelSnap);
 
@@ -5478,7 +5486,8 @@ static int RunApp(bool useEmulator) {
                ps == raduk::app::ParkController::State::Idle;
     };
     skyHooks.log = [&](const std::string& line) {
-        Log("[SKYRUN] %s\n", line.c_str());
+        // The controller's lines already start "[SKYRUN] ".
+        Log("%s\n", line.c_str());
         slog.Mount("Sky run: %s", line.c_str());
     };
     std::string skyNight;
@@ -5592,6 +5601,8 @@ static int RunApp(bool useEmulator) {
             notifBar.NotifyWarn(L"Sky run refused: " + std::wstring(r.begin(), r.end()));
         }
     };
+    skyRunWindow.SetStartCallback([&] { Log("[SKYRUN] START from the app\n"); startSkyRun("all"); });
+    skyRunWindow.SetStopCallback([&]  { Log("[SKYRUN] STOP from the app\n"); skyRun.Stop(core.Clock().Now()); });
 
     // Shared by ESC and the MountController STOP button. Both must halt the
     // centroid-tracker correction thread, not just the active slews —
@@ -6487,6 +6498,7 @@ static int RunApp(bool useEmulator) {
     window.SetSharpnessToggleHandler([&]()  { sharpWindow.Toggle();  });
     window.SetTemperatureToggleHandler([&]() { tempWindow.Toggle(); });
     window.SetStatusToggleHandler([&]()      { statusWindow.Toggle(); });
+    window.SetSkyRunToggleHandler([&]()      { skyRunWindow.Toggle(); });   // phase 156.2c
     window.SetADCAlignHandler([&]() {
         // Nothing to align without a corrector in the train. The window
         // would still show a residual -- the atmosphere disperses
@@ -8195,6 +8207,13 @@ static int RunApp(bool useEmulator) {
             if (a.arg.rfind("MOONMAP:", 0) == 0) {
                 if (!moonMapWindow.ScenarioPress(a.arg.substr(8)))
                     g_scenario->ActionFailed("no Moon map button called '" + a.arg.substr(8) + "'");
+                break;
+            }
+            // Phase 156.2c: the SKY RUN window, as a person would use it.
+            if (a.arg == "SKYRUN:SHOW") { skyRunWindow.Show(); break; }
+            if (a.arg.rfind("SKYRUN:", 0) == 0) {
+                if (!skyRunWindow.ScenarioPress(a.arg.substr(7)))
+                    g_scenario->ActionFailed("the SKY RUN window's '" + a.arg.substr(7) + "' is not available now");
                 break;
             }
             if (a.arg.rfind("GOTO:", 0) == 0) {
@@ -10054,6 +10073,7 @@ static int RunApp(bool useEmulator) {
                     telemetry.skyrun_refusals = ref;
                     telemetry.skyrun_rows     = skyRun.PlanRows();
                     telemetry.skyrun_reason   = skyRun.Supervisor().StopReason();
+                    skyRunWindow.Update(raduk::app::BuildSkyRunView(skyRun));   // phase 156.2c
                 }
 
                 if (mount && mount->IsConnected()) {
