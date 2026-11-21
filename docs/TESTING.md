@@ -61,6 +61,7 @@ In practice:
 **The app comes first (the owner, 2026-11-21).** Dash is the remote for an iPhone or iPad and the test harness, and it is never used in place of the app. So every control and reading exists in the app first, tested through the scenario runner, and Dash mirrors it and computes nothing of its own. See [`Phase166-Plan-App-First.md`](Phase166-Plan-App-First.md).
 
 As the remote, Dash can reach every control a person needs at the telescope. A new feature is not finished until:
+- the app has its native control and shows its state, with a scenario that presses it (layer 3);
 - Dash has its control and shows its state;
 - the control has a stable `id`;
 - a Playwright test drives it.
