@@ -1,0 +1,16 @@
+# Phase 166.1: the weather, in the app (the owner's rule, 2026-11-21: the
+# app is the instrument, Dash a remote). The weather window opens, and its
+# REFRESH asks the app's own weather source for a new reading, the same
+# refresh Dash's button sends.
+
+name    Weather: the app's own window and its refresh
+timeout 90
+
+rig     WeatherSource=internal
+
+expect 30  [SCENARIO] Weather
+wait   3
+press  WEATHER:SHOW
+press  WEATHER:REFRESH
+expect 10  [WX] refresh from the app
+shot   weather

@@ -1,6 +1,6 @@
 # Phase 166: the app first, Dash second
 
-Written 2026-11-21 at the owner's direction. Status: `PARTIAL`: 166.0, 156.2c and 166.2 `WRITTEN` (3.3.41).
+Written 2026-11-21 at the owner's direction. Status: `PARTIAL`: 166.0, 156.2c, 166.1 and 166.2 `WRITTEN` (3.3.41); 166.3 and 166.4's scenario open.
 
 ## The owner's rule (2026-11-21)
 
@@ -47,7 +47,7 @@ The sky run's own surface, native. A window opened from the action registry (wit
 
 Dash's card stays, mirroring the window. It's numbered in 156 because it finishes 156.2a's surface. It comes before 156.4 because the first real sky run should be started from the app.
 
-### 166.1: the weather in the app (size S-M)
+### 166.1: the weather in the app (size S-M) — `WRITTEN` 2026-11-21 (3.3.41)
 - **A weather view in the app,** from `core/SiteWeather.h`, showing what Dash shows today: cloud, temperature, humidity, wind and gusts, dew point and risk, pressure, 7Timer seeing, the verdict and the score. It also says where the reading came from, how old it is, and why there is none (offline, not configured, or failed).
 - **↻ in the app.** Dash's refresh becomes the mirror.
 - The scenario runner presses ↻; Dash's `weather.spec.js` is unchanged.
@@ -78,7 +78,7 @@ The readout's telemetry block runs **only while a Dash client is connected**. An
 |---|---|---|
 | skyrun_start | SKY RUN window START (Shift+R) | done (156.2c) |
 | skyrun_stop | SKY RUN window STOP (Shift+R) | done (156.2c) |
-| weather_refresh | owed | 166.1 |
+| weather_refresh | Weather window REFRESH (Shift+W) | done (166.1) |
 | park | mount window PARK, with its state on the button | done (166.2) |
 | autofocus | AUTO FOCUS | done |
 | autofocus_abort | AUTO FOCUS (second press) | done |

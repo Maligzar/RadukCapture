@@ -65,6 +65,9 @@ int main() {
         SkyRunController c;
         const auto v = BuildSkyRunView(c);
         Check(v.state == "not started" && v.canStart && !v.canStop, "not started: START on, STOP off");
+        const auto w = SkyRunLines(v);
+        Check(w.headline == "SKY RUN: not started" && w.Button("START") && w.Button("START")->enabled &&
+              w.Button("STOP") && !w.Button("STOP")->enabled, "the window's headline and buttons follow it");
         Check(Has(v, "START checks the rig") && Has(v, "without a park") && Has(v, "results.json"),
               "says what START and STOP do, and where results go");
     }

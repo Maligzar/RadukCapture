@@ -517,6 +517,8 @@ bool Window::HandleKeyDown(WPARAM wParam, LPARAM lParam) {
             if (firstPress && m_onNightVision) m_onNightVision();
             return true;
         case 'W':   // Watch — Phase 12b advisory loop on/off
+            // Phase 166.1: Shift+W is the weather window.
+            if (shift) { if (firstPress && m_onWeatherToggle) m_onWeatherToggle(); return true; }
             if (firstPress && m_onAdvisoryToggle) m_onAdvisoryToggle();
             return true;
         case 'L':   // Levels -- Phase 37 display stretch on/off

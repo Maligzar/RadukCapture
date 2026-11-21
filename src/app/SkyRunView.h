@@ -16,16 +16,12 @@
 #include <string>
 #include <vector>
 
+#include "LinesView.h"
 #include "SkyRunController.h"
 
 namespace raduk::app {
 
-struct SkyRunLine {
-    enum class Tone { Normal, Dim, Good, Accent, Warn, Bad };
-    std::string text;
-    Tone tone = Tone::Normal;
-    bool heading = false;
-};
+using SkyRunLine = ViewLine;
 
 struct SkyRunViewModel {
     std::string state;                 // the one-line headline
@@ -106,6 +102,16 @@ inline SkyRunViewModel BuildSkyRunView(const SkyRunController& c) {
         }
     }
     return v;
+}
+
+// For the window (gui/LinesWindow.h): the headline, the lines, START and STOP.
+inline LinesView SkyRunLines(const SkyRunViewModel& v) {
+    LinesView w;
+    w.headline = "SKY RUN: " + v.state;
+    w.lines = v.lines;
+    w.buttons.push_back({"START", "\xE2\x96\xB6  START", v.canStart, ViewLine::Tone::Good});
+    w.buttons.push_back({"STOP", "\xE2\x96\xA0  STOP (parks)", v.canStop, ViewLine::Tone::Bad});
+    return w;
 }
 
 } // namespace raduk::app

@@ -120,7 +120,8 @@
 #include "app/ParkController.h"       // phase 156.2a: park, a slew to SkyParkAltAz
 #include "app/SkyRunController.h"     // phase 156.2a: the unattended sky run
 #include "gui/StatusWindow.h"
-#include "gui/SkyRunWindow.h"      // phase 156.2c: SKY RUN, in the app
+#include "gui/LinesWindow.h"       // phases 156.2c, 166.1: SKY RUN and the weather, in the app
+#include "app/WeatherView.h"
 #include "gui/ConfirmToast.h"
 #include "gui/ADCAlignWindow.h"
 #include "core/ADCAlignment.h"
@@ -2378,8 +2379,22 @@ static int RunApp(bool useEmulator) {
     statusWindow.Create(window.Handle(), 320, 320, 900, 220);
     // Phase 156.2c: SKY RUN's own window (Shift+R). The app is the
     // instrument; Dash's card mirrors this one (the owner, 2026-11-21).
-    raduk::gui::SkyRunWindow skyRunWindow;
-    skyRunWindow.Create(window.Handle(), 360, 260, 560, 520);
+    raduk::gui::LinesWindow skyRunWindow;
+    skyRunWindow.Create(window.Handle(), L"RadukSkyRun", L"Sky run", 360, 260, 560, 520);
+    // Phase 166.1: the weather's whole reading, and its refresh (Shift+W).
+    raduk::gui::LinesWindow weatherWindow;
+    weatherWindow.Create(window.Handle(), L"RadukWeather", L"Weather", 400, 300, 420, 420);
+    // One refresh for the window's button and Dash's: the app's own fetch,
+    // when it makes one (Offline=1 still asks nothing; SatDesk::HttpGet keeps it).
+    auto refreshWeather = [&](const char* from) {
+        if (wx::ModeUsesInternal(wxMode)) {
+            skyWx.RefreshNow();
+            Log("[WX] refresh from %s\n", from);
+        } else {
+            Log("[WX] refresh from %s: WeatherSource is %s, nothing to fetch here\n", from, wx::WeatherModeText(wxMode));
+        }
+    };
+    weatherWindow.SetButtonCallback([&](const std::string& id) { if (id == "REFRESH") refreshWeather("the app"); });
 
     // Phase 35: the ADC alignment tool. Starts hidden -- it is a job you
     // do once at the start of a session, not something you watch all
@@ -2474,6 +2489,7 @@ static int RunApp(bool useEmulator) {
         { "objectpanel", objectPanel.Handle() },
         { "moonmap", moonMapWindow.Handle() },
         { "skyrun", skyRunWindow.Handle() },
+        { "weather", weatherWindow.Handle() },
     };
     bool s_restoredAnyPanel = false;
     // ── Phase 101: apply the saved open/closed state ──────────
@@ -2509,6 +2525,7 @@ static int RunApp(bool useEmulator) {
         { "objectpanel", [&](bool v){ v ? objectPanel.Show()    : objectPanel.Hide(); } },
         { "moonmap",     [&](bool v){ v ? moonMapWindow.Show()  : moonMapWindow.Hide(); } },
         { "skyrun",      [&](bool v){ v ? skyRunWindow.Show()   : skyRunWindow.Hide(); } },
+        { "weather",     [&](bool v){ v ? weatherWindow.Show()  : weatherWindow.Hide(); } },
     };
     //
     // A named lambda because it has to run twice. The first pass has to
@@ -2552,7 +2569,7 @@ static int RunApp(bool useEmulator) {
              { "histogram", histWindow.Handle() }, { "sharpness", sharpWindow.Handle() },
              { "temperature", tempWindow.Handle() }, { "status", statusWindow.Handle() },
              { "adcalign", adcAlignWindow.Handle() }, { "moonmap", moonMapWindow.Handle() },
-             { "skyrun", skyRunWindow.Handle() } })
+             { "skyrun", skyRunWindow.Handle() }, { "weather", weatherWindow.Handle() } })
         raduk::gui::panel_dock::Register(h, role);
     raduk::gui::panel_dock::SetEnabled(RigConfig::Get().panelSnap);
 
@@ -5606,8 +5623,10 @@ static int RunApp(bool useEmulator) {
             notifBar.NotifyWarn(L"Sky run refused: " + std::wstring(r.begin(), r.end()));
         }
     };
-    skyRunWindow.SetStartCallback([&] { Log("[SKYRUN] START from the app\n"); startSkyRun("all"); });
-    skyRunWindow.SetStopCallback([&]  { Log("[SKYRUN] STOP from the app\n"); skyRun.Stop(core.Clock().Now()); });
+    skyRunWindow.SetButtonCallback([&](const std::string& id) {
+        if (id == "START") { Log("[SKYRUN] START from the app\n"); startSkyRun("all"); }
+        if (id == "STOP")  { Log("[SKYRUN] STOP from the app\n"); skyRun.Stop(core.Clock().Now()); }
+    });
 
     // Shared by ESC and the MountController STOP button. Both must halt the
     // centroid-tracker correction thread, not just the active slews —
@@ -6504,6 +6523,7 @@ static int RunApp(bool useEmulator) {
     window.SetTemperatureToggleHandler([&]() { tempWindow.Toggle(); });
     window.SetStatusToggleHandler([&]()      { statusWindow.Toggle(); });
     window.SetSkyRunToggleHandler([&]()      { skyRunWindow.Toggle(); });   // phase 156.2c
+    window.SetWeatherToggleHandler([&]()     { weatherWindow.Toggle(); });  // phase 166.1
     window.SetADCAlignHandler([&]() {
         // Nothing to align without a corrector in the train. The window
         // would still show a residual -- the atmosphere disperses
@@ -7962,15 +7982,9 @@ static int RunApp(bool useEmulator) {
                 // Phase 156.2a: the same park as the mount window's PARK.
                 requestPark("Dash");
             } else if (rc.cmd == "weather_refresh") {
-                // Phase 165.4: Dash's weather card asks for a fetch now.
-                // Offline=1 still asks nothing (SatDesk::HttpGet keeps it).
-                if (wx::ModeUsesInternal(wxMode)) {
-                    skyWx.RefreshNow();
-                    Log("[WS] Remote weather_refresh\n");
-                } else {
-                    Log("[WS] Remote weather_refresh: WeatherSource is %s, nothing to fetch here\n",
-                        wx::WeatherModeText(wxMode));
-                }
+                // Phase 165.4, and since 166.1 the same refresh as the app's
+                // weather window: Dash mirrors it.
+                refreshWeather("Dash");
             } else if (rc.cmd == "autofocus_abort") {
                 if (core.afCtl.Busy()) {
                     abortAutofocus();
@@ -8216,6 +8230,12 @@ static int RunApp(bool useEmulator) {
             }
             // Phase 156.2c: the SKY RUN window, as a person would use it.
             if (a.arg == "SKYRUN:SHOW") { skyRunWindow.Show(); break; }
+            if (a.arg == "WEATHER:SHOW") { weatherWindow.Show(); break; }
+            if (a.arg.rfind("WEATHER:", 0) == 0) {
+                if (!weatherWindow.ScenarioPress(a.arg.substr(8)))
+                    g_scenario->ActionFailed("the weather window's '" + a.arg.substr(8) + "' is not available now");
+                break;
+            }
             if (a.arg.rfind("SKYRUN:", 0) == 0) {
                 if (!skyRunWindow.ScenarioPress(a.arg.substr(7)))
                     g_scenario->ActionFailed("the SKY RUN window's '" + a.arg.substr(7) + "' is not available now");
@@ -9389,7 +9409,14 @@ static int RunApp(bool useEmulator) {
                 skyRun.Tick(core.Clock().Now());
                 // Phase 156.2c: the app's own SKY RUN window. Here, not in the
                 // telemetry block, which runs only while Dash is connected.
-                skyRunWindow.Update(raduk::app::BuildSkyRunView(skyRun));
+                skyRunWindow.Update(raduk::app::SkyRunLines(raduk::app::BuildSkyRunView(skyRun)));
+                // Phase 166.1: the weather window, from the same reading the
+                // Status row and Dash use.
+                {
+                    const int64_t nowU = (int64_t)std::time(nullptr);
+                    weatherWindow.Update(raduk::app::BuildWeatherView(weatherNow(nowU), wxMode,
+                                                                      RigConfig::Get().offline != 0, nowU));
+                }
                 // Phase 166.2: the same state on the mount window's PARK, and
                 // a failure said once, with its reason (Dash used to be the
                 // only place that showed either).
