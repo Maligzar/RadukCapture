@@ -121,6 +121,7 @@ A sky test should not take over a night, and only real-sky results count. So the
     - `--allowedTools` limited to reading, editing, commits, `git push origin field/*` and `gh pr create`.
   - **Not started by the app.** The hand-off pushes and starts Claude, so it is the owner's command. The app logs it, ready to run, at the end of every sky run.
   - **Refusals:** an emulator run is bundled only; `Offline=1` keeps the commit local.
+  - **Any night (the owner, 2026-11-21):** the same hand-off takes a normal imaging night and a Dash test night (`--night`, `--captures`, `--dash`). Each has its own branch (`field/<night>-imaging`, `-dash`). There's no `results.json`, so no checklist mark: Claude reads the recordings' records, Autorun's rankings, the validation log and, for a Dash night, Playwright's report. When the app closes, it logs the command for the night.
 - **156.5 The dress rehearsal, in CI.** The same sky scenarios run against the emulator (`--sky --emulate`): the skips, the cloud hold, the stall stop and the park are tested on every push, not first under the sky. This needs 153.0's headless harness.
 
 ## 156.1, 156.2, 156.3 and 156.3b, the rules as built (2026-11-21, 3.3.38)

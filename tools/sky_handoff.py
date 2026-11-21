@@ -1,16 +1,22 @@
 #!/usr/bin/env python3
 """Phase 156.4: hand a sky run's results to Claude Code.
 
-After the run, on the capture PC:
+Three kinds of night, the same way (the owner, 2026-11-21):
 
-  python tools/sky_handoff.py <data root>/field-results/<night>
-        [--log <raduk_log.txt>] [--logs <logs folder>] [--rig <rig.ini>]
-        [--no-claude] [--dry-run]
+  A sky run (the folder holds the app's results.json):
+    python tools/sky_handoff.py <data root>/field-results/<night> [options]
+  A normal imaging night, or one with Dash's Playwright suite run (--dash):
+    python tools/sky_handoff.py <data root>/field-results/<night> --night <YYYYMMDD>
+        --captures <capture folder> [--dash tests/web/results/dash-results.json] [options]
+
+  options: [--log <raduk_log.txt>] [--logs <logs folder>] [--rig <rig.ini>]
+           [--no-claude] [--dry-run]
 
 What it does, in order:
   1. Builds the bundle beside results.json (tools/sky_bundle.py).
-  2. Refuses to go further for an emulator run: only the sky settles a
-     checklist item.
+  2. Refuses to go further for an emulator sky run: only the sky settles a
+     checklist item. An imaging or Dash night marks no checklist item at
+     all; Claude reads its evidence and says what it shows.
   3. In a separate git worktree (your own checkout and its local edits are
      never touched), makes the branch field/<night> from origin/master,
      copies the bundle into field-results/<night>/, marks the checklist
@@ -44,8 +50,8 @@ import sky_bundle  # noqa: E402
 
 ALLOWED_TOOLS = ("Read Edit Write Grep Glob "
                  "Bash(git status*) Bash(git diff*) Bash(git log*) Bash(git add*) Bash(git commit*) "
-                 "Bash(git push origin field/*) Bash(gh pr create*) Bash(python *)")
-BUNDLE_FILES = ("results.json", "summary.md", "log_excerpt.txt", "recordings.txt")
+                 "Bash(git push) Bash(git push origin field/*) Bash(gh pr create*) Bash(python *)")
+BUNDLE_FILES = ("bundle.json", "results.json", "summary.md", "log_excerpt.txt", "recordings.txt", "dash-results.json")
 
 
 def git(repo, *args, check=True):
@@ -67,40 +73,63 @@ def offline(rig_path):
 
 
 def handoff(night_dir, repo, log=None, logs=None, rig=None, use_claude=True, dry_run=False, claude="claude",
-            say=print, work_root=None):
-    """Returns 'emulator', 'offline', 'pushed' (Claude missing or failed) or 'handed-off'."""
+            say=print, work_root=None, night=None, captures=None, dash=None):
+    """Returns 'emulator', 'offline', 'pushed' (Claude missing or failed), 'handed-off' or 'dry-run'."""
     results = os.path.join(night_dir, "results.json")
-    with open(results, encoding="utf-8") as f:
-        res = json.load(f)
-    night = res.get("night") or os.path.basename(os.path.normpath(night_dir))
-    written = sky_bundle.bundle(results, log, logs)
-    say(f"[HANDOFF] bundle: {', '.join(written)}")
-    if res.get("emulator"):
-        say("[HANDOFF] an emulator run: bundled, but no branch, no checklist marks and no analysis")
-        return "emulator"
-    branch = f"field/{night}"
+    if os.path.isfile(results):
+        with open(results, encoding="utf-8") as f:
+            res = json.load(f)
+        night = res.get("night") or os.path.basename(os.path.normpath(night_dir))
+        kind = "sky-run"
+        written = sky_bundle.bundle(results, log, logs, captures, dash)
+        if res.get("emulator"):
+            say(f"[HANDOFF] bundle: {', '.join(written)}")
+            say("[HANDOFF] an emulator run: bundled, but no branch, no checklist marks and no analysis")
+            return "emulator"
+    else:
+        night = night or os.path.basename(os.path.normpath(night_dir))
+        out_root = os.path.dirname(os.path.normpath(night_dir))
+        night_dir, written = sky_bundle.bundle_night(night, out_root, log, logs, captures, dash)
+        kind = "dash-test" if dash else "imaging"
+    say(f"[HANDOFF] {kind} {night}: bundle: {', '.join(written)}")
+    # One branch per night and kind; a rerun builds on what it pushed before.
+    branch = f"field/{night}" + {"sky-run": "", "imaging": "-imaging", "dash-test": "-dash"}[kind]
     if dry_run:
         say(f"[HANDOFF] dry run: would make {branch} from origin/master, commit the bundle and the checklist, push, and start Claude Code")
         return "dry-run"
 
     git(repo, "fetch", "origin", "master")
-    work = os.path.join(work_root or tempfile.mkdtemp(prefix="sky-handoff-"), f"field-{night}")
+    again = subprocess.run(["git", "-C", repo, "fetch", "origin", f"{branch}:refs/remotes/origin/{branch}"],
+                           capture_output=True, text=True).returncode == 0
+    base = f"origin/{branch}" if again else "origin/master"
+    work = os.path.join(work_root or tempfile.mkdtemp(prefix="sky-handoff-"), branch.replace("/", "-"))
     if os.path.exists(work):
         git(repo, "worktree", "remove", "--force", work, check=False)
         shutil.rmtree(work, ignore_errors=True)
-    git(repo, "worktree", "add", "-B", branch, work, "origin/master")
+    git(repo, "worktree", "prune", check=False)
+    git(repo, "worktree", "add", "-B", branch, work, base)
+    if again:
+        say(f"[HANDOFF] {branch} was pushed before: this run adds to it")
     dest = os.path.join(work, "field-results", night)
     os.makedirs(dest, exist_ok=True)
     for name in os.listdir(night_dir):
-        if name in BUNDLE_FILES or (name.startswith("validation_") and name.endswith(".json")):
+        if name in BUNDLE_FILES or (name.startswith(("validation_", "autorun_")) and name.endswith((".json", ".txt"))):
             shutil.copyfile(os.path.join(night_dir, name), os.path.join(dest, name))
-    upd = subprocess.run([sys.executable, os.path.join(work, "tools", "sky_checklist_update.py"),
-                          os.path.join(dest, "results.json"),
-                          "--checklist", os.path.join(work, "docs", "CLEAR-NIGHT-CHECKLIST.md")],
-                         capture_output=True, text=True)
-    say("[HANDOFF] checklist: " + (upd.stdout.strip().splitlines() or ["(no output)"])[-1])
+    if kind == "sky-run":
+        upd = subprocess.run([sys.executable, os.path.join(work, "tools", "sky_checklist_update.py"),
+                              os.path.join(dest, "results.json"),
+                              "--checklist", os.path.join(work, "docs", "CLEAR-NIGHT-CHECKLIST.md")],
+                             capture_output=True, text=True)
+        say("[HANDOFF] checklist: " + (upd.stdout.strip().splitlines() or ["(no output)"])[-1])
+        msg = f"Sky run {night}: the bundle, and the checklist marked from it"
+    else:
+        say("[HANDOFF] checklist: not marked (only a sky run's results mark it)")
+        msg = ("Dash test night" if kind == "dash-test" else "Imaging night") + f" {night}: the bundle"
     git(work, "add", "-A")
-    git(work, "commit", "-m", f"Sky run {night}: the bundle, and the checklist marked from it")
+    if not git(work, "status", "--porcelain"):
+        say("[HANDOFF] nothing new to commit: the bundle is as it was")
+    else:
+        git(work, "commit", "-m", msg)
     say(f"[HANDOFF] committed on {branch} in {work}")
 
     if offline(rig):
@@ -111,18 +140,18 @@ def handoff(night_dir, repo, log=None, logs=None, rig=None, use_claude=True, dry
 
     if not use_claude or not shutil.which(claude):
         say("[HANDOFF] Claude Code not run (" + ("--no-claude" if not use_claude else "not installed") +
-            "): the bundle and the marked checklist are pushed; the analysis is owed")
+            "): the bundle is pushed" + (" with the checklist marked" if kind == "sky-run" else "") + "; the analysis is owed")
         return "pushed"
     # One line: on Windows `claude` is an npm .cmd shim, and cmd.exe ends an
     # argument at its first newline, so the prompt itself stays in the file.
-    prompt = (f"Read tools/sky_handoff_prompt.md and do what it says for the night {night}: "
+    prompt = (f"Read tools/sky_handoff_prompt.md and do what it says for the night {night}, a {kind} night: "
               f"{{NIGHT}} in it means {night}.")
     r = subprocess.run([shutil.which(claude), "-p", prompt, "--permission-mode", "acceptEdits",
                         "--allowedTools", ALLOWED_TOOLS], cwd=work, capture_output=True, text=True)
     with open(os.path.join(night_dir, "handoff.log"), "w", encoding="utf-8") as f:
         f.write(r.stdout + ("\n[stderr]\n" + r.stderr if r.stderr else ""))
     if r.returncode != 0:
-        say(f"[HANDOFF] Claude Code failed (exit {r.returncode}): see handoff.log; the bundle and checklist are pushed, the analysis is owed")
+        say(f"[HANDOFF] Claude Code failed (exit {r.returncode}): see handoff.log; the bundle is pushed, the analysis is owed")
         return "pushed"
     say("[HANDOFF] Claude Code finished: its findings and draft pull request are on " + branch)
     return "handed-off"
@@ -230,6 +259,29 @@ def self_test():
            "its tools cannot merge or push to master")
         ok(os.path.isfile(os.path.join(night_dir(), "handoff.log")), "its output is kept in handoff.log")
         ok(handoff(night_dir(), clone, dry_run=True, say=said.append) == "dry-run", "--dry-run changes nothing")
+
+        # A normal imaging night: no results.json, so no checklist marks.
+        img = os.path.join(d, "data", "field-results", "20261122")
+        logp = os.path.join(d, "raduk_log.txt")
+        with open(logp, "w") as f:
+            f.write("[ACQ] PLANET LOCK: locked\n[STACK] recording complete: normal=1  autoStack=0  path=D:\\c\\Saturn.ser\n")
+        caps = os.path.join(d, "caps")
+        os.makedirs(caps)
+        with open(os.path.join(caps, "autorun_20261122_230000.txt"), "w") as f:
+            f.write("ranked")
+        said = []
+        r = handoff(img, clone, log=logp, captures=caps, night="20261122", say=said.append, use_claude=False, work_root=d)
+        ok(r == "pushed", "an imaging night: bundled and pushed", said[-1] if said else "")
+        files = subprocess.run(["git", "-C", origin, "ls-tree", "-r", "--name-only", "field/20261122-imaging"],
+                               capture_output=True, text=True).stdout.split()
+        ok("field-results/20261122/bundle.json" in files and "field-results/20261122/autorun_20261122_230000.txt" in files,
+           "on its own branch, field/<night>-imaging, with Autorun's rankings")
+        chk = subprocess.run(["git", "-C", origin, "show", "field/20261122-imaging:docs/CLEAR-NIGHT-CHECKLIST.md"],
+                             capture_output=True, text=True).stdout
+        ok("Sky run 20261122" not in chk, "and no checklist item marked")
+        said = []
+        r = handoff(img, clone, log=logp, captures=caps, night="20261122", say=said.append, use_claude=False, work_root=d)
+        ok(r == "pushed" and any("pushed before" in x for x in said), "run again: it builds on the branch it pushed, no rejected push")
     print("\n" + ("SOME CHECKS FAILED" if fails else "ALL CHECKS PASSED"))
     return 1 if fails else 0
 
@@ -245,7 +297,8 @@ def main(argv):
         return argv[argv.index(name) + 1] if name in argv else None
     repo = os.path.normpath(os.path.join(HERE, ".."))
     r = handoff(argv[0], repo, log=opt("--log"), logs=opt("--logs"), rig=opt("--rig"),
-                use_claude="--no-claude" not in argv, dry_run="--dry-run" in argv)
+                use_claude="--no-claude" not in argv, dry_run="--dry-run" in argv,
+                night=opt("--night"), captures=opt("--captures"), dash=opt("--dash"))
     return 0 if r in ("handed-off", "pushed", "offline", "emulator", "dry-run") else 1
 
 

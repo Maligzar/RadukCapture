@@ -68,6 +68,9 @@ As the remote, Dash can reach every control a person needs at the telescope. A n
 
 Today Dash sends `start_capture`, `stop_capture`, `set_gain`, `set_exposure`, `set_gamma`, `autofocus`, `autofocus_abort`, `calibrate_focus`, `move_eaf`, `move_eaf_rel`, `centroid_start`, `centroid_lock`, `centroid_roi`, `centroid_reset`, `cables_dressed`, `mount_stop`, `jog`, `load_profile`, `goto_target`, `moonmap` and `weather_refresh` (main.cpp's WebSocket command handler). Controls with no Dash equivalent yet are listed in "Owed" below, as they are found.
 
+### Sending a Dash test night to Claude Code
+After running the suite against the app, `python tools\sky_handoff.py "<data root>\field-results\<night>" --night <night> --dash tests\web\results\dash-results.json` (with `--log`, `--logs` and `--captures` as the app's closing line gives them) bundles the report with the night. Claude Code then looks into each failure, on its own branch `field/<night>-dash`. See the Help's "Sending a night to Claude Code".
+
 ### Setting it up on the imaging PC
 Node and Playwright are installed on StarMachine. Once, in the repository:
 ```

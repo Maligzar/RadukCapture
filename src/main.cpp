@@ -10351,6 +10351,19 @@ static int RunApp(bool useEmulator) {
                           eafPos, eafTemp, lastRA, lastDec);
     }
 
+    // Phase 156.4 (the owner, 2026-11-21): a normal night can go to Claude
+    // Code too. The hand-off is the owner's to start, so the log says the
+    // exact command, for the night that is ending. (After the next launch
+    // this log is raduk_log.prev.txt.)
+    {
+        SYSTEMTIME lt; GetLocalTime(&lt);
+        const std::string night = val::NightOf(lt.wYear, lt.wMonth, lt.wDay, lt.wHour);
+        Log("[NIGHT] to hand tonight to Claude: python tools\\sky_handoff.py \"%s\\field-results\\%s\" --night %s"
+            " --log \"%s\" --logs \"%s\" --captures \"%s\" --rig \"%s\"\n",
+            raduk::core::Paths::Root().c_str(), night.c_str(), night.c_str(),
+            raduk::core::Paths::LogFile().c_str(), raduk::core::Paths::Logs().c_str(),
+            controls.GetOutputDir().c_str(), raduk::core::RigConfig::PublicIniPath().c_str());
+    }
     leoben.Stop();
     skyWx.Stop();
     writeValidation();   // phase 155.4: the night so far
