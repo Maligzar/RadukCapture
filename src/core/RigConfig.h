@@ -482,6 +482,11 @@ struct RigConfig {
     //   SkyDarkSunAltDeg=-10
     std::string skyStars;
     double      skyDarkSunAltDeg = -10.0;
+    // Where the run, the PARK button and Dash park the tube: az:alt. The
+    // app converts it to RA/Dec for the moment, GoTos it, and turns
+    // tracking off. No default (phase 156.2a, the owner, 2026-11-21).
+    //   SkyParkAltAz=0:5
+    std::string skyParkAltAz;
 
     // Phase 141.1, the PHEMU event recording. The time server the PC
     // clock is checked against before and after an event (UDP 123), and
@@ -881,6 +886,7 @@ private:
         cfg.skySlewAltMax = rs("SkySlewAltMax", "");
         cfg.skySlewAz     = rs("SkySlewAz", "");
         cfg.skyStars      = rs("SkyStars", "");
+        cfg.skyParkAltAz  = rs("SkyParkAltAz", "");
         cfg.skyDarkSunAltDeg = rf("SkyDarkSunAltDeg", cfg.skyDarkSunAltDeg);
         cfg.timeServer  = rs("TimeServer", cfg.timeServer);
         cfg.offline     = (int)rf("Offline", cfg.offline) != 0 ? 1 : 0;

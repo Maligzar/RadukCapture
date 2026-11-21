@@ -428,6 +428,18 @@ public:
     // Planets are recomputed first, because a recall is usually of a
     // planet, and a planet's position from the night it was recorded
     // is a position it has since left.
+    // Phase 156.2a: the sky run's GoTo. Exact name (LookupNow), then the
+    // panel's own DoGoTo, so the run slews by the same path as a person:
+    // profile load, pointing map, SlewWatch. The run has checked the
+    // limits before calling.
+    bool GoToNow(const std::string& name) {
+        double ra = 0, dec = 0;
+        if (!m_mount || !m_mount->IsConnected() || !LookupNow(name, ra, dec)) return false;
+        DoGoTo(ra, dec, name);
+        return true;
+    }
+    bool SolverAvailable() { return m_solver.IsAvailable(); }
+
     bool LookupNow(const std::string& name, double& raH, double& decDeg) {
         if (name.empty()) return false;
         RefreshSky();

@@ -1247,6 +1247,20 @@ body { background:var(--d-void); color:var(--d-text); font-family:'Barlow Conden
         <div id="rcNightRows" style="font-size:11px;line-height:1.35"></div>
       </div>
 
+      <!-- Phase 156.2a: the unattended sky run. The app runs the night
+           (core/SkyRun.h); Dash starts it, shows it and stops it. -->
+      <div class="rc-ctrl-section" style="padding-bottom:6px;display:none" id="rcSkyRunSection">
+        <div class="rc-ctrl-section-title">SKY RUN</div>
+        <div class="rc-row"><span class="rk">STATE</span><span class="rv-dim" id="rcSkyRunState">--</span></div>
+        <div id="rcSkyRunStep" style="font-size:11px;margin:2px 0"></div>
+        <div id="rcSkyRunRefusals" style="font-size:11px;color:var(--d-red);margin:2px 0"></div>
+        <div class="rc-btn-row" style="padding:0 0 4px">
+          <button class="rc-ctrl-btn green" id="rcSkyRunStart" onclick="rcSendCmd('skyrun_start','all')" title="Check the rig, wait for the dark window, then run every test group that applies, and park at the end" style="flex:2">&#9654; SKY RUN</button>
+          <button class="rc-ctrl-btn red" id="rcSkyRunStop" onclick="rcSendCmd('skyrun_stop','')" title="Stop the run and park; what is left is not reached">STOP</button>
+        </div>
+        <div id="rcSkyRunRows" style="font-size:11px;line-height:1.35"></div>
+      </div>
+
       <!-- Mount jog -->
       <div class="rc-ctrl-section" style="padding-bottom:6px">
         <div class="rc-ctrl-section-title">MOUNT JOG</div>
@@ -1260,6 +1274,12 @@ body { background:var(--d-void); color:var(--d-text); font-family:'Barlow Conden
           <div></div>
           <button class="rc-ctrl-btn cyan" style="flex:none;width:32px;height:28px;padding:0" onclick="rcSendCmd('jog','S')">S</button>
           <div></div>
+        </div>
+        <!-- Phase 156.2a: park, a slew to rig.ini SkyParkAltAz, then tracking off.
+             Two taps, because a phone in a pocket should not move the scope. -->
+        <div id="rcParkRow" style="display:none;text-align:center;margin-top:4px">
+          <button class="rc-ctrl-btn amber" id="rcParkBtn" style="flex:none;width:120px;height:26px" onclick="rcParkPress()" title="Slew to the park position (rig.ini SkyParkAltAz), then tracking off">PARK</button>
+          <div id="rcParkState" style="font-size:10px;margin-top:3px;color:var(--d-text-dim)"></div>
         </div>
       </div>
     </div>
@@ -1838,6 +1858,82 @@ function rcTakeWeather(d){
     try { fetchWeather(); } catch(e) {}
   }
 }
+// Phase 156.2a: the SKY RUN card. `skyrun_rows` is "group|target|status|detail"
+// rows joined by ';'. Text is set with textContent, never as HTML.
+const RC_SKY_ACTIVE = ['waiting-dark', 'running', 'holding', 'parking'];
+const RC_SKY_COLOUR = { passed: 'var(--d-green)', collected: 'var(--d-accent)', failed: 'var(--d-red)',
+  'aborted-stall': 'var(--d-red)', clouded: 'var(--d-amber)', running: 'var(--d-accent)' };
+function rcRenderSkyRun(data){
+  const sec = document.getElementById('rcSkyRunSection');
+  if (!sec) return;
+  if (typeof data.skyrun_phase !== 'string') { sec.style.display = 'none'; return; }
+  sec.style.display = '';
+  const phase = data.skyrun_phase;
+  const names = { idle: 'not started', refused: 'refused', 'waiting-dark': 'waiting for the dark window',
+    running: 'running', holding: 'holding', parking: 'parking', done: 'done' };
+  const st = document.getElementById('rcSkyRunState');
+  st.textContent = (names[phase] || phase) + (phase === 'done' && data.skyrun_reason ? ': ' + data.skyrun_reason : '');
+  st.className = RC_SKY_ACTIVE.includes(phase) ? 'rv-green' : 'rv-dim';
+  document.getElementById('rcSkyRunStep').textContent = RC_SKY_ACTIVE.includes(phase) ? (data.skyrun_step || '') : '';
+  const ref = document.getElementById('rcSkyRunRefusals');
+  ref.textContent = phase === 'refused' && data.skyrun_refusals ? 'Not started: ' + data.skyrun_refusals : '';
+  const active = RC_SKY_ACTIVE.includes(phase);
+  document.getElementById('rcSkyRunStart').disabled = active;
+  document.getElementById('rcSkyRunStop').disabled = !active || phase === 'parking';
+  const box = document.getElementById('rcSkyRunRows');
+  box.textContent = '';
+  (data.skyrun_rows || '').split(';').filter(r => r).forEach(r => {
+    const [group, target, status, detail] = r.split('|');
+    const line = document.createElement('div');
+    line.className = 'rc-skyrun-row';
+    const head = document.createElement('span');
+    head.textContent = group + ' on ' + target + ': ';
+    const stat = document.createElement('span');
+    stat.textContent = status;
+    stat.style.color = RC_SKY_COLOUR[status] || 'var(--d-text-dim)';
+    line.appendChild(head); line.appendChild(stat);
+    if (detail) { const d = document.createElement('span'); d.textContent = ' (' + detail + ')'; d.style.color = 'var(--d-text-dim)'; line.appendChild(d); }
+    box.appendChild(line);
+  });
+}
+
+// Phase 156.2a: park. The first tap arms for 4 s, the second sends.
+let rcParkArmedUntil = 0;
+function rcParkPress(){
+  const btn = document.getElementById('rcParkBtn');
+  if (!btn || btn.disabled) return;
+  const now = Date.now();
+  if (now < rcParkArmedUntil) {
+    rcParkArmedUntil = 0;
+    btn.textContent = 'PARK';
+    rcSendCmd('park', '');
+    return;
+  }
+  rcParkArmedUntil = now + 4000;
+  btn.textContent = 'TAP AGAIN TO PARK';
+  setTimeout(() => {
+    if (Date.now() >= rcParkArmedUntil && btn.textContent !== 'PARK') { rcParkArmedUntil = 0; btn.textContent = 'PARK'; }
+  }, 4100);
+}
+function rcRenderPark(data){
+  const row = document.getElementById('rcParkRow');
+  if (!row) return;
+  // An app from before park says nothing about it: no control, rather than one that does nothing.
+  if (typeof data.park_state !== 'string') { row.style.display = 'none'; return; }
+  row.style.display = '';
+  const btn = document.getElementById('rcParkBtn');
+  const st  = document.getElementById('rcParkState');
+  const set = data.park_set === true;
+  btn.disabled = !set || data.park_state === 'slewing';
+  let text = '', col = 'var(--d-text-dim)';
+  if (!set)                                { text = 'No park position: set SkyParkAltAz=az:alt in rig.ini'; col = 'var(--d-amber)'; }
+  else if (data.park_state === 'slewing')  { text = 'Parking: slewing to the park position'; col = 'var(--d-accent)'; }
+  else if (data.park_state === 'parked')   { text = 'PARKED, tracking off'; col = 'var(--d-green)'; }
+  else if (data.park_state === 'failed')   { text = 'Park failed: ' + (data.park_reason || 'no reason given'); col = 'var(--d-red)'; }
+  st.textContent = text;
+  st.style.color = col;
+}
+
 function wxRefresh(){
   if (rcWs && rcWs.readyState === WebSocket.OPEN) rcSendCmd('weather_refresh', '');
   fetchWeather();
@@ -2533,6 +2629,8 @@ function rcHandleData(data) {
     rcSetVal('rcDEC',      data.mount_dec || '+-- -- --');
     const trkEl = document.getElementById('rcTracking');
     if (trkEl) { trkEl.textContent = data.mount_tracking || '--'; trkEl.className = data.mount_tracking && data.mount_tracking !== 'OFF' ? 'rv-green' : 'rv-dim'; }
+    rcRenderPark(data);   // phase 156.2a
+    rcRenderSkyRun(data); // phase 156.2a
     // Capture
     const capturing = !!data.recording;
     rcUpdateCaptureDisplay(capturing, data);

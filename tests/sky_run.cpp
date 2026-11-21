@@ -81,6 +81,7 @@ int main() {
     auto no = PreFlight(pf);
     Check(no.size() >= 4, "nothing set: refused, every reason listed", std::to_string(no.size()));
     pf.siteSet = true; pf.limits = Lim(); pf.mountConnected = true; pf.mountAligned = true; pf.cameraOk = true;
+    ParsePark("0:5", pf.park, why);
     pf.freeGB = 200; pf.plannedGB = 60;
     Check(PreFlight(pf).empty(), "all set: go");
     pf.limits.horizon.clear();
@@ -90,7 +91,21 @@ int main() {
     Check(PreFlight(pf).size() == 1, "no slew bounds: refused");
     pf.limits = Lim(); pf.mountAligned = false;
     Check(PreFlight(pf)[0].find("not aligned") != std::string::npos, "an unaligned mount: refused");
-    pf.mountAligned = true; pf.freeGB = 20;
+    pf.mountAligned = true;
+    {
+        PreFlightIn np = pf; np.park = ParkPosition{};
+        auto r = PreFlight(np);
+        Check(r.size() == 1 && r[0].find("SkyParkAltAz") != std::string::npos, "no park position: refused (the owner, 2026-11-21)", r.empty() ? "" : r[0]);
+        PreFlightIn hi = pf; ParsePark("180:89", hi.park, why);
+        r = PreFlight(hi);
+        Check(r.size() == 1 && r[0].find("above the slew bound") != std::string::npos, "a park above the slew bound: refused", r.empty() ? "" : r[0]);
+        PreFlightIn low = pf; ParsePark("0:5", low.park, why);
+        Check(PreFlight(low).empty(), "a park low in the north, under the horizon limit: allowed (it is deliberate)");
+        ParkPosition pp;
+        Check(!ParsePark("", pp, why) && !ParsePark("5", pp, why) && !ParsePark("0:95", pp, why) && ParsePark(" 350 : 10 ", pp, why) &&
+              pp.azDeg == 350 && pp.altDeg == 10, "SkyParkAltAz parses az:alt, and refuses the rest");
+    }
+    pf.freeGB = 20;
     Check(PreFlight(pf)[0].find("GB free") != std::string::npos, "too little disk: refused", PreFlight(pf)[0]);
 
     printf("\n3. Groups\n");
@@ -180,6 +195,18 @@ int main() {
     Check(ParseStarList("").empty(), "an empty list is no stars");
     Check(IsDark(-10.5) && !IsDark(-9.5) && kDefaultDarkSunAltDeg == -10.0, "dark below -10 degrees by default");
     Check(IsDark(-13, -12) && !IsDark(-11, -12), "and the threshold is a setting");
+    {   // 156.2a: when a target sets, against the horizon limit
+        std::vector<HorizonPoint> h; std::string w;
+        ParseHorizon("0:20,180:40", h, w);
+        auto sinking = [](double startAlt, double az) {
+            return [=](double m, double& alt, double& a) { alt = startAlt - m * 0.25; a = az; };
+        };
+        Check(MinutesUntilBelow(sinking(30, 0), h) == 45, "reaches a 20-degree horizon at 40 min: first sample under it, 45");
+        Check(MinutesUntilBelow(sinking(30, 180), h) == 0, "already under a 40-degree horizon: 0");
+        Check(MinutesUntilBelow(sinking(30, 0), {}) == 125, "no horizon set: the ground (125)");
+        auto steady = [](double, double& alt, double& a) { alt = 60; a = 90; };
+        Check(MinutesUntilBelow(steady, h) >= 1e8, "stays up: never");
+    }
 
     printf("\n6. results.json\n");
     const std::string j = ResultsJson(s, "20261121", "3.3.38");
