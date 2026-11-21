@@ -1,6 +1,6 @@
 # Phase 166: the app first, Dash second
 
-Written 2026-11-21 at the owner's direction. Status: `PARTIAL`: 166.0, 156.2c, 166.1 and 166.2 `WRITTEN` (3.3.41); 166.3 and 166.4's scenario open.
+Written 2026-11-21 at the owner's direction. Status: `PARTIAL`: 166.0, 156.2c, 166.1, 166.2 and 166.3 `WRITTEN` (3.3.41); 166.4's scenario and 166.5 open.
 
 ## The owner's rule (2026-11-21)
 
@@ -57,7 +57,7 @@ Dash's card stays, mirroring the window. It's numbered in 156 because it finishe
 - A disabled PARK button says why, the same as Dash: no `SkyParkAltAz`.
 - A scenario for each state.
 
-### 166.3: Dash computes nothing of its own (size S)
+### 166.3: Dash computes nothing of its own (size S) — `WRITTEN` 2026-11-21 (3.3.41)
 - Remove the placeholder NASA and FAA panels, or replace them with what the app knows, if it knows anything.
 - The wind score comes from the app's verdict (`SiteWeather`), not from deductions written for one telescope.
 - A Dash spec checks that, with no app connected, the page shows no sky or rig figure it made up.
@@ -68,6 +68,20 @@ The readout's telemetry block runs **only while a Dash client is connected**. An
 **166.4 (size S):** read the telemetry block for anything else the app itself needs, and move it out. Add a scenario that drives the app with no Dash connected and checks that the app's own readouts change.
 
 **166.4's audit, done 2026-11-21:** everything else in the block only formats data for Dash (the disk, the weather fields, the mount, the night plan and Moon map rows, the tracker). `pendingEvents`, which the block clears, is never filled, so nothing grows while Dash is away. Still owed: the scenario with no Dash connected.
+
+**166.3 as built:**
+- **Removed:** the NASA / EVENTS and FAA / WILDFIRE panels. They were fixed lists made up in the page: an ISS pass "tonight", "no active TFRs", and a nearby airfield's strobes.
+- **Removed:** the data-source lights, which showed NASA DONKI and STELLARIUM as answering though nothing asked them.
+- **Removed:** the wind score's focal-length and payload deductions. A calm night now scores 100, not 75.
+- **Removed:** the forecast's assumed 10 mph when no wind reading exists. No reading now means no score.
+- **Removed:** "CELESTRON 8SE" from the mount card.
+- **Test:** `dash-honest.spec.js` keeps all of it out.
+
+**166.5 (size M, after 165.3 and the hourly forecast parser):** the rest of what Dash computes for itself:
+- **The conditions tab:** the Moon panel, the planet and DSO lists, light pollution, the seeing bars, and the wind score itself, which is still Dash's rule of thumb.
+- **The forecast tab:** the ensemble.
+
+Each is either taken from the app, which first needs its own score (165.3) and its hourly forecast, or labelled plainly as Dash's estimate.
 
 ## Order
 166.0 first: it's small, and it stops new debt. Then 156.2c before 156.4, then 166.1 and 166.2, then 166.3. All of it belongs to release 3.4, whose acceptance includes an unattended sky run, which should be started from the app.

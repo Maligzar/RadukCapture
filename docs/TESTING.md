@@ -108,6 +108,7 @@ Results go to `tests\web\results\dash-results.json`. Phase 156's bundle picks th
 | `acquire-wide.spec.js` (`@live`) | the app running | Dash loads the Star profile (640x480), CENTROID widens the frame and the ROI row reads `WIDE`, RESET puts 640x480 back (157.0c) |
 | `weather.spec.js` | nothing | Dash's weather (165.4): no location and no app asks nothing; with a location Dash asks Open-Meteo (answered by the test) and shows `--` for a value not given; the app's telemetry replaces Dash's own fetch; the app offline stops the panel and the forecast tab, and ↻ sends `weather_refresh` |
 | `park.spec.js` | nothing | Dash's PARK (156.2a): no control for an app that does not report park; disabled with the key named when `SkyParkAltAz` is unset; two taps send `park`, one tap sends nothing and disarms after 4 s; slewing, parked and a failure with its reason are shown |
+| `dash-honest.spec.js` | nothing | Dash shows only what the app knows (166.3): none of the invented panels (NASA / EVENTS, FAA / WILDFIRE), fixed status lights or one-telescope wording come back, and the wind score has no focal-length or payload deduction |
 | `moon-map.spec.js` (`@live`) | the app running | Dash's MOON MAP: NEW shows a grid with one square a section, a click picks one, MARK turns it green and counts it, CLEAR undoes that, and the empty project is discarded (162). The run itself is `tests\scenarios\moon-map.scn` |
 
 ### Found by it already
