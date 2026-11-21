@@ -36,6 +36,25 @@ The plate scale also needs ASTAP's D80 database installed before that night.
 
 `tools/validation_report` combines several nights into a table with confidence intervals, and recommends a value only when enough data agrees. A clear-night item is then closed by the report's evidence, not by eye.
 
+**155.4a, as built (2026-11-21, 3.3.37).**
+- **`src/core/ValidationLog.h`** (pure) records:
+  - every solve's measured scale beside the configured one, with frame size and binning;
+  - a 101-bin sharpness histogram per target and per exposure and gain, with bin 100 being the frames at the cap;
+  - the normalised seeing, once a second per target;
+  - every autofocus result: start, best, gain, the backlash measured and the one in use;
+  - the target's highlight, clipped share and frame share against the exposure, beside the profile's band.
+
+  Samples are thinned and capped, so a night stays a few hundred kilobytes. The night is the local date the evening began.
+- **`main.cpp`** feeds it from three places:
+  - the solve callback;
+  - the render loop, taking only valid frames on a target, and none during an autofocus sweep or a slew;
+  - the autofocus completion, which runs on the sweep's thread, behind a mutex. The target name comes from the render loop, never from the UI on that thread.
+
+  It writes `validation_<night>_<hhmmss>.json` in the logs folder every 5 minutes and at exit, through a temporary file and a rename. A run that saw nothing writes nothing.
+- **`tools/validation_report.py`** joins any number of files and recommends only on strict rules: 3 solves on 2 nights with the whole 95% CI outside ±0.5% (a binned solve divided by its bin first); 3 nights and 5000 frames before SHARP_CEIL is judged; 5 measured sweeps on 2 nights with a bootstrap CI within 15% for the backlash. The seeing-bar table shows how often 60-90% of the night's best 10 s median would have held. Too little data is said, never filled in. Its `--self-test` runs on CI.
+- **Checks:** `tests/validation_log.cpp` covers the night rule across month, year and leap day, the binning and thinning, the caps, and the JSON read back with `MiniJson`. The report's self-test has 13 checks. A round trip from the recorder's JSON through the report was run during the build.
+- **155.4b, owed:** the fine pass's own figures (its fade ratios, its peak against the coarse one, the edge metric's noise floor). They are only `[AF]` log lines today, so recording them means instrumenting `AutofocusRoutine`.
+
 **155.5 A regression suite from recorded sessions.**
 - **A replay camera.** `SerReplayCamera : ICamera` plays a SER back through the real capture path: the ring buffer, the analyser, the target finder, the focus metrics, the tracking centroid. `SerReader.h` already reads SERs (the player, phase 141.2's photometry), so this is a thin backend. Selected by `RADUK_EMU_SER=<file>`, and usable by the headless harness (153.0).
 - **Clips from real nights.**

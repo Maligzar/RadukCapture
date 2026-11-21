@@ -349,6 +349,9 @@ public:
     int         BestPosition() const { return m_bestPosition.load(); }
     // Phase 139.0: the last sweep's outward minus inward peak, -1 if none.
     int         MeasuredBacklash() const { return m_measuredBacklash.load(); }
+    // Phase 155.4: the backlash this sweep used, for the validation log.
+    // Read it from the completion callback, which runs on the sweep's thread.
+    int         BacklashInUse() const { return m_params.backlash; }
     float       BestSharpness()const { return m_bestSharpness.load(); }
 
     // Status text — safe to read from any thread (atomic string via index trick)

@@ -29,6 +29,9 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <mutex>
 #include <memory>
 #include <string>
 #include <thread>
@@ -63,6 +66,7 @@
 #include "net/PreviewStreamer.h"
 #include "net/LeobenClient.h"     // weather and sky from Leoben, on the home network
 #include "core/SiteWeather.h"     // phase 165.2: the weather fetched here, or Leoben's
+#include "core/ValidationLog.h"   // phase 155.4: the night's evidence, as data
 #include "gui/Window.h"
 #include "gui/PreviewRenderer.h"
 #include "gui/Theme.h"
@@ -1624,6 +1628,49 @@ static int RunApp(bool useEmulator) {
     };
     bool wxAirLogged = false;
     int64_t wxCmpNext = 0;   // "both": the next WXCMP line
+
+    // Phase 155.4: the validation log. Through the night it keeps what the
+    // UNVERIFIED constants' clear-night items need (solves, sharpness,
+    // seeing, autofocus, exposure) and writes validation_<night>_<hhmmss>.json
+    // in the logs folder every 5 minutes and at exit, for
+    // tools/validation_report.py. Fed from the render loop, the solve
+    // callback and the autofocus thread, so behind a mutex.
+    namespace val = raduk::core::validation;
+    std::mutex valMu;
+    val::Recorder valLog;
+    std::string valTarget;   // the render loop's target, for the autofocus thread
+    std::string valPath;
+    {
+        SYSTEMTIME lt; GetLocalTime(&lt);
+        const std::string night = val::NightOf(lt.wYear, lt.wMonth, lt.wDay, lt.wHour);
+        char hms[16];
+        snprintf(hms, sizeof(hms), "%02d%02d%02d", lt.wHour, lt.wMinute, lt.wSecond);
+        valLog.Begin(night, RADUK_VERSION_A, (int64_t)std::time(nullptr));
+        valPath = raduk::core::Paths::Logs() + "\\validation_" + night + "_" + hms + ".json";
+    }
+    // Written to a temporary name and renamed over, so a crash mid-write
+    // leaves the last good file. Nothing is written for a run that saw
+    // nothing.
+    auto writeValidation = [&]() {
+        std::string text;
+        {
+            std::lock_guard<std::mutex> lk(valMu);
+            if (!valLog.Dirty() || valLog.Empty()) return;
+            text = valLog.ToJson();
+            valLog.MarkWritten();
+        }
+        const std::string tmp = valPath + ".tmp";
+        {
+            std::ofstream o(tmp, std::ios::binary | std::ios::trunc);
+            if (!o) return;
+            o << text;
+            if (!o) return;
+        }
+        std::error_code ec;
+        std::filesystem::rename(tmp, valPath, ec);
+        if (ec) std::filesystem::remove(tmp, ec);
+    };
+    auto valNextWrite = std::chrono::steady_clock::now() + std::chrono::minutes(5);
 
     // B3: the dashboard's preview picture. Encoded and sent on its own
     // thread; the render loop only decimates, twice a second, and only
@@ -3498,6 +3545,19 @@ static int RunApp(bool useEmulator) {
             raduk::sky::PlateSolutionFromSolve(r, fw, fh);
         preview.SetPlateSolution(ps);
         if (ps.valid) {
+            // Phase 155.4: every solve's scale against the configured one.
+            {
+                val::Solve s;
+                s.unixSec    = (int64_t)std::time(nullptr);
+                s.measured   = raduk::sky::ArcsecPerPixel(ps);
+                s.configured = RigConfig::Get().plateScaleArcsecPx;
+                s.frameW = fw; s.frameH = fh;
+                int rw = 0, rh = 0, rbin = 1;
+                ImageType rit{};
+                if (cam.GetRegion(rw, rh, rbin, rit) && rbin > 0) s.bin = rbin;
+                std::lock_guard<std::mutex> lk(valMu);
+                valLog.AddSolve(s);
+            }
             Log("[WCS] %dx%d  %.3f\"/px  %s  ref [%.1f,%.1f]\n",
                 fw, fh, raduk::sky::ArcsecPerPixel(ps),
                 raduk::sky::IsMirrored(ps) ? "mirrored" : "normal",
@@ -4861,7 +4921,29 @@ static int RunApp(bool useEmulator) {
         };
         core.afCtl.SetHooks(std::move(h));
     }
-    autofocus.SetOnComplete([&](raduk::core::AFResult result) { core.afCtl.OnComplete(result); });
+    autofocus.SetOnComplete([&](raduk::core::AFResult result) {
+        // Phase 155.4: every autofocus result, on the sweep's own thread.
+        {
+            val::FocusRun fr;
+            fr.unixSec = (int64_t)std::time(nullptr);
+            {
+                std::lock_guard<std::mutex> lk(valMu);
+                fr.target = valTarget;   // targetNow() reads the UI: not from this thread
+            }
+            fr.success = result.success;
+            fr.fineOnly = autofocus.FineOnly();
+            fr.start = result.startPosition;
+            fr.best = result.bestPosition;
+            fr.bestSharp = result.bestSharpness;
+            fr.improvement = result.improvement;
+            fr.backlashMeasured = autofocus.MeasuredBacklash();
+            fr.backlashInUse = autofocus.BacklashInUse();
+            fr.message = result.message;
+            std::lock_guard<std::mutex> lk(valMu);
+            valLog.AddFocus(fr);
+        }
+        core.afCtl.OnComplete(result);
+    });
 
     // ── Phase 112: autofocus runs with auto-exposure, visibly ──
     //
@@ -8175,6 +8257,37 @@ static int RunApp(bool useEmulator) {
         // from frames where it was measured.
         core.FeedAutofocusAnalysis(lastAnalysis, freshAnalysis);   // phase 153.0
 
+        // Phase 155.4: the frame, into the validation log: a real target,
+        // not during a sweep (defocus is not the sky) or a slew.
+        if (freshAnalysis && lastAnalysis.valid && !core.afCtl.Busy() &&
+            lastAnalysis.highlightDN >= raduk::core::SeeingMonitor::kMinHighlightDN &&
+            !(mount && mount->IsSlewing())) {
+            val::Frame vf;
+            vf.ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now().time_since_epoch()).count();
+            vf.target = targetNow();
+            vf.sharpnessPct = lastAnalysis.sharpnessPct;
+            vf.highlightDN = lastAnalysis.highlightDN;
+            vf.normalisedSeeing = raduk::core::SeeingMonitor::Normalised(
+                lastAnalysis.sharpnessPct, lastAnalysis.highlightDN);
+            vf.targetHighlightDN = lastAnalysis.targetHighlightDN;
+            vf.targetClipPct = lastAnalysis.targetClipPct;
+            vf.targetFramePct = lastAnalysis.targetFramePct;
+            vf.exposureMs = cam.GetControlValue(ControlId::ExposureUs) / 1000.0;
+            vf.gain = (double)cam.GetControlValue(ControlId::Gain);
+            if (const TargetProfile* ap = profiles.Active(); ap && ap->HasBand()) {
+                vf.bandFloorMs = ap->bandFloorMs;
+                vf.bandCeilMs = ap->bandCeilMs;
+            }
+            std::lock_guard<std::mutex> lk(valMu);
+            valTarget = vf.target;
+            valLog.AddFrame(vf);
+        }
+        if (std::chrono::steady_clock::now() >= valNextWrite) {
+            valNextWrite = std::chrono::steady_clock::now() + std::chrono::minutes(5);
+            writeValidation();
+        }
+
         // Phase 133.2: say so when the target fades during a sweep or a
         // recording. The flux watched does not change with focus, so a
         // sweep cannot set it off; an exposure or gain change resets it.
@@ -9765,6 +9878,7 @@ static int RunApp(bool useEmulator) {
 
     leoben.Stop();
     skyWx.Stop();
+    writeValidation();   // phase 155.4: the night so far
     previewStreamer.Stop();   // its sink sends through wsServer
     wsServer.Stop();
 

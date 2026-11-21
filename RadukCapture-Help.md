@@ -1764,6 +1764,26 @@ All files go to the configured output directory (default: `D:\RadukCapture\captu
 | `*_snap_*.png` | Single-frame PNG snapshots |
 | `session_log.txt` | Session events, temperatures, status |
 
+**The validation log** (from 3.3.37). Beside the session logs, in the logs
+folder, each run writes `validation_<night>_<time>.json`. It holds the
+night's evidence for the clear-night checklist: each plate solve's measured
+scale, the real frames' sharpness by target, exposure and gain, the seeing
+figure through the night, every autofocus result with the backlash it
+measured, and the target's brightness and clipping against the profile's
+exposure band. It is written every 5 minutes and at exit, and a run that saw
+nothing writes nothing.
+
+To see what the nights add up to, run this from the repository:
+
+```
+python tools\validation_report.py <the logs folder>
+```
+
+The report gives each figure with a 95% confidence interval. It recommends a
+new value (the measured plate scale, the backlash, whether `SHARP_CEIL` is too
+low or too high) only when enough nights agree, and otherwise says what is
+missing. It changes no setting.
+
 ---
 
 ## The browser dashboard (remote monitoring)
@@ -3462,6 +3482,7 @@ un-soak.ps1` runs the emulator for hours through GoTo, lock, autofocus and runs,
 | 3.3.34 | 165.0a, 165.1 | The weather, read and fetched by RadukCapture itself, not yet switched on. `core/SkyWeather.h` reads Open-Meteo's current conditions, 7Timer's astronomy forecast and NWS alerts, and keeps Leoben's dew, wind, cloud-layer and dust thresholds in metric. A value that is missing or unreadable stays unknown: no cloud figure is not 15% cloud, and a clear night's 24 km visibility is a number (Leoben's weather broke on it). 7Timer's seeing is now read from the key 7Timer actually sends, and its wind is a class, not knots. `core/SkyWeatherClient.h` asks the three services on their own cadences through the offline switch, never without a site, sends the site rounded to about 1 km, keeps each source's last good reply, and caches them so a restart offline still has the last weather with its age. Gated by `sky_weather` (75 checks) and `sky_weather_client` (42), on replies captured for public places. 165.2 connects it to the app. |
 | 3.3.35 | 165.2 | RadukCapture now fetches the weather itself. `WeatherSource=` in `rig.ini` picks `internal`, `leoben`, `both` or `off`; with it unset, a rig with a `LeobenUrl` runs on `both` and one without on `internal`. In `both`, Leoben stands in whenever the internal fetch has no fresh reading, and every 10 minutes a `WXCMP` line in the session log compares the two, for a few parity nights. Everything that used Leoben's weather now reads whichever source is chosen: the ADC's live air, the dew risk on a fade, the hourly `SEEING` line (7Timer's forecast now reaches it; Leoben's never did), the observation record, the status window's `WX` row (which now names the source) and the assistant. Nothing is fetched without a site or with `Offline=1`. Gated by `site_weather` (40 checks). |
 | 3.3.36 | 165.4 | The browser dashboard shows the app's weather. Connected, its SKY CONDITIONS panel takes the reading the app uses and names the source (RadukCapture's own fetch or Leoben), with no request of its own. Not connected, it asks Open-Meteo only once a location is set (it used to ask for latitude 0, longitude 0 on every load). With `Offline=1` in the app, it asks the internet nothing at all, forecast tab and address lookups included. A value not given shows `--`. Several made-up numbers are gone: 15% cloud when a reply had none, AQI 42, transparency 8.2/10 and seeing 2.8" that never came from any source, and an imaging score of 50 with no reading. New ↻ (`weather_refresh`) asks the app to fetch now. Open-Meteo is credited under the panel. Closes 151.4. Gated by `specs/weather.spec.js` and `offline.spec.js` (Playwright, desktop and phone) and `telemetry_night`. |
+| 3.3.37 | 155.4a | The app keeps a night's evidence. Through every session it records, in `logs\validation_<night>_<time>.json`, what the clear-night checklist needs to settle the constants still marked unverified: each plate solve's scale against the configured one, how sharp the real frames are by target, exposure and gain (and how many sit at the 100% cap), the seeing figure through the night, every autofocus result with the backlash it measured, and the target's brightness and clipping against the profile's exposure band. Frames during an autofocus sweep or a slew are left out. `python tools\validation_report.py logs` joins any number of nights into one report, and recommends a new value only when enough nights agree, with a confidence interval; otherwise it says what is missing. Nothing is changed by it. Gated by `validation_log` and the report's self-test on CI. |
 
 ---
 
