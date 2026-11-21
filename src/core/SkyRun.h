@@ -36,6 +36,7 @@
 #include <cstdio>
 #include <functional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace raduk::core::skyrun {
@@ -371,8 +372,26 @@ struct Entry {
     Status status = Status::Pending;
     std::string detail;
     std::vector<Measure> measures;
+    // 156.2b: a group that settles several items says how each came out,
+    // because one status for all would mark an item passed that only had
+    // its evidence collected (the planet group: throughput passes on a
+    // number; the exposure ladder is for your eye). Empty: every item
+    // takes the group's status.
+    std::vector<std::pair<int, Status>> itemStatus;
     double startSec = -1, endSec = -1;
 };
+
+// The group's status from its items': any failed fails it; else any
+// collected makes it collected (your eye is owed); else passed.
+inline Status OverallOf(const std::vector<std::pair<int, Status>>& items) {
+    bool collected = false;
+    for (const auto& [n, st] : items) {
+        (void)n;
+        if (st != Status::Passed && st != Status::Collected) return Status::Failed;
+        if (st == Status::Collected) collected = true;
+    }
+    return collected ? Status::Collected : Status::Passed;
+}
 
 // One entry per (group, target) pair the night offers. Those that apply
 // come first, the target that sets soonest first; a skipped-horizon or a
@@ -473,13 +492,19 @@ public:
     }
 
     // The running group's own result: Passed, Collected or Failed.
-    Action Result(Status outcome, const std::string& detail, std::vector<Measure> measures, double now) {
+    Action Result(Status outcome, const std::string& detail, std::vector<Measure> measures, double now,
+                  std::vector<std::pair<int, Status>> itemStatus = {}) {
         Entry* e = Running();
         if (!e) return Action::None;
         if (outcome != Status::Passed && outcome != Status::Collected) outcome = Status::Failed;
+        for (auto& [n, st] : itemStatus) {
+            (void)n;
+            if (st != Status::Passed && st != Status::Collected) st = Status::Failed;
+        }
         e->status = outcome;
         e->detail = detail;
         e->measures = std::move(measures);
+        e->itemStatus = std::move(itemStatus);
         e->endSec = now;
         return Next(now);
     }
@@ -612,7 +637,11 @@ inline std::string ResultsJson(const Supervisor& s, const std::string& night, co
         j += "{\"group\":" + JsonStr(e.group) + ",\"target\":" + JsonStr(e.target) +
              ",\"status\":" + JsonStr(StatusText(e.status)) + ",\"detail\":" + JsonStr(e.detail) + ",\"items\":[";
         for (size_t k = 0; k < e.items.size(); k++) j += (k ? "," : "") + std::to_string(e.items[k]);
-        j += "],\"start\":" + JsonNum(e.startSec, 1) + ",\"end\":" + JsonNum(e.endSec, 1) + ",\"measures\":[";
+        j += "],\"item_status\":{";
+        for (size_t k = 0; k < e.itemStatus.size(); k++)
+            j += (k ? "," : "") + std::string("\"") + std::to_string(e.itemStatus[k].first) + "\":" +
+                 JsonStr(StatusText(e.itemStatus[k].second));
+        j += "},\"start\":" + JsonNum(e.startSec, 1) + ",\"end\":" + JsonNum(e.endSec, 1) + ",\"measures\":[";
         for (size_t k = 0; k < e.measures.size(); k++) {
             const Measure& m = e.measures[k];
             j += (k ? "," : "") + std::string("{\"item\":") + std::to_string(m.item) + ",\"what\":" + JsonStr(m.what) +

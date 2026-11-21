@@ -22,7 +22,7 @@ In practice:
   - the sky: Phase 156's `results.json`.
 - **Claude starts from the failures.** A green run needs no review. A red one comes with its failing test's last lines, so the cause can usually be read without re-running anything.
 - **Claude does not drive tests interactively** when a script can. A check that keeps being done by hand is a spec waiting to be written. Write it once, then let it run.
-- **The same goes for the sky.** Phase 156's unattended run uses these same specs through Dash, and Claude Code only reviews the bundle it leaves.
+- **The same goes for the sky.** Phase 156's unattended run is started and watched from the app (156.2c), with Dash as its remote, and Claude Code only reviews the bundle it leaves.
 
 | Layer | What it drives | Where it runs | How |
 |---|---|---|---|
@@ -58,7 +58,10 @@ In practice:
 **What Playwright cannot do:** drive the app's own window. That is native Win32 and Direct2D, not a web page. For the window, use the scenarios (layer 3).
 
 ### The rule for new controls (the owner, 2026-11-15)
-Every control a person needs at the telescope is reachable from Dash. A new feature is not finished until:
+**The app comes first (the owner, 2026-11-21).** Dash is the remote for an iPhone or iPad and the test harness, and it is never used in place of the app. So every control and reading exists in the app first, tested through the scenario runner, and Dash mirrors it and computes nothing of its own. See [`Phase166-Plan-App-First.md`](Phase166-Plan-App-First.md).
+
+As the remote, Dash can reach every control a person needs at the telescope. A new feature is not finished until:
+- the app has its native control and shows its state, with a scenario that presses it (layer 3);
 - Dash has its control and shows its state;
 - the control has a stable `id`;
 - a Playwright test drives it.

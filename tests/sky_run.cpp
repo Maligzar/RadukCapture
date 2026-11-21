@@ -221,6 +221,24 @@ int main() {
           tests->a[0].Get("measures")->a[0].Get("expected")->kind == JVal::Null, "a passed test with its measure; no expected is null");
     bool items = tests && tests->a[0].Get("items")->a.size() == 5;
     Check(items, "the checklist items it settles");
+    Check(tests && tests->a[0].Get("item_status") && tests->a[0].Get("item_status")->kind == JVal::Obj,
+          "item_status is always written (empty: the group's status for all)");
+    {   // 156.2b: each item's own status
+        Check(OverallOf({{13, Status::Passed}, {55, Status::Collected}}) == Status::Collected, "passed + collected: collected");
+        Check(OverallOf({{13, Status::Failed}, {55, Status::Collected}}) == Status::Failed, "any failed: failed");
+        Check(OverallOf({{13, Status::Passed}, {47, Status::Passed}}) == Status::Passed, "all passed: passed");
+        Supervisor ps;
+        ps.Begin(plan, false);
+        ps.Next(0);
+        ps.Result(Status::Collected, "ok", {}, 10, {{13, Status::Passed}, {55, Status::Collected}, {47, Status::Running}});
+        const std::string pj = ResultsJson(ps, "20261121", "x");
+        JVal pr;
+        raduk::json::JsonReader rd3(pj);
+        const JVal* is = (rd3.Parse(pr) && pr.Get("tests")) ? pr.Get("tests")->a[0].Get("item_status") : nullptr;
+        Check(is && is->Get("13") && is->Get("13")->s == "passed" && is->Get("55")->s == "collected",
+              "item_status in results.json, item by item");
+        Check(is && is->Get("47") && is->Get("47")->s == "failed", "an item left running reads failed, as a group would");
+    }
     Supervisor em;
     em.Begin(plan, true);
     JVal er;

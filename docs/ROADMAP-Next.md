@@ -21,6 +21,13 @@ visible from this site:** planets, satellites, rockets and the like, so
 faint deep-sky work ranks below all of them. A release may come months or years
 from now: [`Plan-Installer-And-Release-PARKED.md`](Plan-Installer-And-Release-PARKED.md).
 
+**The app first, Dash second (the owner, 2026-11-21).** Dash is a
+secondary option, for an iPhone or iPad and for automated testing, and is
+never used in place of the app. Every control and reading lives in the
+app first; Dash mirrors it. A plan that puts a feature's only control in
+Dash is corrected before it is built. The debt this left is
+[Phase 166](Phase166-Plan-App-First.md), and 156.2c.
+
 **This file is the source of truth for planning, set by the owner on
 2026-11-11.** Work planned anywhere else (a pull request, a phase plan, a
 research note, a chat) is not queued until it has a row in [Next, in
@@ -1679,6 +1686,19 @@ paths pass fault injection, and one unattended sky run completes.
    validation mode (155.4) it consumes and the controllers (153.1-153.2)
    it drives. Its CI dress rehearsal (156.5) can start once 153.0's
    harness exists. Added by the owner 2026-11-13.
+   **156.1 to 156.3b's rules merged 2026-11-21 (3.3.38). 156.2a merged
+   2026-11-21 (3.3.39)**: the run in the app, the tracking group, park
+   (`SkyParkAltAz`) and Dash's SKY RUN card. **156.2b written (3.3.40)**:
+   the planet group, and a status per checklist item. Next: 156.4 (the
+   bundle and the handoff), then the remaining groups.
+24d. **166.0, then 156.2c (rows 66, 56), the app first** (the owner,
+   2026-11-21): the rule enforced on CI (every remote command has a native
+   control), then **SKY RUN in the app**, ahead of 156.4, so the first real
+   sky run is started from the app. Then 166.1 (the weather view and ↻ in
+   the app), 166.2 (park state in the mount window), 166.3 (Dash computes
+   nothing of its own). Plan in [`Phase166-Plan-App-First.md`](Phase166-Plan-App-First.md).
+   The remaining 156 groups (the star field, then Jupiter and the Moon) are
+   renumbered 156.2d and 156.2e.
 
 24a. **161.0 to 161.2 (row 61), focuser safety, threads and overshoot**:
    a failed position read can no longer start a move, every move is
