@@ -904,6 +904,17 @@ Open with `MOUNT CTRL` button or from the TELESCOPE section. Always stays on top
   the list; planets are offered first. The result is reported honestly —
   "Aligned ... tracking ALT-AZ", "Synced ... mount refused tracking", or
   "Mount refused the sync".
+- **PARK** (beside ALIGN, 3.3.39) — Slews to the park position you set in
+  `rig.ini` as `SkyParkAltAz=az:alt` (for example `180:20`), converted to
+  RA/Dec for that moment and sent with the ordinary GoTo, then turns
+  tracking off. The mount has no park of its own, so there is **no default
+  position**: with the key unset, PARK refuses and says so. It also refuses
+  outside the slew bounds (`SkySlewAltMax`, `SkySlewAz`), with the mount not
+  connected or not aligned, or with no site set, and nothing moves. A park
+  below your horizon profile is allowed, since that is for imaging over the
+  trees. A slew that takes over 200 s is cancelled. Jogging or slewing more
+  than a degree away ends the parked state. Dash's PARK (two taps) and the
+  sky run park the same way.
 - **RA / Dec readout** — Live coordinates updated every 500ms.
 - **Motion plot** (bottom) — see below.
 
@@ -1834,6 +1845,13 @@ such a page cannot know.
   then refuses every connection rather than accept it. Delete the line and
   restart to have a new one generated.
 - **Connecting from another machine:** see the next section.
+
+### PARK and SKY RUN (3.3.39)
+
+On the RADUKCAPTURE tab, under MOUNT JOG:
+
+- **PARK** takes two taps (the first arms it for 4 seconds), so a phone in a pocket cannot move the scope. It shows parking, PARKED with tracking off, or why a park failed, and is greyed out until `SkyParkAltAz` is set.
+- **SKY RUN** starts the unattended run. The app checks the rig first and lists every reason it will not go. Then it waits for the dark window (`SkyDarkSunAltDeg`), runs each test group that applies to what is in view, and parks at the end. The card shows the plan with each group's status, the step now running, and why the run ended. **STOP** ends the run and parks; ESC or the mount window's STOP ends it without a park. Results go to `field-results\<night>\results.json`, for `tools\sky_checklist_update.py`. In this release only the tracking group (checklist 48 to 50) is carried out; the others are listed as not built yet, never as failed.
 
 ### From another device on your home network
 
@@ -3208,6 +3226,7 @@ real site is stored. Most of it is written for you.
 | `SkySlewAz` | The azimuth range the sky run may use, as `min..max`, for example `0..360` for no limit (set on purpose) or `300..60` for a range that wraps through north. No default. |
 | `SkyStars` | The sky run's star-field group uses these stars, in your order of preference, for example `Vega,Arcturus,Capella`: the first inside the limits with a field around it. Empty: that group is not available. |
 | `SkyDarkSunAltDeg` | The sky run works while the Sun is below this altitude, waits for it before starting, and parks when the Sun rises past it. Default `-10`. |
+| `SkyParkAltAz` | Where PARK, Dash's park and the sky run send the tube, as `az:alt` in degrees (azimuth from north through east), for example `180:20`. It must sit inside the slew bounds. No default: unset, PARK refuses and the sky run will not start. |
 | `CaptureFormat` | `ser` or `fits`, as the toolbar's selector leaves it. |
 | `FocuserBacklashSteps` | The focuser's backlash in steps. `-1` (the default) uses the EAF's own figure, else 200. Set it once several autofocus runs' `Backlash measured` lines agree. |
 | `FocuserOneSidedMoves` | `1` (default): every focuser move ends travelling one way by at least the backlash. `0` off. |
@@ -3489,6 +3508,7 @@ un-soak.ps1` runs the emulator for hours through GoTo, lock, autofocus and runs,
 | 3.3.36 | 165.4 | The browser dashboard shows the app's weather. Connected, its SKY CONDITIONS panel takes the reading the app uses and names the source (RadukCapture's own fetch or Leoben), with no request of its own. Not connected, it asks Open-Meteo only once a location is set (it used to ask for latitude 0, longitude 0 on every load). With `Offline=1` in the app, it asks the internet nothing at all, forecast tab and address lookups included. A value not given shows `--`. Several made-up numbers are gone: 15% cloud when a reply had none, AQI 42, transparency 8.2/10 and seeing 2.8" that never came from any source, and an imaging score of 50 with no reading. New ↻ (`weather_refresh`) asks the app to fetch now. Open-Meteo is credited under the panel. Closes 151.4. Gated by `specs/weather.spec.js` and `offline.spec.js` (Playwright, desktop and phone) and `telemetry_night`. |
 | 3.3.37 | 155.4a | The app keeps a night's evidence. Through every session it records, in `logs\validation_<night>_<time>.json`, what the clear-night checklist needs to settle the constants still marked unverified: each plate solve's scale against the configured one, how sharp the real frames are by target, exposure and gain (and how many sit at the 100% cap), the seeing figure through the night, every autofocus result with the backlash it measured on that sweep and the fine pass's own figures (where it moved focus from the coarse result, its fade check, its curve, and how noisy the edge metric was at each point), and the target's brightness and clipping against the profile's exposure band. Frames during an autofocus sweep or a slew are left out. `python tools\validation_report.py logs` joins any number of nights into one report, and recommends a new value only when enough nights agree, with a confidence interval; otherwise it says what is missing. Nothing is changed by it. Gated by `validation_log` and the report's self-test on CI. |
 | 3.3.38 | 156 (rules) | The rules of the unattended sky run, ahead of the run itself. New `rig.ini` limits with no defaults, so the run refuses to start until they are set: `SkyHorizon` (a horizon profile by azimuth), `SkySlewAltMax` and `SkySlewAz`. Before starting it also checks the site, an aligned mount, the camera and room on the disk, and lists every reason it will not go. Tests come in five groups (any planet, Jupiter, the Moon, a star field, tracking); a group runs only on a target it fits and with the devices it needs, and a target below your horizon or setting too soon is skipped, not failed. Through the night: a failure is recorded and passed over, a lost target fails that test, clouds hold the run and the test is tried again when the sky clears, a stalled device stops the run and parks, and it parks at the end of the dark window or the list. `python tools\sky_checklist_update.py field-results\<night>\results.json` then marks the clear-night checklist with what passed, failed or was skipped, and never from an emulator run. A group whose result needs your eye (comparing stacks, judging focus by eye) is marked COLLECTED, never PASSED; the star-field group uses your own `SkyStars` list; the run works while the Sun is below `SkyDarkSunAltDeg` (-10 by default). Gated by `sky_run` (65 checks) and the updater's self-test on CI. The run itself, through Dash, comes next. |
+| 3.3.39 | 156.2a | The sky run's first group, and park. **PARK** is a new button in the mount window and in Dash: it slews to `rig.ini` `SkyParkAltAz=az:alt` and turns tracking off, with no default position, refusing (and saying why) outside the slew bounds, unaligned or with no site. Dash gets a **SKY RUN** card: start, the plan with each group's status, the step running, STOP (parks). The app runs the night itself, so a closed browser does not stop it. The **tracking group** runs on any bright target: a box change from full to a third to a sixth and back with the lock held (item 48), a 200-pixel jog re-centred within 25 s (49), and the lock made in a small box, then a calibration refused near an edge with "centre it roughly" (50). The other groups say not built yet. ESC stops the run without a park. Gated by `sky_run_controller`, `park_controller`, `sky_run`, and the Dash specs `park` and `skyrun`. |
 
 ---
 

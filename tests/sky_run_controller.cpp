@@ -268,6 +268,21 @@ int main() {
               "STOP: not reached, parked, and said to be the owner's", e ? e->detail : "");
     }
 
+    {
+        Rig r;
+        SkyRunController c;
+        Start(c, r);
+        RunNight(c, r, 3000, [&] { if (r.now == 90) c.Abort("emergency stop", r.now); });
+        const sr::Entry* e = Find(c, "tracking");
+        Check(e && e->status == sr::Status::NotReached && !r.parkCalled && c.phase() == SkyRunController::Phase::Done,
+              "emergency stop: not reached, and NOT parked (nothing moves after ESC)", e ? e->detail : "");
+        Check(!r.results.empty(), "and results.json is still written");
+        const std::string rows = c.PlanRows();
+        Check(rows.find("tracking|") != std::string::npos && rows.find("|not-reached|") != std::string::npos,
+              "the plan rows Dash shows", rows.substr(0, 60));
+        Check(std::string(SkyRunController::PhaseName(c.phase())) == "done", "the phase's name");
+    }
+
     printf("\n6. Box sizes from the camera\n");
     Check(good.boxes.size() >= 5, "the boxes were set", std::to_string(good.boxes.size()));
     if (good.boxes.size() >= 5) {

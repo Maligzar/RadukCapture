@@ -132,6 +132,44 @@ public:
         Act(m_sup.Stopped("STOP pressed", now), now);
     }
 
+    // The emergency stop (ESC, the mount window's STOP): everything halts
+    // and nothing moves again, so unlike STOP there is no park slew. What
+    // is left is not reached, and results.json is still written.
+    void Abort(const std::string& why, double now) {
+        if (m_phase == Phase::Idle || m_phase == Phase::Done || m_phase == Phase::Refused) return;
+        m_stoppedByOwner = true;
+        m_sup.Stopped(why, now);
+        m_phase = Phase::Done;
+        m_stepText = "stopped, not parked";
+        Log("aborted, not parked: " + why);
+        if (m_h.writeResults) m_h.writeResults(sr::ResultsJson(m_sup, m_night, m_version));
+    }
+
+    // For Dash: "group|target|status|detail" rows joined by ';', the
+    // separators taken out of the text.
+    std::string PlanRows() const {
+        auto clean = [](std::string t) {
+            for (auto& c : t) if (c == '|' || c == ';') c = ',';
+            return t;
+        };
+        std::string out;
+        for (const auto& e : m_sup.Plan()) {
+            if (!out.empty()) out += ';';
+            out += clean(e.group) + "|" + clean(e.target) + "|" + sr::StatusText(e.status) + "|" + clean(e.detail);
+        }
+        return out;
+    }
+
+    static const char* PhaseName(Phase p) {
+        switch (p) {
+            case Phase::Idle: return "idle";        case Phase::Refused: return "refused";
+            case Phase::WaitingDark: return "waiting-dark"; case Phase::Running: return "running";
+            case Phase::Holding: return "holding";  case Phase::Parking: return "parking";
+            case Phase::Done: return "done";
+        }
+        return "?";
+    }
+
     // The readout's tick (about 2 Hz).
     void Tick(double now) {
         switch (m_phase) {

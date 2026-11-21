@@ -118,6 +118,7 @@
 #include "gui/WicImage.h"
 #include "app/NightPlanController.h"   // phase 163: a night of planets and stars
 #include "app/ParkController.h"       // phase 156.2a: park, a slew to SkyParkAltAz
+#include "app/SkyRunController.h"     // phase 156.2a: the unattended sky run
 #include "gui/StatusWindow.h"
 #include "gui/ConfirmToast.h"
 #include "gui/ADCAlignWindow.h"
@@ -5197,7 +5198,10 @@ static int RunApp(bool useEmulator) {
 
     // Phase 51: calibration result — success auto-advances to Centering
     // inside the tracker; failure drops back to Searching.
+    // Phase 156.2a: the sky run reads each calibration's result, numbered.
+    int skyCalSeq = 0; bool skyCalOk = false; std::string skyCalMsg;
     tracker.SetCalibrationCallback([&](bool ok, const std::string& msg) {
+        ++skyCalSeq; skyCalOk = ok; skyCalMsg = msg;
         if (ok) {
             Log("[ACQ] Calibration OK: %s — Stage 2: CENTERING\n", msg.c_str());
             slog.Mount("Calibration OK: %s", msg.c_str());
@@ -5294,6 +5298,215 @@ static int RunApp(bool useEmulator) {
     };
     mountCtrl.SetParkCallback([&] { requestPark("the mount window"); });
 
+    // Phase 156.2a: the unattended sky run (docs/Phase156-Design-Run.md).
+    // The rules are core/SkyRun.h, the steps app/SkyRunController.h; these
+    // hooks are the app's own paths for each step, nothing new: the GoTo
+    // panel's GoTo, PLANET LOCK's auto-acquire, applyFormat for the box,
+    // the recentre pulses for a jog, and the park above.
+    namespace sr = raduk::core::skyrun;
+    raduk::app::SkyRunController skyRun;
+    auto skyLimits = [](sr::Limits& l) {
+        const auto& rc = raduk::core::RigConfig::Get();
+        l = sr::Limits{};
+        std::string w;
+        sr::ParseHorizon(rc.skyHorizon, l.horizon, w);
+        if (!sr::ParseSlewBounds(rc.skySlewAltMax, rc.skySlewAz, l, w)) l.slewSet = false;
+    };
+    // A jog by pixels on the frame: the recentre path's pulses (they
+    // suspend the tracker as a hand jog does), aimed so the target moves
+    // by (dx, dy). Needs the calibration a lock has just made.
+    auto skyJogPx = [&](double dx, double dy) -> bool {
+        if (!mount || !mount->IsConnected() || !tracker.HasCalibration()) return false;
+        const int W = preview.FrameWidthPx(), H = preview.FrameHeightPx();
+        if (W <= 0 || H <= 0) return false;
+        const raduk::core::GuideCalibration cal = tracker.Calibration();
+        raduk::core::GuideResponse resp{ cal.exPerMs, cal.eyPerMs, cal.nxPerMs, cal.nyPerMs };
+        double altNow = -1.0, azNow = 0.0;
+        if (mount->GetAltAz(altNow, azNow))
+            resp = raduk::core::RescaleForAltitude(resp, cal.altDeg, (float)altNow);
+        const raduk::core::RecentrePlan plan = raduk::core::PlanRecentre(
+            (float)(W / 2.0 - dx), (float)(H / 2.0 - dy), W, H, resp, cal.arcsecPerPx, 10000);
+        if (!plan.valid) { Log("[SKYRUN] jog refused: %s\n", plan.why); return false; }
+        sendRecentrePulses(plan.eastMs, plan.northMs);
+        return true;
+    };
+    struct SkyWatch { double camFaultSince = -1, lostSince = -1; bool focuserAtStart = false; double focuserGoneSince = -1; };
+    SkyWatch skyWatch;
+    raduk::app::SkyRunHooks skyHooks;
+    skyHooks.preflight = [&](sr::PreFlightIn& in) {
+        const auto& rc = raduk::core::RigConfig::Get();
+        in.siteSet = rc.SiteIsSet();
+        skyLimits(in.limits);
+        std::string w;
+        sr::ParsePark(rc.skyParkAltAz, in.park, w);
+        in.mountConnected = mount && mount->IsConnected();
+        in.mountAligned   = in.mountConnected && mount->IsAligned();
+        in.cameraOk  = cam.IsOpen();
+        in.focuserOk = focuser.IsOpen();
+        in.solverOk  = gotoPanel.SolverAvailable();
+        ULARGE_INTEGER freeB{};
+        const std::string& outDir = capturer.Config().outputDir;
+        if (GetDiskFreeSpaceExW(std::wstring(outDir.begin(), outDir.end()).c_str(), &freeB, nullptr, nullptr))
+            in.freeGB = (double)freeB.QuadPart / 1e9;
+        in.plannedGB = 0;   // the tracking group records nothing; the planet group (156.2b) will
+        skyWatch = SkyWatch{};
+        skyWatch.focuserAtStart = in.focuserOk;
+    };
+    skyHooks.sunAltDeg = [] {
+        double ra = 0, dec = 0, alt = 0, az = 0;
+        raduk::sky::SunRADec(raduk::core::CurrentJulianDate(), ra, dec);
+        raduk::core::RADecToAltAzNow(ra, dec, alt, az);
+        return alt;
+    };
+    skyHooks.targets = [&] {
+        std::vector<sr::Target> out;
+        sr::Limits lim; skyLimits(lim);
+        auto add = [&](const std::string& name, const char* type) {
+            double ra = 0, dec = 0;
+            if (!gotoPanel.LookupNow(name, ra, dec)) return;
+            sr::Target t; t.name = name; t.type = type;
+            raduk::core::RADecToAltAzNow(ra, dec, t.altDeg, t.azDeg);
+            // Later positions by the sky's turning alone (sidereal); a
+            // planet's own motion in a few hours is far below a sample.
+            t.setsInMin = sr::MinutesUntilBelow([&](double m, double& alt, double& az) {
+                raduk::core::RADecToAltAzNow(ra - m / 60.0 * 1.00273791, dec, alt, az);
+            }, lim.horizon);
+            out.push_back(t);
+        };
+        for (const auto& p : raduk::sky::kPlanets) add(p.name, "planet");
+        add("Moon", "moon");
+        for (const auto& st : sr::ParseStarList(raduk::core::RigConfig::Get().skyStars)) add(st, "star");
+        return out;
+    };
+    skyHooks.devices = [&] {
+        unsigned d = 0;
+        if (cam.IsOpen()) d |= sr::kCamera;
+        if (focuser.IsOpen()) d |= sr::kFocuser;
+        if (mount && mount->IsConnected()) d |= sr::kMount;
+        if (gotoPanel.SolverAvailable()) d |= sr::kSolver;
+        return d;
+    };
+    skyHooks.sensorSize = [&](int& w, int& h) { w = cam.MaxWidth(); h = cam.MaxHeight(); };
+    // Clouds, as the camera sees them: locked, and the target not seen
+    // for 60 s. A forecast is never acted on alone.
+    skyHooks.cloudy = [&] {
+        const double now = core.Clock().Now();
+        const auto st = tracker.Stage();
+        const bool watching = st == raduk::core::AcquisitionStage::Locked ||
+                              st == raduk::core::AcquisitionStage::Centering;
+        if (!watching || tracker.LastCentroidValid()) { skyWatch.lostSince = -1; return false; }
+        if (skyWatch.lostSince < 0) skyWatch.lostSince = now;
+        return now - skyWatch.lostSince >= 60.0;
+    };
+    // A device past its watchdog: the camera faulted and not recovered in
+    // 2 minutes (CaptureThread retries itself until then), the mount gone,
+    // or a focuser that was there at the start gone for 2 minutes.
+    skyHooks.stalled = [&]() -> std::string {
+        const double now = core.Clock().Now();
+        if (!mount || !mount->IsConnected()) return "the mount is not answering";
+        if (capture.Stats().cameraFault.load()) {
+            if (skyWatch.camFaultSince < 0) skyWatch.camFaultSince = now;
+            if (now - skyWatch.camFaultSince >= 120.0) return "the camera stopped and did not recover in 2 minutes";
+        } else skyWatch.camFaultSince = -1;
+        if (skyWatch.focuserAtStart && !focuser.IsOpen()) {
+            if (skyWatch.focuserGoneSince < 0) skyWatch.focuserGoneSince = now;
+            if (now - skyWatch.focuserGoneSince >= 120.0) return "the focuser was lost and did not come back in 2 minutes";
+        } else skyWatch.focuserGoneSince = -1;
+        return {};
+    };
+    skyHooks.gotoTarget = [&](const sr::Target& t, std::string& why) {
+        double ra = 0, dec = 0, alt = 0, az = 0;
+        if (!gotoPanel.LookupNow(t.name, ra, dec)) { why = t.name + " is not in the catalog"; return false; }
+        raduk::core::RADecToAltAzNow(ra, dec, alt, az);
+        sr::Limits lim; skyLimits(lim);
+        if (!sr::WithinLimits(lim, alt, az, &why)) return false;   // at the moment of the slew
+        park.Unpark("the sky run's GoTo");
+        if (!gotoPanel.GoToNow(t.name)) { why = "the GoTo was refused"; return false; }
+        return true;
+    };
+    skyHooks.slewing = [&] { return mount && mount->IsSlewing(); };
+    skyHooks.startLock = [&](std::string& why) {
+        if (tracker.Stage() != raduk::core::AcquisitionStage::Off) return true;
+        tracker.SetMount(mount);
+        if (!tracker.StartAutoAcquire(why)) return false;
+        stepWide();   // phase 157.0c, as PLANET LOCK does
+        return true;
+    };
+    skyHooks.lockState = [&] {
+        using LS = raduk::app::LockState;
+        switch (tracker.Stage()) {
+            case raduk::core::AcquisitionStage::Off:    return LS::None;
+            case raduk::core::AcquisitionStage::Locked: return LS::Locked;
+            default:                                    return LS::Acquiring;
+        }
+    };
+    skyHooks.setBox = [&](int w, int h) {
+        return applyFormat(w, h, roiBits, roiStartX + roiWidth / 2, roiStartY + roiHeight / 2, "sky run box");
+    };
+    skyHooks.jog = [&](double dx, double dy) { return skyJogPx(dx, dy); };
+    skyHooks.offCentrePx = [&]() -> double {
+        if (!lastAnalysis.valid || !lastAnalysis.centroidValid) return 1e9;
+        const double ex = lastAnalysis.centroidX - lastAnalysis.width / 2.0;
+        const double ey = lastAnalysis.centroidY - lastAnalysis.height / 2.0;
+        return std::sqrt(ex * ex + ey * ey);
+    };
+    skyHooks.resetTracker = [&] { tracker.Reset(); controls.SetPlanetLockState(false); };
+    skyHooks.lastCalibration = [&](int& seq, bool& ok, std::string& msg) { seq = skyCalSeq; ok = skyCalOk; msg = skyCalMsg; };
+    skyHooks.boxNow = [&](int& w, int& h) { w = roiWidth; h = roiHeight; };
+    skyHooks.nudgeToEdge = [&](double frac) {
+        const int W = preview.FrameWidthPx();
+        return skyJogPx(frac * W / 2.0, 0.0);
+    };
+    skyHooks.park = [&] { requestPark("the sky run"); };
+    skyHooks.parked = [&] {
+        // A park that failed or was refused still ends the run: waiting
+        // for it would hold the night open forever. The reason is logged.
+        const auto ps = park.state();
+        return ps == raduk::app::ParkController::State::Parked ||
+               ps == raduk::app::ParkController::State::Failed ||
+               ps == raduk::app::ParkController::State::Idle;
+    };
+    skyHooks.log = [&](const std::string& line) {
+        Log("[SKYRUN] %s\n", line.c_str());
+        slog.Mount("Sky run: %s", line.c_str());
+    };
+    std::string skyNight;
+    skyHooks.writeResults = [&](const std::string& json) {
+        const std::string dir = raduk::core::Paths::EnsureSub("field-results") + "\\" + skyNight;
+        CreateDirectoryA(dir.c_str(), nullptr);
+        const std::string path = dir + "\\results.json";
+        const std::string tmp = path + ".tmp";
+        if (FILE* f = fopen(tmp.c_str(), "wb")) {
+            fwrite(json.data(), 1, json.size(), f);
+            fclose(f);
+            MoveFileExA(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING);
+            Log("[SKYRUN] results: %s\n", path.c_str());
+        } else {
+            Log("[SKYRUN] could not write %s\n", path.c_str());
+        }
+    };
+    skyRun.SetHooks(skyHooks);
+    auto startSkyRun = [&](const std::string& arg) {
+        std::vector<std::string> groups;
+        if (arg.empty() || arg == "all") groups = { "planet", "jupiter", "moon", "solve", "tracking" };
+        else groups = sr::ParseStarList(arg);   // a comma list, the same parser
+        SYSTEMTIME lt; GetLocalTime(&lt);
+        skyNight = val::NightOf(lt.wYear, lt.wMonth, lt.wDay, lt.wHour);
+#ifdef RADUK_EMULATOR
+        const bool emulator = true;
+#else
+        const bool emulator = false;
+#endif
+        if (skyRun.Start(groups, raduk::core::RigConfig::Get().skyDarkSunAltDeg, emulator,
+                         skyNight, RADUK_VERSION_A, core.Clock().Now())) {
+            notifBar.NotifyInfo(L"Sky run started: waiting for the dark window");
+        } else {
+            std::string r;
+            for (const auto& x : skyRun.Refusals()) r += (r.empty() ? "" : "; ") + x;
+            notifBar.NotifyWarn(L"Sky run refused: " + std::wstring(r.begin(), r.end()));
+        }
+    };
+
     // Shared by ESC and the MountController STOP button. Both must halt the
     // centroid-tracker correction thread, not just the active slews —
     // otherwise the guide loop restarts the mount within 250-500ms of the
@@ -5307,6 +5520,7 @@ static int RunApp(bool useEmulator) {
         moonMap.Stop("emergency stop");   // phase 162
         nightPlan.Stop("emergency stop"); // phase 163
         park.Unpark("emergency stop");    // phase 156.2a: cancels a park slew
+        skyRun.Abort("emergency stop", core.Clock().Now());   // and the run, without a park
         if (capturer.IsRecording()) {
             capturer.StopRecording(false);  // emergency stop - do not auto-stack
             usbMgr.SetCapturing(false);
@@ -7633,6 +7847,14 @@ static int RunApp(bool useEmulator) {
                     slog.Focuser("APEX: position %s: %d%s", restore ? "set back" : "accepted",
                                  focuser.GetPosition(), ok ? "" : " (failed)");
                 }
+            } else if (rc.cmd == "skyrun_start") {
+                // Phase 156.2a: the unattended run; arg is "all" or a group list.
+                startSkyRun(rc.arg);
+                Log("[WS] Remote skyrun_start %s\n", rc.arg.c_str());
+            } else if (rc.cmd == "skyrun_stop") {
+                // STOP parks; what is left is not reached.
+                skyRun.Stop(core.Clock().Now());
+                Log("[WS] Remote skyrun_stop\n");
             } else if (rc.cmd == "park") {
                 // Phase 156.2a: the same park as the mount window's PARK.
                 requestPark("Dash");
@@ -9049,6 +9271,7 @@ static int RunApp(bool useEmulator) {
                 nightPlan.Tick();   // phase 163
                 // Phase 156.2a: the park slew, and a move off the park.
                 park.Tick(core.Clock().Now());
+                skyRun.Tick(core.Clock().Now());
                 if (park.parked() && mount && mount->IsConnected()) {
                     double pAlt = 0, pAz = 0;
                     if (mount->GetAltAz(pAlt, pAz)) park.WatchPosition(pAlt, pAz);
@@ -9731,6 +9954,16 @@ static int RunApp(bool useEmulator) {
                 telemetry.park_state  = raduk::app::ParkController::Name(park.state());
                 telemetry.park_reason = park.reason();
                 telemetry.park_set    = !RigConfig::Get().skyParkAltAz.empty();
+                // Phase 156.2a: the sky run.
+                {
+                    std::string ref;
+                    for (const auto& x : skyRun.Refusals()) ref += (ref.empty() ? "" : "; ") + x;
+                    telemetry.skyrun_phase    = raduk::app::SkyRunController::PhaseName(skyRun.phase());
+                    telemetry.skyrun_step     = skyRun.StepText();
+                    telemetry.skyrun_refusals = ref;
+                    telemetry.skyrun_rows     = skyRun.PlanRows();
+                    telemetry.skyrun_reason   = skyRun.Supervisor().StopReason();
+                }
 
                 if (mount && mount->IsConnected()) {
                     double ra=0, dec=0;

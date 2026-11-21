@@ -1274,9 +1274,11 @@ the bench already showed, so the night only has to confirm it. The plan is
     paddle. When the jog ends it should re-centre within about 25 s, and the
     lock should not be abandoned.
 50. **Calibration in a small box, and near an edge** (F7, F8). In a 640×480
-    box, calibrate: the moves should stay inside the box (about 14″ each).
-    Then put the planet within 20% of an edge and press again. It should
-    refuse with "centre it roughly, then press again".
+    box, press PLANET LOCK. Since 157.0c the lock widens to the full frame to
+    calibrate and comes back to the box, so check that it ends locked with
+    the box still 640×480. Then, in the full frame, put the planet within 20%
+    of an edge and press again. It should refuse with "centre it roughly,
+    then press again". (The sky run's tracking group checks both.)
 51. **Close and reopen** (F10). Drag a box, then close the app. There should
     be no crash, and the scope should keep tracking after the close. Reopen
     it: the info panel should name the last target (F11).

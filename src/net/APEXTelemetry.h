@@ -153,6 +153,12 @@ struct APEXTelemetry {
     std::string park_reason;
     bool        park_set = false;
 
+    // Phase 156.2a: the sky run (app/SkyRunController.h). skyrun_phase is
+    // idle, refused, waiting-dark, running, holding, parking or done;
+    // skyrun_rows is "group|target|status|detail" rows joined by ';'.
+    std::string skyrun_phase = "idle";
+    std::string skyrun_step, skyrun_refusals, skyrun_rows, skyrun_reason;
+
     // ── Phase 165.4: the weather the app uses (core/SiteWeather.h), so Dash
     // shows it instead of fetching its own. SI and Celsius; a value the
     // reading did not give is NaN and goes out as null. No coordinates.
