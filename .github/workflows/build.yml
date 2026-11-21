@@ -16,7 +16,10 @@ permissions:
 jobs:
   windows:
     runs-on: windows-latest
-    timeout-minutes: 60
+    # 90, not 60: by 3.3.38 the suite (144 tests, autofocus_saturn alone
+    # about 18 minutes) took 52-58 minutes, and a slower runner on #186
+    # passed all 144 and was then cancelled at 60:00 in the file checks.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
@@ -90,6 +93,10 @@ jobs:
       # Phase 155.4: the multi-night validation report's own checks.
       - name: Validation report self-test
         run: python tools/validation_report.py --self-test
+
+      # Phase 156.3b: the sky run's checklist marker, and its refusals.
+      - name: Sky checklist update self-test
+        run: python tools/sky_checklist_update.py --self-test
 
       - name: Emulator build
         run: |
