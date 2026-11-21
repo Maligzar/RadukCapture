@@ -1,6 +1,6 @@
 # Phase 166: the app first, Dash second
 
-Written 2026-11-21 at the owner's direction. Status: `PLANNED`.
+Written 2026-11-21 at the owner's direction. Status: `PARTIAL`: 166.0 `WRITTEN` (3.3.41).
 
 ## The owner's rule (2026-11-21)
 
@@ -32,7 +32,7 @@ Under rule 2 these go, or come from the app.
 
 ## Stages
 
-### 166.0: the rule, enforced (size S)
+### 166.0: the rule, enforced (size S) — `WRITTEN` 2026-11-21 (3.3.41)
 - **The rule in writing:** `docs/TESTING.md`, the top of `ROADMAP-Next.md`, and the 156 design doc corrected (section 1 and section 5).
 - **A parity check on CI.** `tools/app_first_check.py` reads every `rc.cmd == "..."` in `main.cpp` and a table in this file (below), and fails if a remote command has no native control listed. A new remote command then can't land without its native control, or at least without saying where it is.
 - **No app change.** The table starts with the three debts marked `owed`. The check allows `owed` rows only while their stage is open, by stage number.

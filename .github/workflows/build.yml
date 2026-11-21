@@ -98,6 +98,13 @@ jobs:
       - name: Sky checklist update self-test
         run: python tools/sky_checklist_update.py --self-test
 
+      # Phase 166.0: the app first, Dash second. Every remote command has a
+      # control in the app, or names the open stage that owes it.
+      - name: App-first parity check
+        run: |
+          python tools/app_first_check.py --self-test
+          python tools/app_first_check.py
+
       - name: Emulator build
         run: |
           cmake -S . -B build_emu -DRADUK_EMULATOR=ON
