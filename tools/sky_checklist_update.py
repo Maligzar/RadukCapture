@@ -89,7 +89,9 @@ def per_item(results):
                 f"{m['what']} {m['value']:g}{m.get('unit', '')}" + (f" against {m['expected']:g}" if m.get("expected") is not None else "")
                 for m in meas if m.get("item") == item and isinstance(m.get("value"), (int, float)))
             text = what + (": " + detail if detail else "") + (f" ({extra})" if extra else "")
-            by.setdefault(item, []).append((t.get("status", "?"), text))
+            # 156.2b: a group that settles several items may say how each came out.
+            status = (t.get("item_status") or {}).get(str(item), t.get("status", "?"))
+            by.setdefault(item, []).append((status, text))
     return by
 
 
@@ -234,6 +236,11 @@ def self_test():
     check("**Sky run 20261121: COLLECTED, your eye owed** (collected: planet on Saturn: 4 ladder recordings; passed: tracking" in out5,
           "collected leads a pass on one item: your eye is owed")
     check("| 47 | COLLECTED |" in out5, "and reads COLLECTED in the table")
+    per = [{"group": "planet", "target": "Saturn", "status": "collected", "detail": "throughput and ladder",
+            "items": [1, 47], "item_status": {"1": "passed", "47": "collected"}, "measures": []}]
+    out6, _, _ = update(SAMPLE, _res(per))
+    check("| 1 | PASSED |" in out6 and "| 47 | COLLECTED |" in out6,
+          "156.2b: each item takes its own status, not the group's")
     try:
         update(SAMPLE, _res(tests, emulator=True))
         check(False, "an emulator run is refused")
