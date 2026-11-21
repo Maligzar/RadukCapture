@@ -1679,6 +1679,11 @@ paths pass fault injection, and one unattended sky run completes.
    validation mode (155.4) it consumes and the controllers (153.1-153.2)
    it drives. Its CI dress rehearsal (156.5) can start once 153.0's
    harness exists. Added by the owner 2026-11-13.
+   **156.1 to 156.3b's rules merged 2026-11-21 (3.3.38). 156.2a merged
+   2026-11-21 (3.3.39)**: the run in the app, the tracking group, park
+   (`SkyParkAltAz`) and Dash's SKY RUN card. **156.2b written (3.3.40)**:
+   the planet group, and a status per checklist item. Next: 156.4 (the
+   bundle and the handoff), then 156.2c and 156.2d.
 
 24a. **161.0 to 161.2 (row 61), focuser safety, threads and overshoot**:
    a failed position read can no longer start a move, every move is

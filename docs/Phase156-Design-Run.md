@@ -18,6 +18,8 @@ The owner answered the open questions on 2026-11-21 (below), and A is being buil
 
 **Built in 156.2a (3.3.39):** the skeleton and the tracking group (section 6, step 1). Two corrections to section 3 found while building it: item 50's calibration is not a separate command (PLANET LOCK calibrates afresh each time, in the full frame since 157.0c, and returns to the box), so the group checks the lock ends in the small box; and the jog uses the recentre pulses (calibrated pixels, the tracker suspended as for a hand jog) rather than the paddle's fixed-rate slew, whose distance in pixels is unknown. An emergency stop (ESC, the mount window's STOP) ends the run without a park; Dash's STOP parks.
 
+**Built in 156.2b (3.3.40):** the planet group. Three things settled while building it: each checklist item now carries its own status (one status for the group would have marked the ladder passed whenever throughput passed); the ladder's gain is found by bisection over the camera's own range, since gain units differ by make; and item 13's rate is judged against the camera's own median frame rate, because no profile states an expected rate. A failed sweep sends the focuser back before anything is recorded.
+
 The owner did not choose between A and B outright. His answers fit A, the recommendation, so A is what is built: the app runs the night, and Dash starts it and shows it.
 
 

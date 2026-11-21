@@ -4664,12 +4664,19 @@ static int RunApp(bool useEmulator) {
     // SubmitFrame, so a button hook would almost never fire. 'normal' is
     // false for an emergency stop or an ROI change, and neither should
     // launch minutes of CPU work.
+    // Phase 156.2b: the sky run's recordings, as their completions arrive
+    // (on the writer's thread, hence the lock). While the run is active
+    // its recordings are never auto-stacked: minutes of CPU mid-run.
+    struct SkyRec { std::mutex mx; int seq = 0; bool normal = false; std::string path;
+                    std::atomic<bool> active{false}; double until = 0; };
+    SkyRec skyRec;
     capturer.SetOnComplete([&](const std::string& path, bool normal) {
+        { std::lock_guard<std::mutex> lk(skyRec.mx); skyRec.seq++; skyRec.normal = normal; skyRec.path = path; }
         // Phase 153.2: the decision is the controller's; Autorun and
         // AutoStakkert act on it here.
         const auto c = core.recCtl.Complete(path, normal,
                                             raduk::core::RigConfig::Get().autoStackOnStop,
-                                            autorun.Running() || moonMap.runner.Running(),
+                                            autorun.Running() || moonMap.runner.Running() || skyRec.active.load(),
                                             raduk::core::IsFitsCapture(path));
         // Phase 113: anything but a normal end stops a sequence, whoever
         // did it: Escape, a format change, the hardware going away.
@@ -4864,6 +4871,9 @@ static int RunApp(bool useEmulator) {
     // Completion callback — fires from scan thread, no Win32 UI calls here
     // Phase 153.1: autofocus's wiring is AppCore's AutofocusController;
     // the panel and the session log are its hooks.
+    // Phase 156.2b: each autofocus result, numbered, for the sky run.
+    std::atomic<int> skyAfSeq{0};
+    std::atomic<bool> skyAfOk{false};
     {
         raduk::app::AutofocusHooks h;
         h.running = [&](bool r) { controls.SetAutofocusRunning(r); };
@@ -4878,8 +4888,9 @@ static int RunApp(bool useEmulator) {
             controls.SetAEStatus(L"AE: auto");
         };
         h.session = [&](const std::string& t) { slog.Focuser("%s", t.c_str()); };
-        h.failed  = [&]() { core.arCtl.NoteFocusFailed(); };
+        h.failed  = [&]() { core.arCtl.NoteFocusFailed(); skyAfOk = false; ++skyAfSeq; };
         h.succeeded = [&]() {
+            skyAfOk = true; ++skyAfSeq;   // phase 156.2b: the sky run reads each sweep's result
             focusRef.ArmAfterAutofocus();
             Log("[FOCUS] autofocus succeeded: the next %d readings are the reference\n",
                 raduk::core::FocusReference::kRefSamples);
@@ -5484,6 +5495,81 @@ static int RunApp(bool useEmulator) {
         } else {
             Log("[SKYRUN] could not write %s\n", path.c_str());
         }
+    };
+    // 156.2b, the planet group: the guarded focuser, the AUTO FOCUS path,
+    // RECORD, and the camera's exposure and gain.
+    skyHooks.focuserPos = [&] { return focuser.IsOpen() ? focuser.GetPosition() : 0; };
+    skyHooks.moveFocuser = [&](int t, std::string& why) {
+        if (!focuser.IsOpen()) { why = "no focuser"; return false; }
+        if (focuser.MoveTo(t)) return true;   // the travel guard (161.0a) and the trust check (157.0e)
+        why = focuser.LastRefusal();
+        return false;
+    };
+    skyHooks.focuserMoving = [&] { return focuser.IsOpen() && focuser.IsMoving(); };
+    skyHooks.startAutofocus = [&](std::string& why) {
+        if (!focuser.IsOpen()) { why = "no focuser"; return false; }
+        if (core.afCtl.Busy()) { why = "autofocus is already running"; return false; }
+        core.afCtl.Start();   // AE settles first, as with the button
+        return true;
+    };
+    skyHooks.lastAutofocus = [&](int& seq, bool& ok, int& pos, std::string& msg) {
+        seq = skyAfSeq.load();
+        ok  = skyAfOk.load();
+        pos = focuser.IsOpen() ? focuser.GetPosition() : 0;
+        msg = ok ? "best focus" : "the sweep failed (the [AF] lines in the log say why)";
+    };
+    skyHooks.startRecording = [&](double sec, std::string& why) {
+        if (capturer.IsRecording()) { why = "a recording is already running"; return false; }
+        skyRec.active = true;
+        doRecord();
+        if (!capturer.IsRecording()) { why = "the recording did not start"; return false; }
+        skyRec.until = core.Clock().Now() + sec;
+        return true;
+    };
+    skyHooks.recording = [&] { return capturer.IsRecording(); };
+    skyHooks.stopRecording = [&] { if (capturer.IsRecording()) endRecording(false, "sky run stopped"); };
+    skyHooks.lastRecording = [&](int& seq, raduk::app::RecordingOutcome& o) {
+        std::lock_guard<std::mutex> lk(skyRec.mx);
+        seq = skyRec.seq;
+        const raduk::core::DropReport d = capturer.LastDropReport();
+        o = raduk::app::RecordingOutcome{};
+        o.ok = skyRec.normal;
+        o.frames = d.framesWritten;
+        o.unexplained = d.unexplained;
+        o.droppedSdk = d.droppedSdk;
+        o.droppedBuffer = d.droppedBuffer;
+        o.effectiveFps = d.effectiveFps;
+        // No profile states an expected rate yet, so the rate is judged
+        // against the camera's own steady rate (the median interval):
+        // time lost beyond the counted drops shows as a shortfall. Not
+        // judged when the exposure sets the rate.
+        o.expectedFps = d.exposureLimited ? 0.0 : d.nominalFps;
+        o.file = skyRec.path;
+        o.why = skyRec.normal ? "" : "stopped before its length";
+    };
+    struct SkyCam { long exp = 0, gain = 0; bool ae = false; };
+    SkyCam skyCam;
+    skyHooks.saveCamera = [&] {
+        skyCam.exp  = cam.GetControlValue(ControlId::ExposureUs);
+        skyCam.gain = cam.GetControlValue(ControlId::Gain);
+        skyCam.ae   = ae.IsAuto();
+    };
+    skyHooks.restoreCamera = [&] {
+        cam.SetControlValue(ControlId::ExposureUs, skyCam.exp);
+        cam.SetControlValue(ControlId::Gain, skyCam.gain);
+        ae.SetAuto(skyCam.ae);
+        Log("[SKYRUN] camera put back: exposure %ld us, gain %ld, AE %s\n", skyCam.exp, skyCam.gain, skyCam.ae ? "auto" : "manual");
+    };
+    skyHooks.setExposureUs = [&](int us) { ae.SetAuto(false); return cam.SetControlValue(ControlId::ExposureUs, us); };
+    skyHooks.setGain = [&](int g) { ae.SetAuto(false); return cam.SetControlValue(ControlId::Gain, g); };
+    skyHooks.gainRange = [&](int& lo, int& hi) {
+        ControlRange r;
+        if (cam.GetControlRange(ControlId::Gain, r)) { lo = (int)r.min; hi = (int)r.max; }
+        else { lo = hi = (int)cam.GetControlValue(ControlId::Gain); }   // unknown: hold the gain it has
+    };
+    skyHooks.highlightFrac = [&]() -> double {
+        if (!lastAnalysis.valid || !lastAnalysis.targetFound) return NAN;
+        return lastAnalysis.targetHighlightDN / 255.0;   // phase 140.1: the target's own highlight
     };
     skyRun.SetHooks(skyHooks);
     auto startSkyRun = [&](const std::string& arg) {
@@ -9271,6 +9357,11 @@ static int RunApp(bool useEmulator) {
                 nightPlan.Tick();   // phase 163
                 // Phase 156.2a: the park slew, and a move off the park.
                 park.Tick(core.Clock().Now());
+                // Phase 156.2b: a sky-run recording ends at its length, normally.
+                if (skyRec.active.load() && capturer.IsRecording() && core.Clock().Now() >= skyRec.until)
+                    endRecording(true, "sky run: its length");
+                skyRec.active = skyRun.phase() == raduk::app::SkyRunController::Phase::Running ||
+                                skyRun.phase() == raduk::app::SkyRunController::Phase::Holding;
                 skyRun.Tick(core.Clock().Now());
                 if (park.parked() && mount && mount->IsConnected()) {
                     double pAlt = 0, pAz = 0;
