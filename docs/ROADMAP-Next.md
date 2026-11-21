@@ -1689,8 +1689,9 @@ paths pass fault injection, and one unattended sky run completes.
    **156.1 to 156.3b's rules merged 2026-11-21 (3.3.38). 156.2a merged
    2026-11-21 (3.3.39)**: the run in the app, the tracking group, park
    (`SkyParkAltAz`) and Dash's SKY RUN card. **156.2b written (3.3.40)**:
-   the planet group, and a status per checklist item. Next: 156.4 (the
-   bundle and the handoff), then the remaining groups.
+   the planet group, and a status per checklist item. **156.4 written
+   (3.3.41)**: the bundle and the hand-off to Claude Code. Next: the
+   remaining groups (156.2d the star field, 156.2e Jupiter and the Moon).
 24d. **166.0, then 156.2c (rows 66, 56), the app first: both written
    2026-11-21 (3.3.41)** (the owner,
    2026-11-21): the rule enforced on CI (every remote command has a native

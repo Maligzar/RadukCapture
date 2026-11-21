@@ -5501,6 +5501,11 @@ static int RunApp(bool useEmulator) {
             fclose(f);
             MoveFileExA(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING);
             Log("[SKYRUN] results: %s\n", path.c_str());
+            // Phase 156.4: the hand-off is the owner's to start (it pushes and
+            // starts Claude Code), so the app says the exact command.
+            Log("[SKYRUN] to hand off: python tools\\sky_handoff.py \"%s\" --log \"%s\" --logs \"%s\" --rig \"%s\"\n",
+                dir.c_str(), raduk::core::Paths::LogFile().c_str(), raduk::core::Paths::Logs().c_str(),
+                raduk::core::RigConfig::PublicIniPath().c_str());
         } else {
             Log("[SKYRUN] could not write %s\n", path.c_str());
         }

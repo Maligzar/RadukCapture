@@ -98,6 +98,13 @@ jobs:
       - name: Sky checklist update self-test
         run: python tools/sky_checklist_update.py --self-test
 
+      # Phase 156.3/156.4: the night's bundle, and the hand-off to Claude
+      # Code (a throwaway git repo and a stand-in for claude).
+      - name: Sky bundle and hand-off self-tests
+        run: |
+          python tools/sky_bundle.py --self-test
+          python tools/sky_handoff.py --self-test
+
       # Phase 166.0: the app first, Dash second. Every remote command has a
       # control in the app, or names the open stage that owes it.
       - name: App-first parity check
