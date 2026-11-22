@@ -65,6 +65,15 @@ public:
         m_onEmergencyStop = cb;
     }
     void SetParkCallback(std::function<void()> cb) { m_onPark = std::move(cb); }
+    // Phase 166.2: park's state on its own button (PARK, PARKING..., PARKED,
+    // PARK FAILED, or PARK (unset) with no SkyParkAltAz), so the app shows
+    // what Dash shows. Rewritten only when it changes.
+    void SetParkLabel(const std::wstring& text) {
+        if (!m_btnPark || text == m_parkLabel) return;
+        m_parkLabel = text;
+        SetWindowTextW(m_btnPark, text.c_str());
+        InvalidateRect(m_btnPark, nullptr, FALSE);
+    }
     // Fired when user picks an alignment star.
     // Caller should: mount->SyncRADec(ra,dec) + skyMap.SetMountPosition(ra,dec,true)
     void SetAlignCallback(std::function<void(double ra_h, double dec_deg,
@@ -1179,6 +1188,7 @@ private:
     HWND m_btnRate5 = nullptr;
     HWND m_btnAlign = nullptr;
     HWND m_btnPark  = nullptr;
+    std::wstring m_parkLabel = L"PARK";
 
     std::function<void(int, int, bool, int)>                 m_onJog;
     std::function<void()>                                    m_onEmergencyStop;

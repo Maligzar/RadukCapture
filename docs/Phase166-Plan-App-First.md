@@ -1,6 +1,6 @@
 # Phase 166: the app first, Dash second
 
-Written 2026-11-21 at the owner's direction. Status: `PLANNED`.
+Written 2026-11-21 at the owner's direction. Status: `PARTIAL`: 166.0, 156.2c, 166.1, 166.2 and 166.3 `WRITTEN` (3.3.45); 166.4's scenario and 166.5 open.
 
 ## The owner's rule (2026-11-21)
 
@@ -32,12 +32,12 @@ Under rule 2 these go, or come from the app.
 
 ## Stages
 
-### 166.0: the rule, enforced (size S)
+### 166.0: the rule, enforced (size S) — `WRITTEN` 2026-11-21 (3.3.45)
 - **The rule in writing:** `docs/TESTING.md`, the top of `ROADMAP-Next.md`, and the 156 design doc corrected (section 1 and section 5).
 - **A parity check on CI.** `tools/app_first_check.py` reads every `rc.cmd == "..."` in `main.cpp` and a table in this file (below), and fails if a remote command has no native control listed. A new remote command then can't land without its native control, or at least without saying where it is.
 - **No app change.** The table starts with the three debts marked `owed`. The check allows `owed` rows only while their stage is open, by stage number.
 
-### 156.2c: SKY RUN in the app (size M), ahead of 156.4
+### 156.2c: SKY RUN in the app (size M), ahead of 156.4 — `WRITTEN` 2026-11-21 (3.3.45)
 The sky run's own surface, native. A window opened from the action registry (with a hotkey, like the Status window) and from the GoTo panel's Tonight tab:
 - the pre-flight list, each line ticked or crossed, with every refusal's reason;
 - the plan, with each group's status, and each item's status (156.2b);
@@ -47,20 +47,41 @@ The sky run's own surface, native. A window opened from the action registry (wit
 
 Dash's card stays, mirroring the window. It's numbered in 156 because it finishes 156.2a's surface. It comes before 156.4 because the first real sky run should be started from the app.
 
-### 166.1: the weather in the app (size S-M)
+### 166.1: the weather in the app (size S-M) — `WRITTEN` 2026-11-21 (3.3.45)
 - **A weather view in the app,** from `core/SiteWeather.h`, showing what Dash shows today: cloud, temperature, humidity, wind and gusts, dew point and risk, pressure, 7Timer seeing, the verdict and the score. It also says where the reading came from, how old it is, and why there is none (offline, not configured, or failed).
 - **↻ in the app.** Dash's refresh becomes the mirror.
 - The scenario runner presses ↻; Dash's `weather.spec.js` is unchanged.
 
-### 166.2: park state in the app (size S)
+### 166.2: park state in the app (size S) — `WRITTEN` 2026-11-21 (3.3.45)
 - The mount window shows PARKING, PARKED (tracking off) or PARK FAILED with the reason, beside the PARK button, from `ParkController`.
 - A disabled PARK button says why, the same as Dash: no `SkyParkAltAz`.
 - A scenario for each state.
 
-### 166.3: Dash computes nothing of its own (size S)
+### 166.3: Dash computes nothing of its own (size S) — `WRITTEN` 2026-11-21 (3.3.45)
 - Remove the placeholder NASA and FAA panels, or replace them with what the app knows, if it knows anything.
 - The wind score comes from the app's verdict (`SiteWeather`), not from deductions written for one telescope.
 - A Dash spec checks that, with no app connected, the page shows no sky or rig figure it made up.
+
+### A second kind of debt, found while building 166.2
+The readout's telemetry block runs **only while a Dash client is connected**. Anything the app computes there, it computes for Dash alone. 156.2c's first wiring put the SKY RUN window's refresh there, so the app's own window would have frozen without Dash. It was moved to the readout tick before any of it shipped. 166.0's check reads commands, so it cannot see this.
+
+**166.4 (size S):** read the telemetry block for anything else the app itself needs, and move it out. Add a scenario that drives the app with no Dash connected and checks that the app's own readouts change.
+
+**166.4's audit, done 2026-11-21:** everything else in the block only formats data for Dash (the disk, the weather fields, the mount, the night plan and Moon map rows, the tracker). `pendingEvents`, which the block clears, is never filled, so nothing grows while Dash is away. Still owed: the scenario with no Dash connected.
+
+**166.3 as built:**
+- **Removed:** the NASA / EVENTS and FAA / WILDFIRE panels. They were fixed lists made up in the page: an ISS pass "tonight", "no active TFRs", and a nearby airfield's strobes.
+- **Removed:** the data-source lights, which showed NASA DONKI and STELLARIUM as answering though nothing asked them.
+- **Removed:** the wind score's focal-length and payload deductions. A calm night now scores 100, not 75.
+- **Removed:** the forecast's assumed 10 mph when no wind reading exists. No reading now means no score.
+- **Removed:** "CELESTRON 8SE" from the mount card.
+- **Test:** `dash-honest.spec.js` keeps all of it out.
+
+**166.5 (size M, after 165.3 and the hourly forecast parser):** the rest of what Dash computes for itself:
+- **The conditions tab:** the Moon panel, the planet and DSO lists, light pollution, the seeing bars, and the wind score itself, which is still Dash's rule of thumb.
+- **The forecast tab:** the ensemble.
+
+Each is either taken from the app, which first needs its own score (165.3) and its hourly forecast, or labelled plainly as Dash's estimate.
 
 ## Order
 166.0 first: it's small, and it stops new debt. Then 156.2c before 156.4, then 166.1 and 166.2, then 166.3. All of it belongs to release 3.4, whose acceptance includes an unattended sky run, which should be started from the app.
@@ -69,10 +90,10 @@ Dash's card stays, mirroring the window. It's numbered in 156 because it finishe
 
 | command | native | stage |
 |---|---|---|
-| skyrun_start | owed | 156.2c |
-| skyrun_stop | owed | 156.2c |
-| weather_refresh | owed | 166.1 |
-| park | mount window PARK | done (state owed, 166.2) |
+| skyrun_start | SKY RUN window START (Shift+R) | done (156.2c) |
+| skyrun_stop | SKY RUN window STOP (Shift+R) | done (156.2c) |
+| weather_refresh | Weather window REFRESH (Shift+W) | done (166.1) |
+| park | mount window PARK, with its state on the button | done (166.2) |
 | autofocus | AUTO FOCUS | done |
 | autofocus_abort | AUTO FOCUS (second press) | done |
 | calibrate_focus | CALIBRATE FOCUS | done |
