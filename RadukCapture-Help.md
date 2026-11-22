@@ -319,7 +319,7 @@ emergency stop.
 | `A` | Toggle Autofocus (start / abort) |
 | `B` | Cycle Display FX (Normal → Boost ×2 → Boost ×4 → Stack 3/5/10) |
 | `C` | Toggle Clipping Warning Overlay |
-| `F` / `Shift+F` | Focus step: fine / coarse (uses the profile's step sizes) |
+| `F` / `Shift+F` | Focus step **outward**: fine / coarse (the profile's step sizes). For both directions use `+`/`-` and `]`/`[` |
 | `Shift+S` | Framing shot — boost gain and exposure for 5s, then restore |
 | `F11` | Toggle fullscreen |
 | `G` | Open GoTo panel |
@@ -358,8 +358,8 @@ emergency stop.
 | `J` | **J**upiter: the central meridians now, the Red Spot's transits and the moons' transits, shadows, occultations and eclipses for the next two days, then the mutual events coming up for IMCCE's PHEMU campaign, all judged for this site. See *Jupiter's Red Spot, moons and shadows* and *Mutual events* below |
 | `Shift+J` | Record the next mutual event, with the clock checked and the settings locked; again to cancel. Asks twice |
 | `↑↓←→` | Jog mount (hold to slew) |
-| `+` / `-` | Fine focus step |
-| `[` / `]` | Coarse focus step |
+| `+` / `-` | Fine focus step out / in (the profile's fine step; `=` and the numpad's `+` work too) |
+| `]` / `[` | Coarse focus step out / in (the profile's coarse step) |
 | `Esc` | Close popup panels |
 | Mouse wheel | Zoom preview in/out |
 | `Ctrl` + click on the image | **Put that spot in the middle.** Needs a guide calibration first; it says so if there is none. See **Centring by clicking**. |
@@ -2314,8 +2314,10 @@ at 640x480 for the frame rate, load it, press `640`, press `SAVE`.
 
 ### Focus steps
 
-`+` / `-` move the focuser by the profile's **fine** step and `[` / `]` by
-its **coarse** step (10 and 100 by default). Change them in the profile
+`+` / `-` move the focuser out / in by the profile's **fine** step and `]` / `[`
+out / in by its **coarse** step (10 and 100 by default). `F` and `Shift+F` step
+outward only. A key pressed while the focuser is still moving adds to where it was
+going (3.3.61). Typing in a text box never moves the focuser. Change them in the profile
 editor for a target that wants finer control.
 
 ---
@@ -3642,6 +3644,7 @@ un-soak.ps1` runs the emulator for hours through GoTo, lock, autofocus and runs,
 | 3.3.59 | 174.3 | **The focus history, for a model to read.** `tools/focus_mcp.py` is a local MCP server and needs nothing online. Claude Code, or a local model, can list sweeps, read one whole, summarise what went wrong (fade, no peak, edge, backlash), read the temperature model and run replay over the history. It can also write a proposal into `focus_proposals.md` for you to accept. It cannot move the focuser or change a setting. Connect it with `claude mcp add focus-history -- python tools/focus_mcp.py --history <logs>\\focus_history.jsonl`. |
 | 3.3.60 | screens | **Full-screen windows rotate to prevent screen burn.** Every 15 minutes, each window that fills a screen (whole screen, work area or maximised) moves one screen along: left to right, the last to the first. A sky map, status board or object panel therefore never holds one picture on one panel all night. The main window with the live preview stays where it is, and a screen that has no full-screen window is never covered. A turn waits while you are dragging or resizing something, and focus returns to wherever you were typing. A display change puts the saved layout back and starts the 15 minutes again. Set the interval with `rig.ini` `[Rig] ScreenRotateMinutes` (0 turns it off). Logged under `[SCREENS]`. Gated by `screen_rotation`. |
 | 3.3.61 | 169.1 | **A focus move sent while the focuser is moving is no longer dropped.** At the scope, typing a position (or a GoTo loading a profile) while the focuser was still travelling did nothing: the EAF refuses a move while it moves, and only the log said so (`EAFMove(...) failed: 5`). Now the newest command wins. The move in flight is stopped, the motor comes to rest, and the new move goes out, logged as `move to N replaces the move in flight to M`. Pressing `F` again mid-move was hit by the same refusal; two presses now land at the sum of both steps. Gated by `focus_replace`. |
+| 3.3.62 | 169.1 | **The keyboard focuses inward.** `F` and `Shift+F` only ever stepped outward, and the `+`/`-` and `[`/`]` keys the Help described did nothing. Now `+` (or `=`, or the numpad's `+`) and `-` step out and in by the profile's fine step, and `]` and `[` by its coarse step. They are in the command palette too, and ask twice there like every focuser command. A text box keeps the characters, so typing a position never moves the focuser. `Ctrl+[`/`Ctrl+]` is still the satellite nudge. |
 
 ---
 

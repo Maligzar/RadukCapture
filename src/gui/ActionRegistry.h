@@ -110,8 +110,12 @@ inline const std::vector<Action>& All() {
 
         // Things that move hardware, or start a sequence: guarded.
         {"autofocus",   "Autofocus: start or stop", "focus sweep hfd",                      "A",            'A', false, false, 0, true},
-        {"focusin",     "Focuser: fine step",       "focus nudge 10",                       "F",            'F', false, false, 0, true},
-        {"focusout",    "Focuser: coarse step",     "focus nudge 100",                      "Shift+F",      'F', true,  false, 0, true},
+        {"focusin",     "Focuser: fine step out",   "focus nudge 10 outward",               "F",            'F', false, false, 0, true},
+        {"focusout",    "Focuser: coarse step out", "focus nudge 100 outward",              "Shift+F",      'F', true,  false, 0, true},
+        {"focusfineout",   "Focuser: fine step out",    "focus nudge plus outward",         "+",            0,   false, false, L'+', true},
+        {"focusfinein",    "Focuser: fine step in",     "focus nudge minus inward",         "-",            0,   false, false, L'-', true},
+        {"focuscoarseout", "Focuser: coarse step out",  "focus nudge bracket outward",      "]",            0,   false, false, L']', true},
+        {"focuscoarsein",  "Focuser: coarse step in",   "focus nudge bracket inward",       "[",            0,   false, false, L'[', true},
         {"tracking",    "Tracking on or off",       "sidereal follow mount",                "T",            'T', false, false, 0, true},
         {"recall",      "Recall a capture's framing", "goto past capture return",           "Shift+G",      'G', true,  false, 0, true},
         {"recalloff",   "Recall the target's place in that frame", "offset nudge centre",   "Ctrl+Shift+G", 'G', true,  true,  0, true},
