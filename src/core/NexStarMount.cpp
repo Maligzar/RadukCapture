@@ -371,14 +371,29 @@ bool NexStarMount::SetTrackingMode(TrackingMode mode) {
     std::this_thread::sleep_for(std::chrono::milliseconds(250));
     int actual = ReadTrackingModeRaw();
     if (actual < 0) {
-        CoreLog("[NexStarMount] Tracking %s: ACKed but readback failed\n",
+        // 2026-11-21: on the 8SE's hand control every `T 1` readback
+        // failed all night while the mount tracked (PLANET LOCK calibrated
+        // on it and held Saturn for two hours); `T 0` read back every time.
+        // Returning false here was reported as "tracking=REFUSED", and the
+        // T key then toggled a cache it could not trust and turned tracking
+        // OFF. An ACK with no readback is "sent, confirming": the mode is
+        // unknown until the position poll, whose own 't' read worked all
+        // night, reads it (core/TrackingConfirm.h). A mount that then reads
+        // OFF is reported as not running, as before.
+        {
+            std::lock_guard<std::mutex> lk(m_cacheMutex);
+            m_trackingValid = false;
+            m_trackConfirm.Sent((int)mode, SteadyMs());
+        }
+        CoreLog("[NexStarMount] Tracking %s: ACKed, readback failed - confirming from the position poll\n",
                TrackingModeName(mode));
-        return false;
+        return true;
     }
 
     {
         std::lock_guard<std::mutex> lk(m_cacheMutex);
         m_cachedTracking = static_cast<TrackingMode>(actual);
+        m_trackConfirm.Clear();
     }
 
     bool ok = (actual == (int)mode);
@@ -983,6 +998,26 @@ void NexStarMount::PollLoop() {
             std::lock_guard<std::mutex> lk(m_cacheMutex);
             m_cachedRA       = ra;
             m_cachedDec      = dec;
+            // A tracking command that was ACKed but not read back, settled
+            // by this read (core/TrackingConfirm.h).
+            switch (m_trackConfirm.OnPoll(modeRead, (int)mode, SteadyMs())) {
+                case raduk::core::ConfirmResult::Confirmed:
+                    CoreLog("[NexStarMount] Tracking %s confirmed by the position poll\n",
+                            TrackingModeName(mode));
+                    break;
+                case raduk::core::ConfirmResult::NotRunning:
+                    CoreLog("[NexStarMount] Tracking %s requested, mount reports %s : "
+                            "NOT RUNNING (mount likely unaligned)\n",
+                            TrackingModeName(static_cast<TrackingMode>(m_trackConfirm.Mode())),
+                            TrackingModeName(mode));
+                    break;
+                case raduk::core::ConfirmResult::Unconfirmed:
+                    CoreLog("[NexStarMount] Tracking %s: ACKed, still unconfirmed after 5 s "
+                            "(no readable mode reply) - reporting UNKNOWN\n",
+                            TrackingModeName(static_cast<TrackingMode>(m_trackConfirm.Mode())));
+                    break;
+                default: break;
+            }
             if (modeRead) {
                 m_cachedTracking      = mode;
                 m_trackingValid       = true;

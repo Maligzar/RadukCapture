@@ -1,6 +1,6 @@
 # Phase 166: the app first, Dash second
 
-Written 2026-11-21 at the owner's direction. Status: `PARTIAL`: 166.0, 156.2c, 166.1, 166.2 and 166.3 `WRITTEN` (3.3.41); 166.4's scenario and 166.5 open.
+Written 2026-11-21 at the owner's direction. Status: `PARTIAL`: 166.0, 156.2c, 166.1, 166.2 and 166.3 `WRITTEN` (3.3.45); 166.4's scenario and 166.5 open.
 
 ## The owner's rule (2026-11-21)
 
@@ -32,12 +32,12 @@ Under rule 2 these go, or come from the app.
 
 ## Stages
 
-### 166.0: the rule, enforced (size S) — `WRITTEN` 2026-11-21 (3.3.41)
+### 166.0: the rule, enforced (size S) — `WRITTEN` 2026-11-21 (3.3.45)
 - **The rule in writing:** `docs/TESTING.md`, the top of `ROADMAP-Next.md`, and the 156 design doc corrected (section 1 and section 5).
 - **A parity check on CI.** `tools/app_first_check.py` reads every `rc.cmd == "..."` in `main.cpp` and a table in this file (below), and fails if a remote command has no native control listed. A new remote command then can't land without its native control, or at least without saying where it is.
 - **No app change.** The table starts with the three debts marked `owed`. The check allows `owed` rows only while their stage is open, by stage number.
 
-### 156.2c: SKY RUN in the app (size M), ahead of 156.4 — `WRITTEN` 2026-11-21 (3.3.41)
+### 156.2c: SKY RUN in the app (size M), ahead of 156.4 — `WRITTEN` 2026-11-21 (3.3.45)
 The sky run's own surface, native. A window opened from the action registry (with a hotkey, like the Status window) and from the GoTo panel's Tonight tab:
 - the pre-flight list, each line ticked or crossed, with every refusal's reason;
 - the plan, with each group's status, and each item's status (156.2b);
@@ -47,17 +47,17 @@ The sky run's own surface, native. A window opened from the action registry (wit
 
 Dash's card stays, mirroring the window. It's numbered in 156 because it finishes 156.2a's surface. It comes before 156.4 because the first real sky run should be started from the app.
 
-### 166.1: the weather in the app (size S-M) — `WRITTEN` 2026-11-21 (3.3.41)
+### 166.1: the weather in the app (size S-M) — `WRITTEN` 2026-11-21 (3.3.45)
 - **A weather view in the app,** from `core/SiteWeather.h`, showing what Dash shows today: cloud, temperature, humidity, wind and gusts, dew point and risk, pressure, 7Timer seeing, the verdict and the score. It also says where the reading came from, how old it is, and why there is none (offline, not configured, or failed).
 - **↻ in the app.** Dash's refresh becomes the mirror.
 - The scenario runner presses ↻; Dash's `weather.spec.js` is unchanged.
 
-### 166.2: park state in the app (size S) — `WRITTEN` 2026-11-21 (3.3.41)
+### 166.2: park state in the app (size S) — `WRITTEN` 2026-11-21 (3.3.45)
 - The mount window shows PARKING, PARKED (tracking off) or PARK FAILED with the reason, beside the PARK button, from `ParkController`.
 - A disabled PARK button says why, the same as Dash: no `SkyParkAltAz`.
 - A scenario for each state.
 
-### 166.3: Dash computes nothing of its own (size S) — `WRITTEN` 2026-11-21 (3.3.41)
+### 166.3: Dash computes nothing of its own (size S) — `WRITTEN` 2026-11-21 (3.3.45)
 - Remove the placeholder NASA and FAA panels, or replace them with what the app knows, if it knows anything.
 - The wind score comes from the app's verdict (`SiteWeather`), not from deductions written for one telescope.
 - A Dash spec checks that, with no app connected, the page shows no sky or rig figure it made up.

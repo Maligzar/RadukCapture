@@ -33,6 +33,7 @@
 #define NOMINMAX
 #endif
 
+#include "TrackingConfirm.h"
 #include <windows.h>
 #include <string>
 #include <mutex>
@@ -267,6 +268,9 @@ private:
     static constexpr int TRACKING_READ_FAIL_LIMIT = 3;
     bool         m_trackingValid     = false;
     int          m_trackingReadFails = 0;
+    // 2026-11-21: a tracking command ACKed but not read back is settled
+    // by the poll's own 't' read (core/TrackingConfirm.h). Under m_cacheMutex.
+    raduk::core::TrackingConfirm m_trackConfirm;
     bool         m_cacheValid     = false;
 
     // Serial round-trips behind the cached IsAligned / IsSlewing. Poll

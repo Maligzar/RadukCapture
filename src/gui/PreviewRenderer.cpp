@@ -14,6 +14,7 @@
 #include "Version.h"
 #include "core/ADCAssistant.h"
 #include "core/RigConfig.h"
+#include "core/RgbAlign.h"      // phase 168
 #include <cstdio>
 #include <cstring>
 #include <cmath>
@@ -831,49 +832,42 @@ void PreviewRenderer::RenderFrame(const raduk::core::FrameSlot* frame,
                 rgba[i*4+3] = 255;
             }
 
-            // ── RGB Align (Phase 23) ──────────────────────────
-            // Compute pixel shift from ADC dispersion + manual offset.
-            // Plate scale: 0.203 arcsec/px for 8SE+ASI678MC at f/10.
-            // Blue displaced toward zenith (UP) by shift pixels.
-            // Red displaced DOWN by shift/2 pixels (smaller correction).
+            // ── RGB Align (Phase 23; corrected in Phase 168) ───
+            // Display only. core/RgbAlign.h moves blue and red together by
+            // exactly the computed dispersion, split at the band's middle,
+            // along the zenith's direction in the frame
+            // (CameraZenithAngleDeg), and adds nothing automatic when an
+            // ADC is fitted. It used to move them apart by 1.5 times the
+            // dispersion, along rows only: the owner's double image,
+            // 2026-11-21.
             if (m_rgbAlignEnabled && frame->width > 0 && frame->height > 0) {
-                float dispArcsec = 0.0f;
-                if (m_mountAltDeg > 0.0) {
+                const auto& rig = raduk::core::RigConfig::Get();
+                double sepPx = 0.0;
+                if (m_mountAltDeg > 0.0 && rig.plateScaleArcsecPx > 0.0f) {
                     auto adc = raduk::core::ADCAssistant::Compute(m_mountAltDeg);
-                    dispArcsec = adc.separationArcsec;
+                    sepPx = adc.separationArcsec / rig.plateScaleArcsecPx;
                 }
-                const float PLATE_SCALE =
-                    raduk::core::RigConfig::Get().plateScaleArcsecPx; // arcsec/px
-                int autoShift = (dispArcsec > 0.0f)
-                    ? (int)roundf(dispArcsec / PLATE_SCALE) : 0;
-                int shift = autoShift + m_rgbAlignManual;
-                shift = (shift > 40) ? 40 : (shift < -40) ? -40 : shift;
-                m_rgbAlignShift = shift;
+                const auto sh = raduk::core::ComputeRgbAlign(
+                    sepPx, m_rgbAlignManual, rig.cameraZenithAngleDeg,
+                    raduk::core::BlueShareOfDispersion(rig.filterLowNm, rig.filterHighNm),
+                    rig.adcFitted);
+                int shown = (int)std::lround(sh.totalPx);
+                m_rgbAlignShift = shown > 40 ? 40 : shown < -40 ? -40 : shown;
+                auto clampS = [](int v) { return v > 40 ? 40 : v < -40 ? -40 : v; };
+                const int bx = clampS(sh.bx), by = clampS(sh.by), rx = clampS(sh.rx), ry = clampS(sh.ry);
 
-                if (shift != 0) {
-                    int W = frame->width, H = frame->height;
-                    // Shift blue UP by |shift| (positive shift = dispersion correction)
-                    int bShift = shift;    // blue up
-                    int rShift = -shift/2; // red down by half (partial correction)
-
+                if (bx || by || rx || ry) {
+                    const int W = frame->width, H = frame->height;
                     std::vector<uint8_t> aligned(rgba);
                     for (int y = 0; y < H; y++) {
                         for (int x = 0; x < W; x++) {
-                            size_t dst = (size_t)(y * W + x) * 4;
-                            // Blue channel from (y + bShift) row
-                            int srcY_b = y + bShift;
-                            if (srcY_b >= 0 && srcY_b < H) {
-                                size_t src = (size_t)(srcY_b * W + x) * 4;
-                                aligned[dst+2] = rgba[src+2];
-                            } else {
-                                aligned[dst+2] = 0;
-                            }
-                            // Red channel from (y + rShift) row
-                            int srcY_r = y + rShift;
-                            if (srcY_r >= 0 && srcY_r < H && rShift != 0) {
-                                size_t src = (size_t)(srcY_r * W + x) * 4;
-                                aligned[dst+0] = rgba[src+0];
-                            }
+                            const size_t dst = (size_t)(y * W + x) * 4;
+                            const int bxs = x + bx, bys = y + by;
+                            aligned[dst + 2] = (bxs >= 0 && bxs < W && bys >= 0 && bys < H)
+                                ? rgba[(size_t)(bys * W + bxs) * 4 + 2] : 0;
+                            const int rxs = x + rx, rys = y + ry;
+                            aligned[dst + 0] = (rxs >= 0 && rxs < W && rys >= 0 && rys < H)
+                                ? rgba[(size_t)(rys * W + rxs) * 4 + 0] : 0;
                         }
                     }
                     rgba = std::move(aligned);

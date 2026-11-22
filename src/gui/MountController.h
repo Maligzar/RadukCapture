@@ -24,6 +24,7 @@
 #include <algorithm>
 #include <atomic>
 #include "core/IMount.h"
+#include "core/TrackingState.h"
 #include "core/RigConfig.h"
 #include "MotionMonitor.h"
 
@@ -42,6 +43,8 @@ public:
 
     // ── Setup ─────────────────────────────────────────────────
     void SetMount(raduk::core::IMount* m) { m_mount = m; }
+    // True while PLANET LOCK drives the axes (CentroidTracker::IsAppDriving).
+    void SetAppDrivingQuery(std::function<bool()> q) { m_appDriving = std::move(q); }
 
     // rate is the panel's selected jog rate (5/7/8/9) at press time.
     void SetJogCallback(std::function<void(int axis, int dir, bool start, int rate)> cb) {
@@ -171,12 +174,16 @@ public:
             swprintf(buf, 64, L"Dec %s%02d\u00B0 %02d' %02d\"", neg?L"-":L"+", dd, dm, ds);
             SetText(m_lblDec, buf);
         }
+        // 2026-11-22: the hand control reads OFF while PLANET LOCK drives
+        // the axes; say who is following the sky (core/TrackingState.h).
         auto mode = m_mount->GetTrackingMode();
-        const wchar_t* trkText =
-            (mode == raduk::core::IMount::OFF)     ? L"TRK: OFF"    :
+        const wchar_t* modeText =
             (mode == raduk::core::IMount::ALT_AZ)  ? L"TRK: ALT/AZ" :
             (mode == raduk::core::IMount::EQ_NORTH)? L"TRK: EQ N"   : L"TRK: EQ S";
-        SetText(m_lblTrk, trkText);
+        const auto who = raduk::core::WhoSteers(true, m_mount->TrackingModeKnown(),
+                                                mode == raduk::core::IMount::OFF,
+                                                m_appDriving && m_appDriving());
+        SetText(m_lblTrk, raduk::core::TrkLabel(who, modeText));
         if (m_btnAlign) InvalidateRect(m_btnAlign, nullptr, FALSE);
     }
 
@@ -628,7 +635,7 @@ private:
         // RA/Dec readout
         m_lblRA  = MakeLbl(L"RA  --h --m --s",  x, y, w,    21, ID_LBL_RA);  y += 22;
         m_lblDec = MakeLbl(L"Dec --\u00B0 --' --\"", x, y, w, 21, ID_LBL_DEC); y += 22;
-        m_lblTrk = MakeLbl(L"TRK: OFF",           x, y, w/2, 21, ID_LBL_TRK); y += 24;
+        m_lblTrk = MakeLbl(L"TRK: OFF",           x, y, w,   21, ID_LBL_TRK); y += 24;   // full width: "TRK: APP (lock)"
 
         // ── What the pointing costs ───────────────────────────
         //
@@ -1156,6 +1163,7 @@ private:
 
     // ── Members ───────────────────────────────────────────────
     HWND m_hwnd    = nullptr;
+    std::function<bool()> m_appDriving;
     raduk::core::IMount* m_mount = nullptr;
     int  m_jogRate = 9;
     HWND m_canvasMotion = nullptr;

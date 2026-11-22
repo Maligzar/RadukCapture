@@ -333,8 +333,8 @@ emergency stop.
 | `Shift+H` | Close or reopen the **histogram window**. Open at startup. |
 | `Shift+Q` | Close or reopen the **sharpness window**. Open at startup. |
 | `Shift+D` | Close or reopen the **status window** — capture health and free space on every drive. |
-| `Shift+W` | Close or reopen the **weather window** — the whole reading (cloud, temperature, humidity, wind, gusts, dew, pressure, seeing, verdict), where it came from and how old, and ↻ REFRESH (3.3.41). `W` alone is still the advisories. |
-| `Shift+R` | Close or reopen the **SKY RUN window** — start, watch and stop the unattended test night (3.3.41). `R` alone is still the reticle. |
+| `Shift+W` | Close or reopen the **weather window** — the whole reading (cloud, temperature, humidity, wind, gusts, dew, pressure, seeing, verdict), where it came from and how old, and ↻ REFRESH (3.3.45). `W` alone is still the advisories. |
+| `Shift+R` | Close or reopen the **SKY RUN window** — start, watch and stop the unattended test night (3.3.45). `R` alone is still the reticle. |
 | `Shift+A` | **ADC alignment window** — for dialling in a dispersion corrector. Inert unless *ADC fitted* is ticked on the READY screen. Until phase 132.7 this key also started or stopped autofocus. |
 | `Shift+V` | **Share view** — the image alone, filling a second screen, for people who are not you. See **The share view**. |
 | `Ctrl+Shift+V` | Share view in and out of a **movable window**. Works from the control screen, which is the point. |
@@ -507,7 +507,7 @@ All sections are collapsible — click the section header to expand/collapse.
 - **DARK / FLAT / CLEAR** — Build or clear calibration masters. See [Dark and flat frames](#dark-and-flat-frames).
 - **Black / White sliders** — Display stretch. See [Display stretch](#display-stretch).
 - **ZOOM: FIT / FULLSCR** — Switch between fit-to-window and fullscreen preview.
-- **RGB ALIGN** — Toggle atmospheric dispersion correction on the display. Auto-computes pixel shift from mount altitude using the Edlen refractivity model. Blue channel shifts UP, red shifts DOWN by half. Display only — SER data is unaffected.
+- **RGB ALIGN** — Toggle atmospheric dispersion correction on the display. It works out the colour spread from the mount's altitude (the Edlen refractivity model, over your filter's band) and moves blue and red back onto green, together by exactly that spread (3.3.41; before, it moved them 1.5 times too far, which looked like a double image). It moves them along the zenith's direction in the frame, set by rig.ini `CameraZenithAngleDeg` (default 180: zenith toward the bottom). With `ADCFitted=1`, only the Manual slider applies, because the ADC is doing the correcting. Display only — SER data is unaffected.
 - **Manual slider** — Fine-tune the RGB align offset ±20px on top of the auto value. Center position = 0px offset.
 - HUD shows `RGB ALIGN +N px` in amber when active.
 - **[FX] NORMAL** — Cycle Display FX modes (see Display FX section below). Also `B` key.
@@ -892,6 +892,28 @@ two surfaces that actually scale.
 
 Open with `MOUNT CTRL` button or from the TELESCOPE section. Always stays on top.
 
+**Tracking without the hand control (3.3.43).** After power-on, let the hand
+control finish **Quick Align** (it needs no stars); from then on the app does
+the rest:
+
+1. GoTo the target from the GoTo panel.
+2. Centre it roughly and press **★ ALIGN**: it syncs and switches tracking on.
+   (`T` or TRACKING also switches it on.)
+3. Press **PLANET LOCK**. It measures the mount's own tracking, then drives the
+   axes itself; the line reads **TRK: APP (lock)**.
+4. Fine-tune with the arrow keys (or the controller's stick), never the hand
+   control: the lock re-sends the axis rates every quarter second, so a hand
+   control press is undone.
+
+The **TRK** line: `ALT/AZ` (the hand control tracks), `APP (lock)` (PLANET LOCK
+drives), `OFF`, or `?` (the mode is not confirmed yet). Some hand controls
+acknowledge a tracking command but do not answer the mode query right after
+it; the app then says "tracking sent, confirming" and the position poll settles
+it within about a second, logging "confirmed by the position poll" or "NOT
+RUNNING (mount likely unaligned)". Before 3.3.43 that case was reported as
+"mount refused tracking", and `T` could then switch tracking off when you meant
+on; `T` now asks for on whenever the mode is not known.
+
 - **N / S / E / W** — Hold to slew. Release to stop.
 - **9× / FAST / MED / FINE** — Slew rate selector. **This also sets the
   speed of the arrow keys**, and it is currently the only place the rate
@@ -917,7 +939,7 @@ Open with `MOUNT CTRL` button or from the TELESCOPE section. Always stays on top
   trees. A slew that takes over 200 s is cancelled. Jogging or slewing more
   than a degree away ends the parked state. Dash's PARK (two taps) and the
   sky run park the same way.
-  The button shows the state (3.3.41): **PARKING...** while it slews,
+  The button shows the state (3.3.45): **PARKING...** while it slews,
   **PARKED** once tracking is off, **PARK FAILED** (with the reason in a
   notice), or **PARK (unset)** when `SkyParkAltAz` is not set.
 - **RA / Dec readout** — Live coordinates updated every 500ms.
@@ -1851,7 +1873,7 @@ such a page cannot know.
   restart to have a new one generated.
 - **Connecting from another machine:** see the next section.
 
-### The weather window (`Shift+W`, 3.3.41)
+### The weather window (`Shift+W`, 3.3.45)
 
 The whole weather reading the app holds: cloud, temperature, humidity, wind and gusts, dew point and dew risk, sea-level pressure, 7Timer's seeing (1 is best of 8), and, from Leoben, the verdict and imaging score.
 - **Units:** temperatures in °F with °C beside them, wind in mph with m/s, the same as Dash.
@@ -1862,7 +1884,7 @@ The whole weather reading the app holds: cloud, temperature, humidity, wind and 
 
 The Status window keeps its one-line WX row, and Dash's weather card mirrors this window.
 
-### The SKY RUN window (`Shift+R`, 3.3.41)
+### The SKY RUN window (`Shift+R`, 3.3.45)
 
 The unattended test night runs from the app's own window, not from Dash. Dash's card below mirrors it, for your phone or tablet.
 
@@ -1874,7 +1896,7 @@ The unattended test night runs from the app's own window, not from Dash. Dash's 
 
 The command palette lists it as "Sky run window".
 
-**Sending a night to Claude Code: the bundle and the hand-off (3.3.41).** Any night can go to Claude Code: an unattended sky run, a normal night of imaging like a Saturn session, or a night with Dash's test suite run against the app. Run the command from the RadukCapture folder.
+**Sending a night to Claude Code: the bundle and the hand-off (3.3.45).** Any night can go to Claude Code: an unattended sky run, a normal night of imaging like a Saturn session, or a night with Dash's test suite run against the app. Run the command from the RadukCapture folder.
 
 - **After a sky run,** the log's line starting `[SKYRUN] to hand off:` gives the exact command.
 - **For a normal night,** the app writes a line starting `[NIGHT] to hand tonight to Claude:` when it closes. If you've started the app again since, use `raduk_log.prev.txt` as `--log`.
@@ -2947,6 +2969,7 @@ rig.ini; an entry marked manual is never replaced by an automatic estimate.
   diagnosis — the confirming measurement collected nothing. If you see it
   now, the target really is too faint.
 - Check EAF is not at travel limits (safe zone: 10000–490000)
+- **It took a nearly focused planet out of focus, to a donut** (3.3.44 fixes the part that let it stay there). Since 3.3.44, autofocus never keeps a result that measures a tenth or more worse than where it began without first going back and comparing the two under the same sky. If the start's half-flux diameter is a tenth better, the focuser returns to the start and says `HFD says the start is sharper` in the log. Before, it only checked when the score had **halved**. On a planet as big as Saturn, that doesn't happen until the image is already turning into a donut, the ring an SCT's secondary mirror makes of a defocused planet. If you see `Focus got worse … reverted to start`, focus by hand. The `[AF]` lines show what the sweep saw: send them in, or send the night to Claude.
 
 A move that makes no progress for 5 s is reported as stalled. Long moves are
 fine - the sweep's first hop is 3000 steps and is allowed to take as long as
@@ -3290,6 +3313,7 @@ real site is stored. Most of it is written for you.
 | `FocuserBacklashSteps` | The focuser's backlash in steps. `-1` (the default) uses the EAF's own figure, else 200. Set it once several autofocus runs' `Backlash measured` lines agree. |
 | `FocuserOneSidedMoves` | `1` (default): every focuser move ends travelling one way by at least the backlash. `0` off. |
 | `CentralObstruction` | The central obstruction as a fraction of the aperture's diameter: `0.34` (default, the 8SE). CALIBRATE FOCUS uses it to turn the growth of a defocused image into focal-plane travel per step. `0` for a refractor. |
+| `CameraZenithAngleDeg` | For RGB ALIGN: where the zenith lies in the camera's frame, in degrees clockwise from the frame's top. Default `180` (toward the bottom). To measure it, jog up in altitude and watch which way the target moves; the zenith is the opposite way. If the colours still look doubled with RGB ALIGN on, this is the setting to change. |
 | `FocuserOvershootSteps` | How far a one-sided focuser move goes past its target before coming back, in steps. It has only to be larger than the knob's real slack: too large costs a second or two a move, too small leaves the mirror inside the slack. `-1` (the default): three times the backlash figure, at least 1500. Unlike `FocuserBacklashSteps`, it does not have to be measured to be safe. |
 | `FocuserMaxTravelSteps` | The furthest one focuser command may travel, in steps: `12000` (default), about two turns of the 8SE's knob. A longer move is refused and says why; the panel's GO TO asks for a second press and then makes it; autofocus stays within this of where it started. A move is also refused when the focuser's position cannot be read. `0` turns the guard off. |
 | `FocuserFinalDirection` | `out` (default, rising step numbers) or `in`: which way every move ends. Set it so the last travel pushes the primary toward the corrector. See [Autofocus Routine](#autofocus-routine). |
@@ -3569,7 +3593,10 @@ un-soak.ps1` runs the emulator for hours through GoTo, lock, autofocus and runs,
 | 3.3.38 | 156 (rules) | The rules of the unattended sky run, ahead of the run itself. New `rig.ini` limits with no defaults, so the run refuses to start until they are set: `SkyHorizon` (a horizon profile by azimuth), `SkySlewAltMax` and `SkySlewAz`. Before starting it also checks the site, an aligned mount, the camera and room on the disk, and lists every reason it will not go. Tests come in five groups (any planet, Jupiter, the Moon, a star field, tracking); a group runs only on a target it fits and with the devices it needs, and a target below your horizon or setting too soon is skipped, not failed. Through the night: a failure is recorded and passed over, a lost target fails that test, clouds hold the run and the test is tried again when the sky clears, a stalled device stops the run and parks, and it parks at the end of the dark window or the list. `python tools\sky_checklist_update.py field-results\<night>\results.json` then marks the clear-night checklist with what passed, failed or was skipped, and never from an emulator run. A group whose result needs your eye (comparing stacks, judging focus by eye) is marked COLLECTED, never PASSED; the star-field group uses your own `SkyStars` list; the run works while the Sun is below `SkyDarkSunAltDeg` (-10 by default). Gated by `sky_run` (65 checks) and the updater's self-test on CI. The run itself, through Dash, comes next. |
 | 3.3.39 | 156.2a | The sky run's first group, and park. **PARK** is a new button in the mount window and in Dash: it slews to `rig.ini` `SkyParkAltAz=az:alt` and turns tracking off, with no default position, refusing (and saying why) outside the slew bounds, unaligned or with no site. Dash gets a **SKY RUN** card: start, the plan with each group's status, the step running, STOP (parks). The app runs the night itself, so a closed browser does not stop it. The **tracking group** runs on any bright target: a box change from full to a third to a sixth and back with the lock held (item 48), a 200-pixel jog re-centred within 25 s (49), and the lock made in a small box, then a calibration refused near an edge with "centre it roughly" (50). The other groups say not built yet. ESC stops the run without a park. Gated by `sky_run_controller`, `park_controller`, `sky_run`, and the Dash specs `park` and `skyrun`. |
 | 3.3.40 | 156.2b | The sky run's **planet group**. On any planet in view, after the lock: autofocus from +700 and from -700 steps (item 47's repeatability, and the fine pass for item 58), a 60-second throughput recording judged on unexplained drops and the camera's own rate (item 13), and the exposure ladder at 2, 5, 10 and 15 ms with the gain chosen so the highlight sits near 70% (item 55). The gain is found by halving the camera's own range, so it works on any make. **Each checklist item now gets its own status**, in `results.json` and in `sky_checklist_update.py`, so the ladder is never marked passed because throughput was. The camera's exposure, gain and AE are put back afterwards; the run's recordings are not auto-stacked. Gated by `sky_run_controller` (61 checks), `sky_run` and the updater's self-test. |
-| 3.3.41 | 166.0, 156.2c, 166.1, 166.2, 166.3, 156.4 | **The SKY RUN window, in the app (`Shift+R`).** It shows where the run is, the step running, every reason it won't start, and the plan with each group's and each item's status, with START and STOP (STOP parks). Dash's card now mirrors it. Your rule is written down and checked: the app is the instrument, and Dash is the remote for an iPhone or iPad and the test harness. CI reads every command Dash can send and fails if one has no control in the app itself, unless an open stage owes it; none is owed now. **The weather window (`Shift+W`, 166.1):** the whole reading, in °F and mph with °C and m/s, its source and age, and ↻ REFRESH, which Dash's button now mirrors. **Dash no longer makes things up (166.3):** the NASA / EVENTS and FAA / WILDFIRE panels (fixed lists written into the page, not data), the data-source lights for sources nothing asked, the wind score's deductions written for one telescope, and the forecast's assumed 10 mph wind are gone; a calm night's wind score is now 100. **Park's state on the mount window's PARK button (166.2):** PARKING..., PARKED, PARK FAILED (with the reason) or PARK (unset); before this, only Dash showed it. **Sending a night to Claude (156.4):** `tools\sky_handoff.py` takes any night: a sky run (the checklist marked from its results), a normal imaging night, or a Dash test night with Playwright's report. It bundles the summary, log lines, recordings list, Autorun rankings and validation log, commits them on the night's own branch in a separate worktree, pushes, and starts Claude Code to write the findings and open a draft pull request. It never merges. The log gives the exact command after a sky run and when the app closes. Also fixed: the sky run's log lines said `[SKYRUN]` twice. Gated by `sky_run_view`, `weather_view`, Dash's `dash-honest.spec.js`, `command_palette`, the parity check, the bundle and hand-off self-tests (a throwaway git repo and a stand-in for Claude), and `tests/scenarios/sky-run-refused.scn`, `sky-run-window.scn` and `weather-window.scn`. |
+| 3.3.41 | 168 | **RGB ALIGN fixed.** It moved blue and red apart by one and a half times the colour spread it computed, so the preview looked doubled at the scope. Blue and red now move together by exactly that spread, split around green, along the zenith's direction in the frame (rig.ini `CameraZenithAngleDeg`, default 180 as before). With an ADC fitted, it adds nothing of its own. Display only; recordings were never affected. Gated by `rgb_align`. |
+| 3.3.43 | 172 (fix) | **Tracking is no longer reported as refused when the mount accepted it.** On 2026-11-21 every tracking-on command was acknowledged and the mode check right after it failed, all night, while the mount tracked; the app said "mount refused tracking" and `T` then switched tracking off. Now that case reads "tracking sent, confirming" and TRK: ? until the position poll confirms it (or reports it not running); `T` and TRACKING ask for on when the mode is unknown. The mount window says **TRK: APP (lock)** while PLANET LOCK drives the axes (it said OFF). **An Xbox controller** (Bluetooth or USB, nothing to install): stick or D-pad jog through the arrow keys' path (the lock pauses and re-centres), B is ESC, A is PLANET LOCK, X is RECORD, LB/RB the jog rate; Y (autofocus) and the triggers (focus) are off until phases 167 and 169. Gated by `tracking_confirm`, `tracking_state` and `pad_map`; plan and the night's findings in `docs/Phase172-Plan-Gamepad-And-Night-Findings.md`. |
+| 3.3.44 | 167 | **Autofocus no longer keeps a result that's worse than where it began.** At the scope on 2026-11-21 it took a nearly focused Saturn out to a donut and stayed there. The check that should have caught it only stepped in once the focus score had halved, and on a disc as large as Saturn the score is still over half while the image is already turning into a donut (shown on a synthetic Saturn defocused through an SCT, `focus_donut`). Now any result a tenth or more worse is compared with the start under the same sky. If the start's half-flux diameter is a tenth better, it goes back there, whatever the edge score says. The cause of the bad sweep itself is still to be read from that night's `[AF]` lines. Gated by `focus_donut`, `af_keep` and `autofocus_saturn`. |
+| 3.3.45 | 166.0, 156.2c, 166.1, 166.2, 166.3, 156.4 | **The SKY RUN window, in the app (`Shift+R`).** It shows where the run is, the step running, every reason it won't start, and the plan with each group's and each item's status, with START and STOP (STOP parks). Dash's card now mirrors it. Your rule is written down and checked: the app is the instrument, and Dash is the remote for an iPhone or iPad and the test harness. CI reads every command Dash can send and fails if one has no control in the app itself, unless an open stage owes it; none is owed now. **The weather window (`Shift+W`, 166.1):** the whole reading, in °F and mph with °C and m/s, its source and age, and ↻ REFRESH, which Dash's button now mirrors. **Dash no longer makes things up (166.3):** the NASA / EVENTS and FAA / WILDFIRE panels (fixed lists written into the page, not data), the data-source lights for sources nothing asked, the wind score's deductions written for one telescope, and the forecast's assumed 10 mph wind are gone; a calm night's wind score is now 100. **Park's state on the mount window's PARK button (166.2):** PARKING..., PARKED, PARK FAILED (with the reason) or PARK (unset); before this, only Dash showed it. **Sending a night to Claude (156.4):** `tools\sky_handoff.py` takes any night: a sky run (the checklist marked from its results), a normal imaging night, or a Dash test night with Playwright's report. It bundles the summary, log lines, recordings list, Autorun rankings and validation log, commits them on the night's own branch in a separate worktree, pushes, and starts Claude Code to write the findings and open a draft pull request. It never merges. The log gives the exact command after a sky run and when the app closes. Also fixed: the sky run's log lines said `[SKYRUN]` twice. Gated by `sky_run_view`, `weather_view`, Dash's `dash-honest.spec.js`, `command_palette`, the parity check, the bundle and hand-off self-tests (a throwaway git repo and a stand-in for Claude), and `tests/scenarios/sky-run-refused.scn`, `sky-run-window.scn` and `weather-window.scn`. |
 
 ---
 

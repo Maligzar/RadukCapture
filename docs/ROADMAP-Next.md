@@ -1690,15 +1690,15 @@ paths pass fault injection, and one unattended sky run completes.
    2026-11-21 (3.3.39)**: the run in the app, the tracking group, park
    (`SkyParkAltAz`) and Dash's SKY RUN card. **156.2b written (3.3.40)**:
    the planet group, and a status per checklist item. **156.4 written
-   (3.3.41)**: the bundle and the hand-off to Claude Code. Next: the
+   (3.3.45)**: the bundle and the hand-off to Claude Code. Next: the
    remaining groups (156.2d the star field, 156.2e Jupiter and the Moon).
 24d. **166.0, then 156.2c (rows 66, 56), the app first: both written
-   2026-11-21 (3.3.41)** (the owner,
+   2026-11-21 (3.3.45)** (the owner,
    2026-11-21): the rule enforced on CI (every remote command has a native
    control), then **SKY RUN in the app**, ahead of 156.4, so the first real
    sky run is started from the app. Then 166.1 (the weather view and ↻ in
-   the app; written 3.3.41), 166.2 (park state in the mount window; written 3.3.41),
-   166.3 (Dash's invented content removed; written 3.3.41), 166.4
+   the app; written 3.3.45), 166.2 (park state in the mount window; written 3.3.45),
+   166.3 (Dash's invented content removed; written 3.3.45), 166.4
    (nothing the app needs is computed only while Dash is connected;
    audited), 166.5 (the rest of what Dash computes for itself, after
    165.3 and the hourly forecast parser). Plan in [`Phase166-Plan-App-First.md`](Phase166-Plan-App-First.md).

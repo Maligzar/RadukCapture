@@ -111,7 +111,7 @@ A sky test should not take over a night, and only real-sky results count. So the
   5. if Claude Code is not logged in or fails, still pushes the bundle and the updated checklist, and logs that the analysis is owed.
 
   The flags for a headless run are confirmed against the installed Claude Code's `--help` when this is built. Its print mode, `-p`, is recalled, not verified here.
-  **As built (3.3.41).**
+  **As built (3.3.45).**
   - **Python, not PowerShell:** `tools/sky_handoff.py`, so it is tested on CI against a throwaway git repo with a stand-in `claude`.
   - **The bundle:** `tools/sky_bundle.py` writes `summary.md`, `log_excerpt.txt`, `recordings.txt` and the validation log beside `results.json`.
   - **A worktree:** the branch is made in its own worktree, so the owner's checkout and its local edits are never touched.

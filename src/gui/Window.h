@@ -196,6 +196,17 @@ public:
     // Panel window is unaffected — stays wherever it is.
     void ToggleFullscreen();
 
+    // Phase 172.0: the game controller comes in through the keys' own
+    // paths -- the same held-flags, the same jog handler (which suspends
+    // and re-centres PLANET LOCK), the same emergency stop as ESC.
+    void PadJog(int axis, int dir, bool pressed) {
+        if (pressed) StartArrowJog(axis, dir); else StopArrowJog(axis, dir);
+    }
+    void PadEmergencyStop() {
+        StopAllArrowJogs();
+        if (m_onEmergencyStop) m_onEmergencyStop();
+    }
+
 private:
     static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
     LRESULT HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam);

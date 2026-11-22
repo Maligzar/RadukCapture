@@ -76,6 +76,12 @@ $Tests = @(
     @{ Name = "park_controller"; Sources = @() }
     @{ Name = "sky_run_view"; Sources = @() }
     @{ Name = "weather_view"; Sources = @() }
+    @{ Name = "af_keep"; Sources = @() }
+    @{ Name = "focus_donut"; Sources = @() }
+    @{ Name = "rgb_align"; Sources = @() }
+    @{ Name = "tracking_state"; Sources = @() }
+    @{ Name = "pad_map"; Sources = @() }
+    @{ Name = "tracking_confirm"; Sources = @() }
     @{ Name = "mutual_events";     Sources = @() }
     @{ Name = "sntp_offset";       Sources = @() }
     @{ Name = "phemu_sheet";       Sources = @() }
