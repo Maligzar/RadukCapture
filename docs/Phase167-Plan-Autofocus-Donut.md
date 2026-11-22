@@ -94,6 +94,13 @@ The owner at the scope, 2026-11-22 at 23:10, with the guard of 3.3.44 built: aut
 
 **Owes:** a clean sweep on the sky (167.3, item 47); the emulator's `autofocus_saturn` passing with the check in place (CI).
 
+
+**Corrected in 3.3.55 (master CI, 2026-11-22).** "A fade plus disagreeing passes" failed `autofocus_saturn` case 3: the target fades through the whole sweep and the passes disagree 4.45x, yet each pass still peaks near focus and the fit is right. The difference from the night is whether a pass found a peak, meaning a best score inside the sweep at least 1.15 times both ends:
+- **Case 3:** going out it rose from 19% to 43% and fell to 17%; coming back it reached 20.0 and ended at 17.1 (1.17x).
+- **The night:** the passes were flat at 1.01x and 1.04x.
+
+`SweepSpoiledByFade` now requires a faded start (under half) **and** no peak in either pass. Either fact alone keeps the fit. `af_sweep_judge` holds the night's and case 3's own numbers.
+
 ## Evidence wanted from the night of 2026-11-21
 The `[AF]` lines of the failed sweep:
 - `Scan:`;

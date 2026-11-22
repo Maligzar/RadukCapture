@@ -846,14 +846,16 @@ private:
             // of focus), so the same-sky A/B scores start and fit back to
             // back on the edge metric, as the Moon path does.
             // Phase 167.5: a target that faded to under half (tonight 4.6
-            // against 14.6) during a sweep whose passes disagreed (3.1x):
-            // the fit came from the fade. Back to the start. A fade with a
-            // consistent sweep keeps the fit, as before (2026-11-08).
-            const bool faded = SweepSpoiledByFade(startNow, startSharpness, m_diag.sweepRatio);
+            // against 14.6) during a sweep in which neither pass found a
+            // peak: the fit came from the fade. Back to the start. A fade
+            // through a sweep that still peaked keeps its fit (2026-11-08,
+            // autofocus_saturn case 3).
+            const bool faded = SweepSpoiledByFade(startNow, startSharpness,
+                                                  m_diag.coarseOut, m_diag.coarseBack);
             if (faded) {
-                Emit("[AF] The target faded to %.0f%% of its score at the start, and the sweep's "
-                     "passes disagreed %.1fx: the curve was the fade, so the start stands\n",
-                     100.0f * startNow / startSharpness, m_diag.sweepRatio);
+                Emit("[AF] The target faded to %.0f%% of its score at the start, and neither pass "
+                     "of the sweep found a peak: the curve was the fade, so the start stands\n",
+                     100.0f * startNow / startSharpness);
                 m_diag.sweepVoid = "the target faded during the sweep";
             }
             int nS = 0, nF = 0;
