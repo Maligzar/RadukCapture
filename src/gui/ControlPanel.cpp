@@ -2426,7 +2426,7 @@ void ControlPanel::RebuildControls(int clientW, bool fromResize) {
     {
         int btnW = 100;
         m_btnRGBAlign = MakeButton(L"RGB ALIGN", x, y, btnW, BH, ID_BTN_RGB_ALIGN);
-        m_lblRGBAlign = MakeLabel(L"ALIGN  +0 px", x + btnW + 4, y, w - btnW - 4, SH);
+        m_lblRGBAlign = MakeLabel(L"ALIGN  off", x + btnW + 4, y, w - btnW - 4, SH);
         TagControl(m_lblRGBAlign, Section::Image);
         y += BH + 2;
 

@@ -310,6 +310,14 @@ public:
             SetWindowTextW(m_lblRGBAlign, buf);
         }
     }
+    void SetRGBAlignLabelOff() {
+        // Only when it changes: this runs every readout tick.
+        if (m_lblRGBAlign) {
+            wchar_t cur[24] = {};
+            GetWindowTextW(m_lblRGBAlign, cur, 24);
+            if (wcscmp(cur, L"ALIGN  off") != 0) SetWindowTextW(m_lblRGBAlign, L"ALIGN  off");
+        }
+    }
 
     // Phase 25: Display FX
     void SetFXCycleCallback(std::function<void()> cb) { m_onFXCycle = cb; }

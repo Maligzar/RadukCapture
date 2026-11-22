@@ -74,6 +74,10 @@ public:
         {
             std::lock_guard<std::mutex> lk(m_mutex);
             if (!force && m_fetchedJd > 0 && now - m_fetchedJd < kRefreshDays) return;
+            // 2026-11-22: offline at the scope, a failed fetch was retried on
+            // every minute's tick, each one a log line and a request NetPolicy
+            // had to refuse. After a failure, wait: 30 min, doubling to 6 h.
+            if (!force && now < m_retryAfterJd) return;
         }
         if (m_busy.exchange(true)) return;
         if (m_thread.joinable()) m_thread.join();
@@ -147,6 +151,14 @@ private:
         return SatDesk::HttpGet(wh.c_str(), wp.c_str(), body);
     }
 
+    // After a failed fetch: the next wait in minutes (30, 60, ... 360).
+    double BackOff() {
+        std::lock_guard<std::mutex> lk(m_mutex);
+        m_backoffMin = m_backoffMin <= 0 ? 30.0 : (std::min)(m_backoffMin * 2.0, 360.0);
+        m_retryAfterJd = raduk::sky::PreciseJdNow() + m_backoffMin / 1440.0;
+        return m_backoffMin;
+    }
+
     void Fetch(double now) {
         using namespace raduk::sky::phemu;
         std::vector<Event> all;
@@ -163,7 +175,9 @@ private:
             if (nbd <= 0) break;
             std::string body, why;
             if (!Get("opale.imcce.fr", OpalePath(y, m, d, nbd), body)) {
-                Say(SatDesk::FailWhy("could not reach IMCCE's prediction service") + "; keeping what is cached.");
+                const double waitMin = BackOff();
+                char w[64]; snprintf(w, sizeof(w), "; trying again in %.0f min", waitMin);
+                Say(SatDesk::FailWhy("could not reach IMCCE's prediction service") + "; keeping what is cached" + w + ".");
                 return;
             }
             std::vector<Event> part;
@@ -202,6 +216,7 @@ private:
             std::lock_guard<std::mutex> lk(m_mutex);
             m_events = uniq;
             m_fetchedJd = now;
+            m_backoffMin = 0; m_retryAfterJd = 0;   // a success ends the back-off
         }
         char b[200];
         snprintf(b, sizeof(b), "%zu Galilean mutual events from now to the season's end, in %d "
@@ -213,6 +228,8 @@ private:
     std::vector<raduk::sky::phemu::Event> m_events;
     std::vector<std::string> m_msgs;
     double m_fetchedJd = 0;
+    double m_retryAfterJd = 0;     // no unforced fetch before this (a failure's back-off)
+    double m_backoffMin = 0;       // the last wait, doubled each failure, reset on success
     std::atomic<bool> m_busy{false};
     std::thread m_thread;
 };
