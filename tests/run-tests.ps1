@@ -87,6 +87,7 @@ $Tests = @(
     @{ Name = "disk_budget"; Sources = @() }
     @{ Name = "dark_plan"; Sources = @() }
     @{ Name = "focus_history"; Sources = @() }
+    @{ Name = "focus_replay"; Sources = @() }
     @{ Name = "problem_report"; Sources = @() }
     @{ Name = "mutual_events";     Sources = @() }
     @{ Name = "sntp_offset";       Sources = @() }
