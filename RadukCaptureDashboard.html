@@ -114,8 +114,6 @@ body { background:var(--d-void); color:var(--d-text); font-family:'Barlow Conden
 .moon-phase-icon { width:56px; height:56px; border-radius:50%; background:radial-gradient(circle at 35% 35%,#c8d8e8,#4a6070); position:relative; flex-shrink:0; }
 .moon-phase-icon .shadow { position:absolute; inset:0; border-radius:50%; }
 .moon-info .mi-phase{font-size:13px;font-weight:600;color:var(--d-text-bright)}.moon-info .mi-illum{font-family:'Space Mono',monospace;font-size:11px;color:var(--d-text-dim);margin-top:2px}.moon-info .mi-rise{font-size:20px;color:var(--d-text-dim);margin-top:3px}
-.nasa-event { padding:9px 11px; background:rgba(6,13,20,.8); border:1px solid var(--d-border); border-left:3px solid var(--d-purple); margin-bottom:5px; }
-.nasa-event .ne-title{font-size:12px;font-weight:600;color:var(--d-text-bright)}.nasa-event .ne-date{font-family:'Space Mono',monospace;font-size:10px;color:var(--d-purple);margin-top:2px}.nasa-event .ne-desc{font-size:10px;color:var(--d-text-dim);margin-top:3px;line-height:1.5}
 .notice { padding:7px 11px; border-left:3px solid; background:rgba(6,13,20,.6); margin-bottom:5px; font-size:10px; line-height:1.5; }
 .notice-clear{border-color:var(--d-green)}.notice-warn{border-color:var(--d-amber)}.notice-danger{border-color:var(--d-red)}
 .notice .n-header{font-weight:700;letter-spacing:1px;text-transform:uppercase;font-size:10px;margin-bottom:2px}
@@ -804,11 +802,11 @@ body { background:var(--d-void); color:var(--d-text); font-family:'Barlow Conden
           <div id="wind-suitability" style="font-size:11px;color:var(--d-text-dim);margin-top:5px">--</div>
         </div>
       </div>
-      <!-- Wind Stability Score (Star Machine Protocol) -->
+      <!-- Wind Stability Score (Dash's rule of thumb; phase 166.3 took out the one-telescope deductions) -->
       <div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--d-border)">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-          <div style="font-family:'Space Mono',monospace;font-size:9px;letter-spacing:2px;color:var(--d-text-dim)">WIND STABILITY SCORE</div>
-          <div style="font-family:'Space Mono',monospace;font-size:9px;color:var(--d-text-dim)" id="wind-score-tier">8SE · f/10</div>
+          <div style="font-family:'Space Mono',monospace;font-size:9px;letter-spacing:2px;color:var(--d-text-dim)" title="Dash's own rule of thumb from wind and gusts; the app's verdict will replace it (165.3)">WIND STABILITY SCORE</div>
+          <div style="font-family:'Space Mono',monospace;font-size:9px;color:var(--d-text-dim)" id="wind-score-tier"></div>
         </div>
         <div style="display:flex;align-items:center;gap:10px">
           <div style="font-family:'Space Mono',monospace;font-size:26px;line-height:1;font-weight:700" id="wind-stability-score">—</div>
@@ -856,16 +854,9 @@ body { background:var(--d-void); color:var(--d-text); font-family:'Barlow Conden
       <div style="text-align:center;margin-top:7px;font-size:10px;color:var(--d-text-dim);font-family:'Space Mono',monospace" id="skyTime">UPDATING...</div>
     </div>
 
-    <div style="display:flex;gap:1px;flex:0 0 auto">
-      <div class="panel" style="flex:1;min-width:0">
-        <div class="panel-title">🚀 NASA / EVENTS</div>
-        <div id="nasaEvents"></div>
-      </div>
-      <div class="panel" style="flex:1;min-width:0">
-        <div class="panel-title">✈ FAA / WILDFIRE</div>
-        <div id="faaNotices"></div>
-      </div>
-    </div>
+    <!-- Phase 166.3: the NASA / EVENTS and FAA / WILDFIRE panels were fixed
+         lists made up in this page (an ISS pass "tonight", "no active TFRs"),
+         not data. Dash shows only what the app knows, so they are gone. -->
 
   </div>
 
@@ -891,11 +882,9 @@ body { background:var(--d-void); color:var(--d-text); font-family:'Barlow Conden
 </div>
 <div class="data-sources">
   <div style="font-size:19px;color:var(--d-text-dim);letter-spacing:1px;margin-right:6px;font-family:'Space Mono',monospace">DATA:</div>
-  <div class="ds-item"><span class="status-dot ok"></span>OPEN-METEO</div>
-  <div class="ds-item"><span class="status-dot ok"></span>NASA DONKI</div>
-  <div class="ds-item"><span class="status-dot ok"></span>MOON CALC</div>
-  <div class="ds-item"><span class="status-dot ok"></span>STELLARIUM</div>
-  <div class="ds-item"><span class="status-dot warn"></span>FAA NOTAM</div>
+  <!-- Phase 166.3: these were status lights fixed in the page (NASA DONKI,
+       STELLARIUM and FAA NOTAM shown as answering, though nothing asked
+       them). The weather card says its real source. -->
   <div class="ds-item" style="margin-left:auto">LAST UPDATE: <span id="lastUpdate" style="color:var(--d-accent);font-family:'Space Mono',monospace">--:--</span></div>
 </div>
 </div>
@@ -979,7 +968,7 @@ body { background:var(--d-void); color:var(--d-text); font-family:'Barlow Conden
 
     <!-- Mount telemetry -->
     <div class="rc-panel" style="flex:0 0 auto">
-      <div class="rc-title"><div class="rc-dot rc-dot-idle" id="rcDotMount"></div>MOUNT — CELESTRON 8SE</div>
+      <div class="rc-title"><div class="rc-dot rc-dot-idle" id="rcDotMount"></div>MOUNT</div>
       <div class="rc-row"><span class="rk">RA</span><span class="rv" id="rcRA">--h --m --s</span></div>
       <div class="rc-row"><span class="rk">DEC</span><span class="rv" id="rcDEC">+-- -- --</span></div>
       <div class="rc-row"><span class="rk">TRACKING</span><span class="rv-dim" id="rcTracking">--</span></div>
@@ -1598,8 +1587,8 @@ body { background:var(--d-void); color:var(--d-text); font-family:'Barlow Conden
       <div style="font-family:'Space Mono',monospace;font-size:18px;letter-spacing:2px;color:var(--d-text-dim);margin-bottom:8px">SOURCE COMPARISON</div>
       <div id="fcastSourceCompare" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px"></div>
 
-      <!-- Wind Stability Score (Star Machine Protocol) -->
-      <div style="font-family:'Space Mono',monospace;font-size:18px;letter-spacing:2px;color:var(--d-text-dim);margin-bottom:6px">💨 WIND STABILITY SCORE — 8SE STAR MACHINE PROTOCOL</div>
+      <!-- Wind Stability Score (Dash's rule of thumb; phase 166.3 took out the one-telescope deductions) -->
+      <div style="font-family:'Space Mono',monospace;font-size:18px;letter-spacing:2px;color:var(--d-text-dim);margin-bottom:6px">💨 WIND STABILITY SCORE (DASH'S RULE OF THUMB)</div>
       <div id="fcastWindStability" style="margin-bottom:16px"></div>
 
       <!-- Hourly imaging score -->
@@ -3456,15 +3445,14 @@ function renderTwilightCloud(t){
 }
 
 // ============================================================
-// WIND STABILITY SCORE — "Star Machine Protocol"
-// Step-function base score using the LOWER of sustained/gust tier,
-// then apply 8SE-specific physics penalties.
+// WIND STABILITY SCORE
+// Step-function base score using the LOWER of sustained/gust tier, less a
+// penalty when gusts run far above the sustained wind. Phase 166.3: the
+// focal-length and payload deductions written for one telescope are gone
+// (no rig in code, phase 149). This is still Dash's own rule of thumb; the
+// app's verdict replaces it when the app has one (165.3, then 166.5).
 // ============================================================
 function computeWindStabilityScore(wind, gust, opts) {
-  opts = opts || {};
-  const focalPenalty  = opts.focalPenalty  !== false; // default true (native f/10)
-  const payloadPenalty = opts.payloadPenalty !== false; // default true (heavy train)
-
   const g = (gust != null) ? gust : wind * 1.4;
 
   // Step 1: Base score — use the LOWER tier that both sustained AND gusts satisfy
@@ -3477,19 +3465,15 @@ function computeWindStabilityScore(wind, gust, opts) {
 
   // Step 2: Physics penalties
   let penalty = 0;
-  const focalDeduct  = focalPenalty  ? base * 0.15 : 0;   // -15% for f/10 @ 2032mm
-  const payloadDeduct = payloadPenalty ? 10 : 0;            // -10 pts for heavy train
   const gustGap = g - wind;
   const gustGapDeduct = gustGap > 10 ? 15 : 0;             // -15 pts if gap > 10 mph
-  penalty = focalDeduct + payloadDeduct + gustGapDeduct;
+  penalty = gustGapDeduct;
 
   const score = Math.max(0, Math.min(100, Math.round(base - penalty)));
 
   return {
     score,
     base,
-    focalDeduct: Math.round(focalDeduct),
-    payloadDeduct,
     gustGapDeduct,
     gustGap: Math.round(gustGap),
     tier: base >= 97 ? 'NEGLIGIBLE' : base >= 72 ? 'MARGINAL' : base >= 36 ? 'POOR' : 'DANGER',
@@ -3511,7 +3495,7 @@ function computeScore(cloud, hum, wind, moon, gust) {
   // Wind+Gust penalty — derived from Wind Stability Score (Star Machine Protocol)
   // Map WSS (0-100, higher=better) to a penalty so bad wind = big penalty
   const g = (gust != null) ? gust : wind * 1.4;
-  const wss = computeWindStabilityScore(wind, g, {focalPenalty:true, payloadPenalty:true});
+  const wss = computeWindStabilityScore(wind, g);
   // WSS 100 → 0 penalty; WSS 0 → 45 penalty (capped so wind can't solo-tank score to 0)
   const windGustPenalty = (1 - wss.score / 100) * 45;
 
@@ -3673,17 +3657,15 @@ function renderConditions(r){
   const wssPenaltyEl = document.getElementById('wind-penalty-breakdown');
   const suitEl = document.getElementById('wind-suitability');
   if (wind !== null && windGust !== null) {
-    const wss = computeWindStabilityScore(wind, windGust, {focalPenalty:true, payloadPenalty:true});
+    const wss = computeWindStabilityScore(wind, windGust);
     const wssCol = wss.score >= 85 ? 'var(--d-green)' : wss.score >= 65 ? 'var(--d-accent)' : wss.score >= 40 ? 'var(--d-amber)' : 'var(--d-red)';
     if (wssScoreEl)   { wssScoreEl.textContent = wss.score; wssScoreEl.style.color = wssCol; }
     if (wssLabelEl)   { wssLabelEl.textContent = wss.verdict; wssLabelEl.style.color = wssCol; }
     if (wssVerdictEl) { wssVerdictEl.textContent = `BASE ${wss.base} · TIER: ${wss.tier}`; }
     if (wssBarEl)     { wssBarEl.style.width = wss.score + '%'; wssBarEl.style.background = wssCol; }
-    if (wssTierEl)    { wssTierEl.textContent = `8SE · f/10 · ${Math.round(wind)}↑${Math.round(windGust)} mph`; }
+    if (wssTierEl)    { wssTierEl.textContent = `${Math.round(wind)}↑${Math.round(windGust)} mph`; }
     if (wssPenaltyEl) {
       let parts = [];
-      if (wss.focalDeduct)   parts.push(`−${wss.focalDeduct}pts f/10 focal`);
-      if (wss.payloadDeduct) parts.push(`−${wss.payloadDeduct}pts payload`);
       if (wss.gustGapDeduct) parts.push(`−${wss.gustGapDeduct}pts gust gap (${wss.gustGap}mph)`);
       wssPenaltyEl.textContent = parts.length ? 'PENALTIES: ' + parts.join(' · ') : 'NO PENALTIES APPLIED';
     }
@@ -3691,7 +3673,7 @@ function renderConditions(r){
       if (wss.score >= 85)      { suitEl.textContent='✓ GO — High-res imaging viable';      suitEl.style.color='var(--d-green)'; }
       else if (wss.score >= 65) { suitEl.textContent='⚠ CAUTION — Lucky imaging / short exp'; suitEl.style.color='var(--d-accent)'; }
       else if (wss.score >= 40) { suitEl.textContent='⚠ LOW RES ONLY — focal reducer recommended'; suitEl.style.color='var(--d-amber)'; }
-      else                      { suitEl.textContent='✗ NO-GO — Do not deploy 8SE';          suitEl.style.color='var(--d-red)'; }
+      else                      { suitEl.textContent='✗ NO-GO — too windy to image';         suitEl.style.color='var(--d-red)'; }
     }
   } else {
     if (wssScoreEl)   { wssScoreEl.textContent = '--'; wssScoreEl.style.color = 'var(--d-text-dim)'; }
@@ -3748,20 +3730,6 @@ async function fetchWeather(){
   }
 }
 
-function renderNASAEvents(){
-  const el=document.getElementById('nasaEvents');el.innerHTML='';
-  [{title:'ISS Pass',date:'Tonight 8:42 PM',desc:'Max elevation 72° · NW to SE · Mag -3.8 · 6 min'},{title:'Mars Post-Opposition',date:'Best Now – Apr 2026',desc:'7.8″ disc · Surface detail · Polar cap visible'},{title:'Jupiter Favorable',date:'Mar 2026',desc:'38″ disc · GRS transit times available · All 4 moons'}].forEach(ev=>{
-    const d=document.createElement('div');d.className='nasa-event';d.innerHTML=`<div class="ne-title">${ev.title}</div><div class="ne-date">${ev.date}</div><div class="ne-desc">${ev.desc}</div>`;el.appendChild(d);
-  });
-}
-function renderFAANotices(){
-  const el=document.getElementById('faaNotices');el.innerHTML='';
-  [{type:'clear',header:'FAA NOTAM',text:'No active TFRs within 50nm. Airspace clear.'},{type:'clear',header:'WILDFIRE/SMOKE',text:'No active fires within 100mi. AQI 42 — Good.'},{type:'warn',header:'DEER VALLEY DVT',text:'Active until 11 PM. Low-altitude strobes S.'}].forEach(n=>{
-    const d=document.createElement('div');d.className=`notice notice-${n.type}`;d.innerHTML=`<div class="n-header">${n.header}</div>${n.text}`;el.appendChild(d);
-  });
-}
-
-
 // ============================================================
 // MAIN REFRESH
 // ============================================================
@@ -3772,7 +3740,7 @@ async function refreshAll(){
   const targets=getTargetsByAltitude(now);
   renderPlanets(planets);renderTargets(targets);drawSkyMap(targets,planets);
   await fetchWeather();
-  updateMoon();updateSunTimes();renderLightPollution();renderSeeingBars();renderNASAEvents();renderFAANotices();
+  updateMoon();updateSunTimes();renderLightPollution();renderSeeingBars();
   setTimeout(()=>{ try{ refreshSkyUI(); }catch(e){} }, 3500);
   // Phase 165.4: there is no source for these yet, so they say so (they read
   // AQI 42, 8.2/10 and 2.8" whatever the sky did).
@@ -4665,7 +4633,7 @@ function processForecastData() {
       hours:omHrs, hourlyScores, nightScore,
       avgCloud: Math.round(omNightCloud), avgWind: omNightWind, avgHum: omNightHum,
       avgGust: omNightGust ? Math.round(omNightGust) : null,
-      windStability: computeWindStabilityScore(omNightWind||10, omNightGust, {focalPenalty:true, payloadPenalty:true}),
+      windStability: omNightWind != null ? computeWindStabilityScore(omNightWind, omNightGust) : null,   // 166.3: no reading, no score (it used to assume 10 mph)
       tempMax: daily.temperature_2m_max ? Math.round(daily.temperature_2m_max[di]) : null,
       tempMin: daily.temperature_2m_min ? Math.round(daily.temperature_2m_min[di]) : null,
       precipSum: daily.precipitation_sum ? daily.precipitation_sum[di] : 0,
@@ -4818,8 +4786,6 @@ function renderWindStabilitySummary(d) {
   const col = wss.score >= 85 ? 'var(--d-green)' : wss.score >= 65 ? 'var(--d-accent)' : wss.score >= 40 ? 'var(--d-amber)' : 'var(--d-red)';
   const gustStr = d.avgGust ? `${d.avgWind}↑${d.avgGust} mph` : `${d.avgWind} mph`;
   let penaltyHtml = '';
-  if (wss.focalDeduct)    penaltyHtml += `<span style="color:var(--d-amber)">−${wss.focalDeduct}pts</span> f/10 focal &nbsp;`;
-  if (wss.payloadDeduct)  penaltyHtml += `<span style="color:var(--d-amber)">−${wss.payloadDeduct}pts</span> payload &nbsp;`;
   if (wss.gustGapDeduct)  penaltyHtml += `<span style="color:var(--d-red)">−${wss.gustGapDeduct}pts</span> gust gap (${wss.gustGap}mph) &nbsp;`;
   if (!penaltyHtml)       penaltyHtml = '<span style="color:var(--d-green)">No penalties</span>';
   el.innerHTML = `
