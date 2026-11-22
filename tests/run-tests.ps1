@@ -74,6 +74,8 @@ $Tests = @(
     @{ Name = "sky_run";           Sources = @() }
     @{ Name = "sky_run_controller"; Sources = @() }
     @{ Name = "park_controller"; Sources = @() }
+    @{ Name = "af_keep"; Sources = @() }
+    @{ Name = "focus_donut"; Sources = @() }
     @{ Name = "mutual_events";     Sources = @() }
     @{ Name = "sntp_offset";       Sources = @() }
     @{ Name = "phemu_sheet";       Sources = @() }

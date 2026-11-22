@@ -198,6 +198,23 @@ inline float ScorePercentile(std::vector<float> v, float p) {
 // The fine span: the coarse curve's width where it is within 10% of its
 // peak, at least 2 backlashes and 120 steps (or 7 points sit inside the
 // slack and seeing), at most two coarse steps (it was bracketed by them).
+// Phase 167: the same-sky A/B's verdict, once autofocus's result has
+// measured worse than where it began. startNow and fit are the coarse
+// score (1000/HFD) back at the start and at the result, under one sky;
+// eStart and eFit the edge metric's, when the fine pass ran (haveEdge).
+// True keeps the result, false returns to the start.
+//   - HFD a tenth better at the start: the start wins, whatever the edge
+//     metric says. HFD stays honest far from focus, where an edge score
+//     can be misled (the owner's donut, 2026-11-21).
+//   - Otherwise near focus, where HFD is flat, the edge metric judges
+//     when it has scores; else HFD within 5%.
+inline bool KeepAfterAB(float startNow, float fit, bool haveEdge, float eStart, float eFit) {
+    if (!(startNow > 0.0f)) return false;
+    if (startNow > fit * 1.10f) return false;
+    if (haveEdge) return eFit >= eStart * 0.95f;
+    return fit >= startNow * 0.95f;
+}
+
 inline int FineSpanFrom(const std::vector<int>& pos, const std::vector<float>& score, int backlash) {
     const int n = (int)(std::min)(pos.size(), score.size());
     if (n < 2) return 0;
