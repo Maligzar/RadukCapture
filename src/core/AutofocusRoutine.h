@@ -157,6 +157,8 @@ struct AFDiagnostics {
     int   finePasses = 0;
     float fadeRatio = 0.0f;         // the last fine pass's centre-again ratio
     std::string fadeAction;         // "steady" | "corrected" | "gave up"
+    std::string sweepVoid;          // 167.5: why the sweep was not trusted, empty if it was
+    bool  skyChanged = false;       // 167.5: kept a fit after the sky changed; not a focus reference
     int   fadesCorrected = 0;       // fine passes this sweep that corrected for a fade
     // The last fine pass, in the order travelled: position, edge score,
     // and each point's frame-to-frame spread relative to its median.
@@ -605,6 +607,27 @@ private:
             }
         }
 
+        // Phase 167.5 (2026-11-22, 23:10): judge the sweep before fitting
+        // anything to it. A sky that changed between the outward and return
+        // passes, or scores with no peak above their noise, fit to a position
+        // that means nothing; tonight that was 2,700 steps inward of a start
+        // already in focus. Back to the start, and say why.
+        {
+            const SweepJudgement sj = JudgeSweep(outScore, backScore);
+            Emit("[AF] Sweep check: out/back median ratio %.2f, spread %.0f%%: %s\n",
+                 sj.medianRatio, 100.0f * sj.spread, sj.usable ? "usable" : sj.why.c_str());
+            if (!sj.usable) {
+                m_diag.sweepVoid = sj.why;
+                if (!GoOneSided(m_startPosition)) {
+                    Finish(false, m_startPosition, 0.0f, startSharpness, MoveFailure());
+                    return;
+                }
+                Finish(false, m_startPosition, 0.0f, startSharpness,
+                       sj.why + " - left at the start; try again when the sky is steady");
+                return;
+            }
+        }
+
         // ── Fit parabola to find best position ────────────────
         // Local fit around the peak first; the global least-squares fit is
         // the fallback, since the tails of a defocus curve bias it.
@@ -811,9 +834,19 @@ private:
             // judge near focus (a big disc: 900 steps off scored within 3%
             // of focus), so the same-sky A/B scores start and fit back to
             // back on the edge metric, as the Moon path does.
+            // Phase 167.5: a target that faded to under half (tonight 4.6
+            // against 14.6) leaves start and fit indistinguishable, and the
+            // fit came from faded data. Back to the start.
+            const bool faded = FadedTooFar(startNow, startSharpness);
+            if (faded) {
+                Emit("[AF] The target faded to %.0f%% of its score at the start: start and fit "
+                     "cannot be told apart, so the start stands\n",
+                     100.0f * startNow / startSharpness);
+                m_diag.sweepVoid = "the target faded during the sweep";
+            }
             int nS = 0, nF = 0;
             float eStart = 0.0f, eFit = 0.0f;
-            if (fineUsed) {
+            if (fineUsed && !faded) {
                 eStart = ScoreHere(&nS);   // the focuser is at the start
                 if (!DriveFinal(finalPos)) {
                     Finish(false, m_startPosition, 0.0f, startSharpness, MoveFailure());
@@ -823,7 +856,8 @@ private:
                 Emit("[AF] Same sky, edge metric: start pos=%d %.4f, fit pos=%d %.4f\n",
                      m_startPosition, eStart, finalPos, eFit);
             }
-            const bool keep = KeepAfterAB(startNow, finalSharp, fineUsed && nS > 0 && nF > 0, eStart, eFit);
+            const bool keep = !faded &&
+                              KeepAfterAB(startNow, finalSharp, fineUsed && nS > 0 && nF > 0, eStart, eFit);
             if (!keep && startNow > finalSharp * 1.10f)
                 Emit("[AF] HFD says the start is sharper (%.1f against %.1f at the fit): "
                      "the start wins over the edge metric\n", startNow, finalSharp);
@@ -844,6 +878,7 @@ private:
                 }
                 m_bestPosition.store(finalPos);
                 m_bestSharpness.store(finalSharp);
+                m_diag.skyChanged = true;
                 Finish(true, finalPos, finalSharp, startNow,
                        "conditions changed during the sweep (target faded) - "
                        "focus kept from the out-and-back fit");

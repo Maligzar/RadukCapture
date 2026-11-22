@@ -80,6 +80,7 @@ $Tests = @(
     @{ Name = "tracking_state"; Sources = @() }
     @{ Name = "pad_map"; Sources = @() }
     @{ Name = "tracking_confirm"; Sources = @() }
+    @{ Name = "af_sweep_judge"; Sources = @() }
     @{ Name = "mutual_events";     Sources = @() }
     @{ Name = "sntp_offset";       Sources = @() }
     @{ Name = "phemu_sheet";       Sources = @() }

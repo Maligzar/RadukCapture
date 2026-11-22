@@ -1,0 +1,81 @@
+// af_sweep_judge: Phase 167.5. A sweep is judged before anything is fitted
+// to it. Tonight's sweep (2026-11-22 23:10, Saturn through haze) is replayed
+// from its own log lines.
+#include "core/FocusDirection.h"
+#include <cstdio>
+#include <cmath>
+
+using namespace raduk::core;
+static int fails = 0;
+#define CHECK(c) do { if (!(c)) { std::printf("FAIL %s:%d %s\n", __FILE__, __LINE__, #c); ++fails; } } while (0)
+
+int main() {
+    // 1. The night's sweep, as logged: positions 165665..171665 every 600.
+    //    Out: flat 14.6 for seven points, then the fade. Back: 4.5-4.8 everywhere.
+    {
+        std::vector<float> out  = {14.6f, 14.8f, 14.7f, 14.6f, 14.6f, 14.3f, 14.0f, 8.3f, 6.3f, 5.1f, 4.8f};
+        // back is logged from 171665 down to 165665; stored per position:
+        std::vector<float> back = {4.6f, 4.6f, 4.5f, 4.7f, 4.6f, 4.6f, 4.6f, 4.6f, 4.6f, 4.8f, 4.5f};
+        auto j = JudgeSweep(out, back);
+        std::printf("  night: median ratio %.2f, spread %.2f -> %s\n", j.medianRatio, j.spread,
+                    j.usable ? "usable" : j.why.c_str());
+        CHECK(!j.usable);
+        CHECK(j.medianRatio > 3.0f);
+        CHECK(j.why.find("sky changed") != std::string::npos);
+    }
+    // 2. A good sweep: a V-curve, read twice with seeing noise and the
+    //    return pass shifted by backlash. Usable.
+    {
+        std::vector<float> out, back;
+        for (int i = 0; i < 11; ++i) {
+            const float x  = (i - 5) / 2.5f;
+            const float xb = (i - 4.6f) / 2.5f;   // backlash: about half a step
+            out.push_back(4.0f + 10.0f * std::exp(-x * x)  * (1.0f + 0.05f * ((i % 3) - 1)));
+            back.push_back(4.0f + 10.0f * std::exp(-xb * xb) * (1.0f - 0.04f * ((i % 2) ? 1 : -1)));
+        }
+        auto j = JudgeSweep(out, back);
+        std::printf("  V-curve: median ratio %.2f, spread %.2f -> %s\n", j.medianRatio, j.spread,
+                    j.usable ? "usable" : j.why.c_str());
+        CHECK(j.usable);
+    }
+    // 3. A steady fade of 30% across the whole run (the 2026-11-08 case,
+    //    dew or haze): the curve keeps its shape, the passes disagree a
+    //    little. Still usable.
+    {
+        std::vector<float> out, back;
+        const int n = 11;
+        for (int i = 0; i < n; ++i) {
+            const float x = (i - 5) / 2.5f;
+            const float v = 4.0f + 10.0f * std::exp(-x * x);
+            const float tOut  = (float)i / (2 * n);              // measured early
+            const float tBack = (float)(2 * n - 1 - i) / (2 * n); // measured late
+            out.push_back(v * (1.0f - 0.30f * tOut));
+            back.push_back(v * (1.0f - 0.30f * tBack));
+        }
+        auto j = JudgeSweep(out, back);
+        std::printf("  steady fade: median ratio %.2f -> %s\n", j.medianRatio, j.usable ? "usable" : j.why.c_str());
+        CHECK(j.usable);
+    }
+    // 4. No peak: haze so thick the score does not move with focus.
+    {
+        std::vector<float> out  = {9.6f, 9.7f, 9.6f, 9.6f, 9.5f, 9.4f, 9.3f};
+        std::vector<float> back = {9.5f, 9.6f, 9.7f, 9.5f, 9.6f, 9.4f, 9.4f};
+        auto j = JudgeSweep(out, back);
+        CHECK(!j.usable);
+        CHECK(j.why.find("no focus peak") != std::string::npos);
+    }
+    // 5. One-pass sweeps (no return scores) are judged on spread only.
+    {
+        std::vector<float> out  = {5, 8, 12, 14, 12, 8, 5};
+        std::vector<float> back(7, 0.0f);
+        CHECK(JudgeSweep(out, back).usable);
+    }
+    // 6. The A/B's fade guard: tonight 4.6 now against 14.6 before.
+    CHECK(FadedTooFar(4.6f, 14.6f));
+    CHECK(!FadedTooFar(12.0f, 14.6f));   // a dimming the A/B can still judge
+    CHECK(!FadedTooFar(0.0f, 14.6f));    // nothing measured: not this rule's call
+    CHECK(!FadedTooFar(4.6f, 0.0f));
+
+    std::printf("af_sweep_judge: %s (%d failures)\n", fails ? "FAIL" : "PASS", fails);
+    return fails ? 1 : 0;
+}

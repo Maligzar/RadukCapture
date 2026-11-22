@@ -30,6 +30,8 @@
 //  Gated by tests/af_direction_fit.cpp.
 // ============================================================
 
+#include <cstdio>
+#include <string>
 #include <algorithm>
 #include <cstdint>
 #include <cmath>
@@ -213,6 +215,78 @@ inline bool KeepAfterAB(float startNow, float fit, bool haveEdge, float eStart, 
     if (startNow > fit * 1.10f) return false;
     if (haveEdge) return eFit >= eStart * 0.95f;
     return fit >= startNow * 0.95f;
+}
+
+// Phase 167.5 (the owner at the scope, 2026-11-22, 23:10): Saturn faded
+// about fourfold in haze halfway through the outward pass and stayed faded
+// for two minutes. The return pass read 4.5-4.8% at every position, where
+// the outward pass had read 14.6% at the same places a minute before; the
+// averaged curve was a fade, not a focus curve, and autofocus moved 2,700
+// steps inward of a start that was already in focus. These judge the sweep
+// before anything is fitted to it.
+
+struct SweepJudgement {
+    bool        usable = true;
+    float       medianRatio = 1.0f;   // out/back disagreement, max over min, median over positions
+    float       spread = 0.0f;        // (max - min) / max of the averaged scores
+    std::string why;                  // empty when usable
+};
+
+// out[i] and back[i] are each position's score going out and coming back
+// (0 or less: not measured). A focus curve measured twice reads about the
+// same at each place; backlash moves the two curves sideways by a fraction
+// of a step, which the median over positions ignores. A sky that changed
+// between the passes does not: tonight's median was 3.1x.
+//   maxMedianRatio  above it, the sky changed between the passes (1.5).
+//   minSpread       below it, there is no peak to fit, only noise (0.10).
+inline SweepJudgement JudgeSweep(const std::vector<float>& out, const std::vector<float>& back,
+                                 float maxMedianRatio = 1.5f, float minSpread = 0.10f) {
+    SweepJudgement j;
+    const size_t n = (std::min)(out.size(), back.size());
+    std::vector<float> ratios, means;
+    for (size_t i = 0; i < n; ++i) {
+        const float a = out[i], b = back[i];
+        if (a > 0.0f && b > 0.0f) {
+            ratios.push_back((std::max)(a, b) / (std::min)(a, b));
+            means.push_back(0.5f * (a + b));
+        } else if (a > 0.0f || b > 0.0f) {
+            means.push_back(a > 0.0f ? a : b);
+        }
+    }
+    if (!ratios.empty()) {
+        std::vector<float> r = ratios;
+        std::sort(r.begin(), r.end());
+        const size_t m = r.size();
+        j.medianRatio = (m % 2) ? r[m / 2] : 0.5f * (r[m / 2 - 1] + r[m / 2]);
+    }
+    if (!means.empty()) {
+        float lo = means[0], hi = means[0];
+        for (float v : means) { lo = (std::min)(lo, v); hi = (std::max)(hi, v); }
+        j.spread = hi > 0.0f ? (hi - lo) / hi : 0.0f;
+    }
+    char b[200];
+    if (j.medianRatio > maxMedianRatio) {
+        j.usable = false;
+        std::snprintf(b, sizeof(b),
+                      "the same positions scored %.1fx differently going out and coming back: "
+                      "the sky changed during the sweep", j.medianRatio);
+        j.why = b;
+    } else if (means.size() >= 3 && j.spread < minSpread) {
+        j.usable = false;
+        std::snprintf(b, sizeof(b),
+                      "the scores varied only %.0f%% across the sweep: no focus peak, only noise",
+                      100.0f * j.spread);
+        j.why = b;
+    }
+    return j;
+}
+
+// The same-sky A/B's guard: the start re-measured now against the start
+// measured before the sweep. Under half (tonight: 4.6 against 14.6) the
+// target faded so far that start and fit cannot be told apart, and the fit
+// came from faded data: go back to the start.
+inline bool FadedTooFar(float startNow, float startBefore, float frac = 0.5f) {
+    return startBefore > 0.0f && startNow > 0.0f && startNow < startBefore * frac;
 }
 
 inline int FineSpanFrom(const std::vector<int>& pos, const std::vector<float>& score, int backlash) {

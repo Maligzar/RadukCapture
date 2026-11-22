@@ -72,6 +72,24 @@ The owner's screenshot at the scope (2026-11-22): **`OUT 31% of AF 44%`** under 
   - a reference taken on a donut-flagged frame is discarded;
   - a CLEAR on the readout lets the owner drop a bad reference by hand.
 
+### 167.5: judge the sweep before fitting it — `WRITTEN` 2026-11-22 (3.3.46)
+The owner at the scope, 2026-11-22 at 23:10, with the guard of 3.3.44 built: autofocus "did not give me a donut but messed up the image and I had to correct it".
+
+**What the log showed:**
+- **The outward pass started flat.** It read 14.6% at seven positions, with the planet's peak at about 200.
+- **Saturn then faded about fourfold in haze.** The score fell to 8.3, 6.3, 5.1 and 4.8%, and the peak to about 55.
+- **The return pass read 4.5 to 4.8% everywhere,** including 168665, which had read 14.3% a minute before.
+- **The fit chose 165984.** That was 2,681 steps inward of a start that was in focus (the owner's correction: 168,893).
+- **The same-sky A/B could not tell start from fit.** Both read 4.6, so it kept the fit: "The sky changed, not the focus".
+- **The focus reference was then armed from the faded frames.** The readout called the focused planet "OUT 28% of AF".
+
+**Built** (`FocusDirection.h`, gated by `af_sweep_judge`, which replays the night's own numbers):
+- **`JudgeSweep`.** When the outward and return passes disagree at the same positions by a median of over 1.5x, the sky changed and the sweep is void (tonight: 3.1x). A V-curve with backlash and seeing reads 1.09, and a steady 30% fade across the run (the 2026-11-08 case) reads 1.19; both stay usable. Scores spread under 10% have no peak to fit. Either way autofocus returns to the start and says why.
+- **`FadedTooFar`.** In the A/B, a start re-measured at under half its earlier score means start and fit cannot be compared, and the start stands.
+- **The reference is not armed** after a sweep that kept a fit only because the sky changed (`AFDiagnostics::skyChanged`). That closes part of 167.4.
+
+**Owes:** a clean sweep on the sky (167.3, item 47); the emulator's `autofocus_saturn` passing with the check in place (CI).
+
 ## Evidence wanted from the night of 2026-11-21
 The `[AF]` lines of the failed sweep:
 - `Scan:`;
