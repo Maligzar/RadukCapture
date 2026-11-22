@@ -71,6 +71,17 @@ Each was read from the night's log and screenshots. Where noted, it was checked 
 
 14. **RGB ALIGN's label read `ALIGN +0 px` while RGB ALIGN was off**: the label is only updated while it is on, so it kept its first text. **Fixed in 3.3.50:** it says `ALIGN off`.
 
+15. **The app hung at the end of a Jupiter run and Windows closed it (AppHangB1, 03:08).**
+    - **The run:** 1280x960, 16-bit, at 114 fps to `S:`. That is about 280 MB/s, and `S:` could not keep up.
+    - **The buffer filled:** the 9.6 GB write buffer filled, and the log said `Write buffer FULL ... frames are being dropped`.
+    - **The stop blocked:** when the run ended, `StopRecording` waited on the window thread for the whole buffer to drain. The window froze, the mount's watchdog stopped the mount at 8.5 s, and the owner closed the frozen app.
+
+    **Fixed in 3.3.51:** while the writer drains, `CaptureManager` calls a hook every 200 ms. It feeds the mount's heartbeat, keeps Windows' message check alive (`PeekMessage`, removing nothing, so no click reaches a half-finished run), and shows `finishing the recording: N frames still to write` in the title. The log says how many frames waited and how long the drain took. Gated by `capture_write_fail` section 1b.
+
+    **Still open:**
+    - warn at the start of a run when its data rate (frame size x fps) is more than the output disk has shown it can write;
+    - say in the camera panel that 1280 is about 4.5 times 640's rate.
+
 ## What went right (for the record)
 
 - Two derotation-window runs stopped on time at 440.5 s, with 0 drops each: run 1 at 39.9 fps (25 ms, gain 230) and run 2 at 105.1 fps (9.44 ms, gain 324).

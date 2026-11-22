@@ -1764,6 +1764,33 @@ static int RunApp(bool useEmulator) {
     // plus this binary's compile timestamp — a stale exe is visible at
     // a glance instead of being inferred from behavior.
     Window window;
+    // 2026-11-22, 03:07: the end of a run waited on the window thread for
+    // a 9.6 GB write buffer to drain to a slow disk; the window froze, the
+    // watchdog stopped the mount, and Windows closed the app as hung. While
+    // the writer drains: feed the mount's heartbeat, let Windows see a live
+    // message loop (PeekMessage without removing anything, so no click can
+    // reach a half-finished run), and show the frames left in the title.
+    capturer.SetDrainWaitHook([&](uint64_t pending) {
+        if (mount && mount->IsConnected()) mount->Heartbeat();
+        MSG m; PeekMessageW(&m, nullptr, 0, 0, PM_NOREMOVE);
+        static std::wstring savedTitle;
+        HWND hw = window.Handle();
+        if (!hw || !IsWindow(hw)) return;
+        if (pending > 0) {
+            if (savedTitle.empty()) {
+                wchar_t t[256] = {};
+                GetWindowTextW(hw, t, 256);
+                savedTitle = t;
+            }
+            wchar_t b[320];
+            swprintf(b, 320, L"%ls  -  finishing the recording: %llu frames still to write, please wait",
+                     savedTitle.c_str(), (unsigned long long)pending);
+            SetWindowTextW(hw, b);
+        } else if (!savedTitle.empty()) {
+            SetWindowTextW(hw, savedTitle.c_str());
+            savedTitle.clear();
+        }
+    });
     wchar_t title[128];
     swprintf(title, 128, L"RadukCapture v%s  [build %hs %hs]%s",
              RADUK_VERSION_W, __DATE__, __TIME__,
@@ -10665,6 +10692,8 @@ static int RunApp(bool useEmulator) {
     slog.System("Done");
     Log("Goodbye.\n");
     if (g_log) fclose(g_log);
+    // The drain hook reads the window; it must not outlive it.
+    capturer.SetDrainWaitHook(nullptr);
     // Phase 125: the scenario's verdict is the exit code.
     if (g_scenario) return g_scenario->Passed() ? 0 : 1;
     return 0;

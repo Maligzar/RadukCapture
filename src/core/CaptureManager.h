@@ -160,6 +160,15 @@ public:
 
     // Stop recording. Drains remaining write buffer, closes the file.
     void StopRecording(bool normal = true);
+    // 2026-11-22, 03:07 at the scope: a 1280x960 16-bit run at 114 fps
+    // (280 MB/s) to a disk that could not keep up filled the 9.6 GB write
+    // buffer, and StopRecording, on the window thread, waited for all of
+    // it to drain. The window froze, the mount's watchdog stopped the
+    // mount, and Windows closed the app as hung (AppHangB1). While the
+    // writer drains, this is called every ~200 ms with the frames still
+    // to write: the app keeps the mount's heartbeat and Windows' idea of a
+    // live window going, and shows the progress.
+    void SetDrainWaitHook(std::function<void(uint64_t pending)> h) { m_drainHook = std::move(h); }
 
     // ── Frame submission ───────────────────────────────────────
 
@@ -358,6 +367,8 @@ private:
 
     std::thread     m_writerThread;
     std::atomic<bool> m_writerRunning{false};
+    std::atomic<bool> m_writerDone{true};      // set by WriterLoop as it returns
+    std::function<void(uint64_t)> m_drainHook;
     // Push failures repeat every frame; report the reason once.
     std::atomic<bool> m_pushFailureReported{false};
     std::atomic<bool> m_paused{false};         // Phase 41: pause without closing SER
