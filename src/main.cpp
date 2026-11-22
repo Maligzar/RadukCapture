@@ -8125,13 +8125,21 @@ static int RunApp(bool useEmulator) {
     // step is logged now, and a window that cannot be shown says so.
     auto openReport = [&](const char* from) {
         Log("[REPORT] opened from %s\n", from);
-        if (!reportDialog.Show()) {
-            Log("[REPORT] the report window could not be shown (error %lu)\n", reportDialog.LastError());
+        const bool shown = reportDialog.Show();
+        // 2026-11-22: the owned window "could not be shown (error 0)" on the
+        // owner's PC. What it looked like is logged, and a plain window is
+        // tried in its place (ReportDialog::Show).
+        if (!reportDialog.FailureDetail().empty())
+            Log("[REPORT] the first window did not show: %s\n", reportDialog.FailureDetail().c_str());
+        if (!shown) {
+            Log("[REPORT] the report window could not be shown (error %lu): %s\n", reportDialog.LastError(),
+                reportDialog.Describe().c_str());
             notifBar.NotifyWarn(L"REPORT: the report window could not open - see the log ([REPORT])");
             return;
         }
         const RECT r = reportDialog.Placement();
-        Log("[REPORT] window shown at %ld,%ld (%ldx%ld)\n", r.left, r.top, r.right - r.left, r.bottom - r.top);
+        Log("[REPORT] window shown at %ld,%ld (%ldx%ld)%s\n", r.left, r.top, r.right - r.left, r.bottom - r.top,
+            reportDialog.UsedFallback() ? " - the plain fallback window" : "");
     };
     toolbar.SetReportCallback([openReport]() { openReport("the REPORT button"); });
     window.SetReportHandler([openReport]() { openReport("Ctrl+Shift+R"); });
