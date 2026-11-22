@@ -75,6 +75,13 @@ int main() {
     CHECK(!FadedTooFar(12.0f, 14.6f));   // a dimming the A/B can still judge
     CHECK(!FadedTooFar(0.0f, 14.6f));    // nothing measured: not this rule's call
     CHECK(!FadedTooFar(4.6f, 0.0f));
+    // 7. The verdict needs both: tonight (faded, passes 3.1x apart) keeps the
+    //    start; autofocus_saturn's fading cases (faded to 49% and 46%, passes
+    //    1.23x and 1.21x) keep the fit, which was right.
+    CHECK(SweepSpoiledByFade(4.6f, 14.6f, 3.11f));
+    CHECK(!SweepSpoiledByFade(119.9f, 244.2f, 1.23f));
+    CHECK(!SweepSpoiledByFade(58.8f, 128.0f, 1.21f));
+    CHECK(!SweepSpoiledByFade(12.0f, 14.6f, 3.11f));   // passes disagree, start did not fade
 
     std::printf("af_sweep_judge: %s (%d failures)\n", fails ? "FAIL" : "PASS", fails);
     return fails ? 1 : 0;

@@ -289,6 +289,17 @@ inline bool FadedTooFar(float startNow, float startBefore, float frac = 0.5f) {
     return startBefore > 0.0f && startNow > 0.0f && startNow < startBefore * frac;
 }
 
+// The A/B's verdict on a fade, from both facts together. A fade alone is not
+// enough: on 2026-11-08 Saturn faded steadily through a sweep whose curve
+// kept its shape, and the fit was right (autofocus_saturn's fading cases:
+// the start re-measured at 46-49% while the two passes agreed within 1.23x).
+// On 2026-11-22 the fade came mid-sweep and the passes disagreed 3.1x: the
+// curve itself was the fade. Only then does the start stand.
+inline bool SweepSpoiledByFade(float startNow, float startBefore, float sweepMedianRatio,
+                               float maxMedianRatio = 1.5f) {
+    return FadedTooFar(startNow, startBefore) && sweepMedianRatio > maxMedianRatio;
+}
+
 inline int FineSpanFrom(const std::vector<int>& pos, const std::vector<float>& score, int backlash) {
     const int n = (int)(std::min)(pos.size(), score.size());
     if (n < 2) return 0;
