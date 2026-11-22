@@ -120,7 +120,9 @@ int main() {
         // camera settings, so it asks twice like the others.
         const std::set<std::string> mustGuard = {"autofocus", "focusin", "focusout", "tracking",
                                                  "recall", "recalloff", "mosaic", "phemurec",
-                                                 "moonmaprun"};   // phase 162
+                                                 "moonmaprun",    // phase 162
+                                                 "focusfineout", "focusfinein",   // phase 169.1
+                                                 "focuscoarseout", "focuscoarsein"};
         int n = 0;
         bool ok = true;
         for (const Action& a : all) {

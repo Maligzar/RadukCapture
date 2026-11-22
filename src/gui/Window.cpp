@@ -637,6 +637,16 @@ bool Window::HandleChar(WPARAM wParam) {
         m_onOverlayToggle();
         return true;
     }
+    // Phase 169.1: focus both ways from the keyboard. F and Shift+F only
+    // ever stepped outward; the Help has always documented these. As
+    // characters, so the numpad's + and - and either keyboard layout's
+    // brackets reach them, and a text box keeps them (PreTranslate).
+    //   + (or =) / -  the profile's fine step out / in
+    //   ] / [         its coarse step out / in   (Ctrl+[ / ] is the satellite nudge)
+    if ((wParam == L'+' || wParam == L'=') && m_onFocusFine)   { m_onFocusFine(+1);   return true; }
+    if (wParam == L'-' && m_onFocusFine)                       { m_onFocusFine(-1);   return true; }
+    if (wParam == L']' && m_onFocusCoarse)                     { m_onFocusCoarse(+1); return true; }
+    if (wParam == L'[' && m_onFocusCoarse)                     { m_onFocusCoarse(-1); return true; }
     // A (shift) -- the ADC alignment window. Case-sensitive here, since
     // plain 'a' is autofocus; Shift+<letter> is what the other
     // telemetry windows already use.

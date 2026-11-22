@@ -1,6 +1,6 @@
 # Phase 169: manual focus, one behaviour from every control (QA and rebuild)
 
-Raised by the owner at the scope, 2026-11-21: "The focuser manual commands need a QA; they do not seem to behave the same way. Maybe the features have passed the functionality and we need to rebuild the manual focus." Tech debt, after the open branches merge. Status: `PARTIAL`: 169.1's dropped-move fix `WRITTEN` (3.3.61); the rest `PLANNED`.
+Raised by the owner at the scope, 2026-11-21: "The focuser manual commands need a QA; they do not seem to behave the same way. Maybe the features have passed the functionality and we need to rebuild the manual focus." Tech debt, after the open branches merge. Status: `PARTIAL`: 169.1's dropped-move fix `WRITTEN` (3.3.61) and inward keys `WRITTEN` (3.3.62); the rest `PLANNED`.
 
 ## Why they differ (found by reading the code, 2026-11-22)
 Each manual control reaches the focuser by its own path, and the paths have collected different rules over phases 85, 139, 157 and 161:
@@ -19,6 +19,7 @@ So a relative step and an absolute move to the same place can end at different m
 
 ### Defects found while reading (2026-11-22)
 - **The keyboard can only focus outward.** `F` and `Shift+F` both step outward. The Help documents `+`/`-` (fine) and `[`/`]` (coarse) focus steps that are not implemented anywhere; `Ctrl+[`/`Ctrl+]` is the satellite nudge.
+  - **Fixed in 3.3.62.** The Help's keys are wired, as characters in `HandleChar`: `+` (or `=`) / `-` give the fine step out / in, and `]` / `[` the coarse step out / in, all through the same `profileStep` as `F`. Text boxes keep them (`PreTranslate`'s `WM_GETDLGCODE` check). The four keys are in the palette and guarded. `F`/`Shift+F` stay outward.
 - **The panel's step buttons and the keyboard use different step sizes:** the panel's are fixed, the keyboard's come from the profile.
 - **Steps end differently from typed positions.** Relative steps never finish outward with the backlash; absolute moves do.
 - **An absolute move sent while the focuser is moving is dropped, silently.** Seen at the scope on 2026-11-21: `EAFMove(154144) failed: 5` at 18:24:12. Code 5 is `EAF_ERROR_MOVING` in the vendored `external/EAF_SDK/include/EAF_focuser.h`. `EAFFocuser::Command` (absolute: GO TO, a typed position, a profile's position) calls `EAFMove` without checking `IsMoving()`. `MoveRelative` already chains onto the move in flight. The failure is logged and nothing else: the panel looks as if it ignored the press. **169.1 fixes it:** an absolute move while moving either waits for the move to finish or stops and replaces it (one rule, the owner's choice), and the panel says which. It never drops the move without a word.
