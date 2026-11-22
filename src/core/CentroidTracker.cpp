@@ -25,7 +25,9 @@ bool CentroidTracker::StartAutoAcquire(std::string& whyNot) {
         whyNot = "mount not connected";
         return false;
     }
-    if (mnt->GetTrackingMode() == IMount::OFF) {
+    // While this app drives the axes the hand control reports OFF on
+    // purpose; that is a tracked mount, not a still one (2026-11-22).
+    if (mnt->GetTrackingMode() == IMount::OFF && !m_appDriving.load()) {
         whyNot = "mount is not tracking - align it on the hand control "
                  "first (Align > Quick Align needs no stars)";
         return false;
@@ -47,7 +49,9 @@ bool CentroidTracker::PromoteToAutoAcquire(std::string& whyNot) {
         whyNot = "mount not connected";
         return false;
     }
-    if (mnt->GetTrackingMode() == IMount::OFF) {
+    // While this app drives the axes the hand control reports OFF on
+    // purpose; that is a tracked mount, not a still one (2026-11-22).
+    if (mnt->GetTrackingMode() == IMount::OFF && !m_appDriving.load()) {
         whyNot = "mount is not tracking - align it on the hand control "
                  "first (Align > Quick Align needs no stars)";
         return false;

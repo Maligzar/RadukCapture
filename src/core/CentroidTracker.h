@@ -328,6 +328,9 @@ public:
     // Legacy: code that checked IsRunning() gets true whenever the tracker
     // may be pulsing the mount (Calibrating, Centering or Locked).
     bool IsRunning() const;
+    // True while PLANET LOCK drives the axes itself and the hand control's
+    // tracking is OFF on purpose (core/TrackingState.h). 2026-11-22.
+    bool IsAppDriving() const { return m_appDriving.load(); }
 
     // ── Jog suspend ───────────────────────────────────────────
     void SuspendCorrections() { m_suspended.store(true);  }

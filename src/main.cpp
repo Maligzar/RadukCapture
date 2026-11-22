@@ -125,6 +125,8 @@
 #include "core/ADCAlignment.h"
 #include "core/SkyConditions.h"
 #include "gui/MountController.h"
+#include "gui/GamePad.h"          // Phase 172.0
+#include "core/TrackingConfirm.h"
 #include "gui/StatusBar.h"
 #include "gui/HelpWindow.h"
 #include "gui/AIChatPanel.h"
@@ -1881,8 +1883,10 @@ static int RunApp(bool useEmulator) {
         ri.mountConnected = mount && mount->IsConnected();
         ri.mountAligned   = ri.mountConnected && mount->IsAligned();
         ri.trackingKnown  = ri.mountConnected && mount->TrackingModeKnown();
-        ri.trackingOn     = ri.trackingKnown &&
-                            mount->GetTrackingMode() != IMount::OFF;
+        // PLANET LOCK driving the axes is tracking (core/TrackingState.h).
+        ri.trackingOn     = (ri.trackingKnown &&
+                             mount->GetTrackingMode() != IMount::OFF) ||
+                            (ri.mountConnected && core.tracker.IsAppDriving());
         ri.siteSet        = raduk::core::RigConfig::Get().SiteIsSet();
         ri.profileLoaded  = profiles.Active() != nullptr;
         ri.filterName     = raduk::core::RigConfig::Get().filterName;
@@ -2238,6 +2242,8 @@ static int RunApp(bool useEmulator) {
     // Lets you stop the mount even when RadukCapture is not focused.
     raduk::gui::MountController mountCtrl;
     mountCtrl.SetMount(mount);
+    // 2026-11-22: "TRK: OFF" while PLANET LOCK drove the axes.
+    mountCtrl.SetAppDrivingQuery([&] { return core.tracker.IsAppDriving(); });
 
 
 
@@ -3065,22 +3071,28 @@ static int RunApp(bool useEmulator) {
         // SyncRADec's return and claimed "Aligned" unconditionally.
         Log("[ALIGN] One-point align on %s (RA=%.4fh Dec=%.4f)\n",
             name.c_str(), ra_h, dec_deg);
-        bool synced = false, tracking = false;
+        bool synced = false, tracking = false, trackingPending = false;
         if (mount && mount->IsConnected()) {
             // A sync changes where the mount thinks it is; guiding holds
             // the axes with tracking off. End guiding first (2026-11-12).
             if (tracker.Stage() != raduk::core::AcquisitionStage::Off) tracker.Reset();
             synced = mount->SyncRADec(ra_h, dec_deg);
             if (synced) tracking = mount->SetTrackingMode(IMount::ALT_AZ);
+            // 2026-11-21: an ACK the hand control would not read back is
+            // "confirming", settled by the position poll; never REFUSED.
+            trackingPending = tracking && !mount->TrackingModeKnown();
             Log("[ALIGN] sync=%s tracking=%s\n",
-                synced ? "ok" : "REFUSED", tracking ? "ALT-AZ" : "REFUSED");
+                synced ? "ok" : "REFUSED",
+                !tracking ? "REFUSED" : trackingPending ? "ALT-AZ sent, confirming" : "ALT-AZ");
             slog.Mount("Align: %s sync=%s tracking=%s", name.c_str(),
                        synced ? "ok" : "refused",
                        tracking ? "alt-az" : "refused");
         }
         for (auto* m : kMaps) m->SetMountPosition(ra_h, dec_deg, true);
         std::wstring wname(name.begin(), name.end());
-        if (synced && tracking)
+        if (synced && tracking && trackingPending)
+            notifBar.NotifyInfo(L"★ Aligned on " + wname + L" - tracking sent, confirming (TRK line)");
+        else if (synced && tracking)
             notifBar.NotifyInfo(L"★ Aligned on " + wname + L" - tracking ALT-AZ");
         else if (synced)
             notifBar.NotifyWarn(L"Synced on " + wname + L" - mount refused tracking");
@@ -7752,9 +7764,17 @@ static int RunApp(bool useEmulator) {
                 notifBar.NotifyInfo(L"Guiding ended - the hand control is tracking again");
                 return;
             }
-            auto mode = mount->GetTrackingMode();
-            mount->SetTrackingMode(mode == IMount::OFF
-                ? IMount::ALT_AZ : IMount::OFF);
+            // 2026-11-21: with the mode unknown (a tracking ACK not yet
+            // confirmed), T asks for ON: it turned tracking OFF when the
+            // owner meant ON, because the cache it toggled was a guess.
+            const bool known = mount->TrackingModeKnown();
+            const auto mode  = mount->GetTrackingMode();
+            const auto want  = (IMount::TrackingMode)raduk::core::ToggleTarget(
+                                   known, (int)mode, (int)IMount::ALT_AZ);
+            Log("[MOUNT] T: tracking %s -> %s\n",
+                known ? IMount::TrackingModeName(mode) : "unknown",
+                IMount::TrackingModeName(want));
+            mount->SetTrackingMode(want);
             slog.Mount("Tracking toggled");
         }
     });
@@ -8299,8 +8319,45 @@ static int RunApp(bool useEmulator) {
         }
     };
 
+    // Phase 172.0: an Xbox controller through XInput. Every action goes
+    // through a path the app already has (core/PadMap.h): jogs through the
+    // arrow keys' handler, so PLANET LOCK suspends and re-centres exactly
+    // as for the keys; B is ESC's emergency stop. A controller lost mid-jog
+    // releases its jogs. Autofocus on Y stays off until Phase 167 closes.
+    raduk::gui::GamePad gamePad;
+    raduk::core::PadMapper padMap;
+    Log("[PAD] XInput %s\n", gamePad.Available() ? "available" : "not found - no controller support");
+    auto padTick = [&]() {
+        if (!gamePad.Available()) return;
+        const auto act = padMap.Update(gamePad.Read());
+        if (!act.Any()) return;
+        if (act.connectedChanged) {
+            Log("[PAD] controller %s\n", padMap.Connected() ? "connected" : "disconnected");
+            if (padMap.Connected()) notifBar.NotifyInfo(L"Controller connected: stick jogs, B stops, A locks");
+            else                    notifBar.NotifyInfo(L"Controller disconnected: any jog it held was stopped");
+        }
+        if (act.stop) {
+            Log("[PAD] B: emergency stop\n");
+            window.PadEmergencyStop();
+        }
+        for (const auto& j : act.jogs) window.PadJog(j.axis, j.dir, j.pressed);
+        if (act.rateDelta) {
+            static const int kRates[] = { 5, 7, 8, 9 };   // FINE, MED, FAST, 9x
+            int i = 0;
+            while (i < 3 && kRates[i] != controls.JogRate()) ++i;
+            i = std::max(0, std::min(3, i + act.rateDelta));
+            controls.SetJogRate(kRates[i]);
+            mountCtrl.SetJogRate(kRates[i]);
+            Log("[PAD] jog rate %dx\n", kRates[i]);
+        }
+        if (act.lockToggle   && !controls.PressByName("PLANET LOCK")) Log("[PAD] A: no PLANET LOCK button\n");
+        if (act.recordToggle && !controls.PressByName("RECORD"))      Log("[PAD] X: no RECORD button\n");
+        if (act.autofocus    && !controls.PressByName("AUTO FOCUS"))  Log("[PAD] Y: no AUTO FOCUS button\n");
+    };
+
     window.Run([&]() {
         scenarioStep();
+        padTick();
 
         // Phase 128: NEO positions every ten seconds, and the fetch's news.
         for (const auto& m : neoDesk.TakeMessages()) Log("%s\n", m.c_str());
@@ -8970,7 +9027,8 @@ static int RunApp(bool useEmulator) {
                     snprintf(decBuf, 16, "%+.1f deg", dec);
                     aiState.mountRA  = raBuf;
                     aiState.mountDec = decBuf;
-                    aiState.tracking = (mount->GetTrackingMode() != raduk::core::IMount::OFF);
+                    aiState.tracking = (mount->GetTrackingMode() != raduk::core::IMount::OFF) ||
+                                       core.tracker.IsAppDriving();   // PLANET LOCK drives
                 }
                 aiState.mountAlt = 0.0f;  // alt injected via planner context
                 aiState.mountAz  = 0.0f;
