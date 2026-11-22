@@ -96,6 +96,19 @@ int main() {
         CHECK(!SweepSpoiledByFade(12.0f, 14.6f, nightOut, nightBack));
         // One pass peaked: trust it.
         CHECK(!SweepSpoiledByFade(4.6f, 14.6f, c3Out, nightBack));
+        // autofocus_saturn case 9 (CI, 2026-11-22, 4 runs in 7): the target
+        // fades to 47%, focus sits 500 steps inside the sweep's end so
+        // neither pass peaks by 1.15x - but both swing 12-16x and rise
+        // together by position. That is focus: the fit stands.
+        const std::vector<float> c9Out  = {15.3f, 20.2f, 28.1f, 47.0f, 72.5f, 102.0f, 150.9f, 175.0f, 181.4f, 182.4f, 167.4f};
+        const std::vector<float> c9Back = {11.0f, 14.2f, 22.4f, 33.4f, 52.7f, 85.8f, 124.3f, 164.8f, 166.1f, 180.9f, 173.0f};
+        CHECK(!PassHasPeak(c9Out) && !PassHasPeak(c9Back));
+        CHECK(PassesAgree(c9Out, c9Back));
+        CHECK(!SweepSpoiledByFade(59.8f, 128.0f, c9Out, c9Back));
+        // The night's passes do not agree (the return pass is flat).
+        CHECK(!PassesAgree(nightOut, nightBack));
+        // Opposite shapes do not agree either.
+        CHECK(!PassesAgree({1.0f, 2.0f, 4.0f, 8.0f}, {8.0f, 4.0f, 2.0f, 1.0f}));
         // A peak at an end of the sweep is not a peak (focus not bracketed).
         CHECK(!PassHasPeak({5.0f, 8.0f, 12.0f, 20.0f}));
         CHECK(!PassHasPeak({4.0f, 4.1f}));
