@@ -135,6 +135,7 @@
 #include "app/DarkRunController.h"  // Phase 173
 #include "core/FocusHistory.h"       // Phase 174.0
 #include "core/FocusTempModel.h"     // Phase 174.1
+#include "core/ScreenRotation.h"     // screen-burn rotation
 #include "core/TrackingConfirm.h"
 #include "gui/StatusBar.h"
 #include "gui/HelpWindow.h"
@@ -2939,6 +2940,71 @@ static int RunApp(bool useEmulator) {
     // It re-places by saved layout rather than only rescuing. A monitor
     // coming back from sleep should get its windows back, not leave
     // them piled on the primary where a bare rescue would put them.
+    // ── Screen-burn rotation ──────────────────────────────────
+    // The owner, 2026-11-22: "To prevent screen burn the 4 display
+    // monitors should rotate their full screen windows from monitor to
+    // monitor every 15 minutes." Every window of ours that fills a screen
+    // moves one screen along, left to right, the last to the first
+    // (core/ScreenRotation.h). The main window and its live preview stay
+    // put, and a screen with no full-screen window is never covered.
+    // rig.ini [Rig] ScreenRotateMinutes (default 15, 0 = off).
+    raduk::core::rotation::RotationTimer screenRotation;
+    screenRotation.Configure((int)GetPrivateProfileIntA("Rig", "ScreenRotateMinutes", 15,
+                                                        raduk::core::RigConfig::PublicIniPath().c_str()));
+    auto steadySec = []() -> int64_t {
+        return std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+    };
+    auto rotateScreens = [&]() {
+        namespace rt = raduk::core::rotation;
+        std::vector<rt::Screen> screens;
+        for (const auto& m : workspace.Monitors()) {
+            rt::Screen sc;
+            sc.full = {m.full.left, m.full.top, m.full.right, m.full.bottom};
+            sc.work = {m.work.left, m.work.top, m.work.right, m.work.bottom};
+            sc.primary = m.primary;
+            screens.push_back(sc);
+        }
+        std::vector<rt::Win> wins;
+        for (HWND h : ourWindows()) {
+            RECT r{};
+            if (!GetWindowRect(h, &r)) continue;
+            rt::Win w;
+            w.id = (intptr_t)h;
+            w.rect = {r.left, r.top, r.right, r.bottom};
+            w.zoomed = IsZoomed(h) != 0;
+            w.visible = IsWindowVisible(h) && !IsIconic(h);
+            w.excluded = (h == window.Handle());
+            wins.push_back(w);
+        }
+        const auto moves = rt::PlanRotation(screens, wins);
+        if (moves.empty()) return;
+        // Moving a maximised window means restoring and maximising it
+        // again, which activates it: give the focus back afterwards.
+        const HWND fg = GetForegroundWindow();
+        for (const auto& mv : moves) {
+            const HWND h = (HWND)mv.id;
+            const int tw = (int)(mv.target.r - mv.target.l), th = (int)(mv.target.b - mv.target.t);
+            if (mv.fill == rt::Fill::Maximized) {
+                ShowWindow(h, SW_SHOWNOACTIVATE);   // restored, so it can move
+                SetWindowPos(h, nullptr, (int)mv.target.l, (int)mv.target.t, tw, th,
+                             SWP_NOZORDER | SWP_NOACTIVATE);
+                ShowWindow(h, SW_MAXIMIZE);
+            } else {
+                SetWindowPos(h, nullptr, (int)mv.target.l, (int)mv.target.t, tw, th,
+                             SWP_NOZORDER | SWP_NOACTIVATE);
+            }
+        }
+        if (fg && IsWindow(fg)) SetForegroundWindow(fg);
+        Log("[SCREENS] burn-in rotation: %d full-screen window(s) moved one screen along\n", (int)moves.size());
+    };
+    if (screenRotation.Enabled())
+        Log("[SCREENS] full-screen windows rotate every %d min (rig.ini ScreenRotateMinutes; 0 = off)\n",
+            (int)GetPrivateProfileIntA("Rig", "ScreenRotateMinutes", 15,
+                                       raduk::core::RigConfig::PublicIniPath().c_str()));
+    else
+        Log("[SCREENS] burn-in rotation off (rig.ini ScreenRotateMinutes=0)\n");
+
     window.SetDisplayChangeHandler([&]() {
         const int before = workspace.MonitorCount();
         const int now    = workspace.Detect();
@@ -2949,6 +3015,9 @@ static int RunApp(bool useEmulator) {
         // The profile is keyed by monitor count, so a changed count
         // means a different layout applies.
         if (now != before) workspace.SelectProfile();
+        // The layout puts every window back where it is saved: the
+        // burn-in rotation starts its period again from here.
+        screenRotation.Restart(steadySec());
 
         for (const auto& [role, hwnd] : kPlacedWindows)
             workspace.Place(role, hwnd);
@@ -9775,6 +9844,12 @@ static int RunApp(bool useEmulator) {
 
             controls.UpdateReadouts();
             mountCtrl.UpdateReadouts();
+
+            // Screen-burn rotation: put off while a mouse button is held
+            // (something is being dragged or resized).
+            if (screenRotation.Due(steadySec(),
+                                   (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0 || GetCapture() != nullptr))
+                rotateScreens();
 
             // Phase 140.3: the display stretch from the target, twice a
             // second. Display only: the analyser, histogram and recording
