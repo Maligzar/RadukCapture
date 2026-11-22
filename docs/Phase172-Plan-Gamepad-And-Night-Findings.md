@@ -43,8 +43,8 @@ Each was read from the night's log and screenshots. Where noted, it was checked 
 3. **The seeing score reads blur as steadiness.** SEEING 9.4 to 9.7/10 on a hazy night, through a blurred disc. A blurred image barely changes between frames. **Phase 167:** the seeing score is not to be trusted while the focus readout is well below its reference.
 4. **The base rates go stale during a long lock.** At 19:47 the guider added +8 to +9 "/s on azimuth to a 15.64 "/s base measured about 80 minutes earlier. Alt-az rates change as the target moves. It held 1.5", but a jump starts from a large integral. **Planned:** re-derive the base rates from the encoders during a long lock, without a new calibration.
 5. **Altitude carries the guide error.** Azimuth stayed within ±4 px, while altitude swung ±15 px over 6 to 10 s. It is not backlash: the axis never reversed. The cause, seeing followed or loop overshoot, is to be told apart by comparing the altitude correction with the camera's own motion, and the altitude gain softened if it is the loop.
-6. **`[PHEMU]` retries IMCCE often.** "could not reach IMCCE's prediction service; keeping what is cached" appears in a 2-second slice of the log. The count from the night's log is to be checked. Retries are to back off, and to go through NetPolicy only (rule 7).
-7. **Untimestamped log lines.** `[SHARP]`, `[MOTION]`, `[ADC]` and `[PHEMU]` are printed without the time, so a night cannot be lined up against events. They are to go through `Log()`.
+6. **`[PHEMU]` retries IMCCE often.** "could not reach IMCCE's prediction service; keeping what is cached" appears in a 2-second slice of the log. The count from the night's log is to be checked. Retries are to back off, and to go through NetPolicy only (rule 7). **Fixed in 3.3.50:** after a failure `PhemuDesk` waits 30 min, doubling to 6 h, and says when it will try again; a success ends the back-off.
+7. **Untimestamped log lines.** `[SHARP]`, `[MOTION]`, `[ADC]` and `[PHEMU]` are printed without the time, so a night cannot be lined up against events. They are to go through `Log()`. **Fixed in 3.3.50:** `Log()` stamps every line that starts with a `[TAG]`, the same `HH:MM:SS.mmm` as CoreLog's.
 8. **Layout.** In the mount window, the "...in about 79 min" line overlaps the 9x/FAST/MED/FINE row. In the focuser panel, the status lines are cut off at the right ("Ready to focu", "ADC: not fitte", "Filter: UV/IR cut (400-700nm"). Both are to be fixed through the layout scenario.
 9. **Memory.** 9,977 MB of working set during recording. About 2.5 GB is accounted for by the write buffer and the preview ring. The trend (flat or rising) was not yet measured; the four-sample command is in the night's notes. If it rises, find what retains full-frame (3840x2160) buffers after the switch to 640.
 
@@ -68,6 +68,8 @@ Each was read from the night's log and screenshots. Where noted, it was checked 
     **Fixed** (`core/GuideLaw.h`, test `guide_windup`): conditional integration. An axis pinned at a limit by the error's own sign does not integrate. In a model of the mount fed the night's numbers, the old law overshoots about 24" (about 120 px) and the new one 3.7", settling in 22 s. A tracking rate 9 "/s stale (19:47 the same night) is still absorbed. **Owes:** a long centring on the sky (from a full-frame position more than 400 px off) that settles without abandoning.
 
 13. **The status bar said `640x480 RAW8` while 16b was selected and 16-bit files were written.** The once-a-second update passed a literal `8` to `StatusBar::SetCameraStats` instead of `roiBits`, which the recording uses. **Fixed** in 3.3.47. It was display only.
+
+14. **RGB ALIGN's label read `ALIGN +0 px` while RGB ALIGN was off**: the label is only updated while it is on, so it kept its first text. **Fixed in 3.3.50:** it says `ALIGN off`.
 
 ## What went right (for the record)
 

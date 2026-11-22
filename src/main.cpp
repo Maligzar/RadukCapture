@@ -29,6 +29,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
@@ -184,14 +185,34 @@ static void LogInit() {
 
 static void Log(const char* fmt, ...) {
     va_list args;
-    if (g_log) { va_start(args, fmt); vfprintf(g_log, fmt, args); va_end(args); fflush(g_log); }
-    va_start(args, fmt); vprintf(fmt, args); va_end(args); fflush(stdout);
+    va_start(args, fmt);
+    const int n = vsnprintf(nullptr, 0, fmt, args);
+    va_end(args);
+    std::string text(n > 0 ? (size_t)n : 0, '\0');
+    if (n > 0) { va_start(args, fmt); vsnprintf(text.data(), (size_t)n + 1, fmt, args); va_end(args); }
+    // 2026-11-22: [SHARP], [MOTION], [ADC], [PHEMU] and every other line
+    // written here had no time, while CoreLog's lines did, so a night could
+    // not be lined up against its events. A line that starts with a [TAG]
+    // gets the same HH:MM:SS.mmm prefix; CoreLog's lines arrive already
+    // stamped (they start with a digit) and are left alone.
+    std::string out = text;
+    if (!text.empty() && text[0] == '[') {
+        const auto now = std::chrono::system_clock::now();
+        const std::time_t tt = std::chrono::system_clock::to_time_t(now);
+        const int ms = (int)(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                 now.time_since_epoch()).count() % 1000);
+        std::tm lt{};
+        localtime_s(&lt, &tt);
+        char stamp[16];
+        snprintf(stamp, sizeof(stamp), "%02d:%02d:%02d.%03d ", lt.tm_hour, lt.tm_min, lt.tm_sec, ms);
+        out = stamp + text;
+    }
+    if (g_log) { fputs(out.c_str(), g_log); fflush(g_log); }
+    fputs(out.c_str(), stdout); fflush(stdout);
     if (g_scenario) {
-        char buf[2048];
-        va_start(args, fmt); vsnprintf(buf, sizeof(buf), fmt, args); va_end(args);
         // The twice-a-second readouts would bury a failure report.
-        if (strncmp(buf, "[SHARP]", 7) != 0 && strncmp(buf, "[MOTION]", 8) != 0)
-            g_scenario->Observe(buf, ScenarioNow());
+        if (strncmp(text.c_str(), "[SHARP]", 7) != 0 && strncmp(text.c_str(), "[MOTION]", 8) != 0)
+            g_scenario->Observe(text.c_str(), ScenarioNow());
     }
 }
 
@@ -9352,8 +9373,12 @@ static int RunApp(bool useEmulator) {
             }
 
             // Phase 23: update RGB align label with live shift value
+            // 2026-11-22: off, the label kept its first "+0 px", which read
+            // as a measurement of nothing; it says off now.
             if (preview.RGBAlignEnabled())
                 controls.SetRGBAlignLabel(preview.RGBAlignShift());
+            else
+                controls.SetRGBAlignLabelOff();
         }
 
         int clientW = window.ClientWidth();
