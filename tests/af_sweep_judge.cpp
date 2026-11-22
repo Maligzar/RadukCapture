@@ -75,13 +75,31 @@ int main() {
     CHECK(!FadedTooFar(12.0f, 14.6f));   // a dimming the A/B can still judge
     CHECK(!FadedTooFar(0.0f, 14.6f));    // nothing measured: not this rule's call
     CHECK(!FadedTooFar(4.6f, 0.0f));
-    // 7. The verdict needs both: tonight (faded, passes 3.1x apart) keeps the
-    //    start; autofocus_saturn's fading cases (faded to 49% and 46%, passes
-    //    1.23x and 1.21x) keep the fit, which was right.
-    CHECK(SweepSpoiledByFade(4.6f, 14.6f, 3.11f));
-    CHECK(!SweepSpoiledByFade(119.9f, 244.2f, 1.23f));
-    CHECK(!SweepSpoiledByFade(58.8f, 128.0f, 1.21f));
-    CHECK(!SweepSpoiledByFade(12.0f, 14.6f, 3.11f));   // passes disagree, start did not fade
+    // 7. The verdict: the start stands only when the target faded AND
+    //    neither pass of the sweep found a peak.
+    {
+        // Tonight, 2026-11-22 23:10, per position 165665..171665.
+        const std::vector<float> nightOut  = {14.6f, 14.8f, 14.7f, 14.6f, 14.6f, 14.3f, 14.0f, 8.3f, 6.3f, 5.1f, 4.8f};
+        const std::vector<float> nightBack = {4.6f, 4.6f, 4.5f, 4.7f, 4.6f, 4.6f, 4.6f, 4.6f, 4.6f, 4.8f, 4.5f};
+        CHECK(!PassHasPeak(nightOut));
+        CHECK(!PassHasPeak(nightBack));
+        CHECK(SweepSpoiledByFade(4.6f, 14.6f, nightOut, nightBack));
+        // autofocus_saturn case 3 (CI, 2026-11-22): the target fades through
+        // the whole sweep, the passes disagree 4.45x, the start re-measures
+        // at 0.5 against 141.1 - and each pass still peaks near focus.
+        const std::vector<float> c3Out  = {19.3f, 20.1f, 22.6f, 26.5f, 30.4f, 34.5f, 41.3f, 43.3f, 38.2f, 27.0f, 17.3f};
+        const std::vector<float> c3Back = {1.0f, 1.4f, 2.1f, 3.2f, 5.0f, 7.8f, 12.6f, 17.2f, 20.0f, 19.0f, 17.1f};
+        CHECK(PassHasPeak(c3Out));
+        CHECK(PassHasPeak(c3Back));
+        CHECK(!SweepSpoiledByFade(0.5f, 141.1f, c3Out, c3Back));
+        // A start that did not fade never stands on this rule.
+        CHECK(!SweepSpoiledByFade(12.0f, 14.6f, nightOut, nightBack));
+        // One pass peaked: trust it.
+        CHECK(!SweepSpoiledByFade(4.6f, 14.6f, c3Out, nightBack));
+        // A peak at an end of the sweep is not a peak (focus not bracketed).
+        CHECK(!PassHasPeak({5.0f, 8.0f, 12.0f, 20.0f}));
+        CHECK(!PassHasPeak({4.0f, 4.1f}));
+    }
 
     std::printf("af_sweep_judge: %s (%d failures)\n", fails ? "FAIL" : "PASS", fails);
     return fails ? 1 : 0;

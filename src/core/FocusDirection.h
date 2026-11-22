@@ -289,15 +289,35 @@ inline bool FadedTooFar(float startNow, float startBefore, float frac = 0.5f) {
     return startBefore > 0.0f && startNow > 0.0f && startNow < startBefore * frac;
 }
 
-// The A/B's verdict on a fade, from both facts together. A fade alone is not
-// enough: on 2026-11-08 Saturn faded steadily through a sweep whose curve
-// kept its shape, and the fit was right (autofocus_saturn's fading cases:
-// the start re-measured at 46-49% while the two passes agreed within 1.23x).
-// On 2026-11-22 the fade came mid-sweep and the passes disagreed 3.1x: the
-// curve itself was the fade. Only then does the start stand.
-inline bool SweepSpoiledByFade(float startNow, float startBefore, float sweepMedianRatio,
-                               float maxMedianRatio = 1.5f) {
-    return FadedTooFar(startNow, startBefore) && sweepMedianRatio > maxMedianRatio;
+// Whether one pass of a sweep found a peak: its best score inside the
+// range (not at either end) and at least `minRise` times both end scores.
+// 1.15: case 3 coming back rose to 20.0 and ended at 17.1 (1.17x), a real
+// peak; tonight's flat passes reached 1.01x and 1.04x.
+// 2026-11-22: tonight's passes had none (14.6% flat then the fade; 4.6%
+// flat), while autofocus_saturn's "fades through the sweep" (case 3) rose
+// from 19% to 43% and fell to 17% going out, and from 1% to 20% coming back.
+inline bool PassHasPeak(const std::vector<float>& sc, float minRise = 1.15f) {
+    std::vector<float> v;
+    for (float x : sc) if (x > 0.0f) v.push_back(x);
+    if (v.size() < 3) return false;
+    size_t k = 0;
+    for (size_t i = 1; i < v.size(); ++i) if (v[i] > v[k]) k = i;
+    if (k == 0 || k + 1 == v.size()) return false;
+    return v[k] >= minRise * v.front() && v[k] >= minRise * v.back();
+}
+
+// The A/B's verdict on a fade. The start stands only when the target faded
+// to under half AND neither pass of the sweep found a peak: then the curve
+// was the fade (2026-11-22, 23:10: 4.6 against 14.6, no peak either way).
+// A fade alone is not enough, nor a fade with the passes disagreeing: in
+// autofocus_saturn's case 3 the target fades through the whole sweep, the
+// passes disagree 4.45x, and each still peaks where focus is; its fit is
+// right. (The first rule, fade plus disagreement, failed that case on CI.)
+inline bool SweepSpoiledByFade(float startNow, float startBefore,
+                               const std::vector<float>& outScore,
+                               const std::vector<float>& backScore) {
+    if (!FadedTooFar(startNow, startBefore)) return false;
+    return !PassHasPeak(outScore) && !PassHasPeak(backScore);
 }
 
 inline int FineSpanFrom(const std::vector<int>& pos, const std::vector<float>& score, int backlash) {
