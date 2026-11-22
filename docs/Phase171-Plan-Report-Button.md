@@ -1,6 +1,6 @@
 # Phase 171: report a problem to Claude, from the app
 
-The owner, at the scope on 2026-11-22: "I want a troubleshooting button built into RadukCapture so that when I click it I can describe the issue, close the window, and then it builds the file and sends it to Claude." The owner chose to send it to Claude Code on the capture PC, built on #189's hand-off. Status: `WRITTEN` (3.3.48).
+The owner, at the scope on 2026-11-22: "I want a troubleshooting button built into RadukCapture so that when I click it I can describe the issue, close the window, and then it builds the file and sends it to Claude." The owner chose to send it to Claude Code on the capture PC, built on #189's hand-off. Status: `WRITTEN` (3.3.49).
 
 ## What it does
 1. **Opening it:** REPORT on the rail (above HELP), `Ctrl+Shift+R`, or "Report a problem to Claude" in the command palette (`gui/ReportDialog.h`).

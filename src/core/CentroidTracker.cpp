@@ -5,6 +5,7 @@
 
 #include "CentroidTracker.h"
 #include "GuideSolve.h"   // the pixel->pulse solve, shared with phase 47
+#include "GuideLaw.h"     // one step of the rate guider (2026-11-22: anti-windup)
 #include "CoreLog.h"
 
 namespace raduk::core {
@@ -914,22 +915,24 @@ void CentroidTracker::Run() {
         float dtc = std::chrono::duration<float>(tNow - lastControl).count();
         lastControl = tNow;
         if (dtc <= 0.0f || dtc > 2.0f) dtc = 0.5f;
-        auto clampf = [](float v, float m) { return v > m ? m : (v < -m ? -m : v); };
+        // core/GuideLaw.h: proportional plus integral, clamped, and never
+        // reversing an axis (a reversal is backlash, a move that does not
+        // happen: on the slow side a correction stops 1"/s short of zero).
+        // 2026-11-22 22:53: the integral no longer grows while the output is
+        // pinned at a limit by the error's own sign. It had wound up to its
+        // clamp during a long centring and carried the planet 146 px past
+        // the centre, and the lock was abandoned (tests/guide_windup.cpp).
         float base[2], corr[2];
         {
             std::lock_guard<std::mutex> lk(m_mutex);
-            m_integAs[0] = clampf(m_integAs[0] + GUIDE_KI * aAz  * dtc, GUIDE_MAX_CORR_AS * 0.5f);
-            m_integAs[1] = clampf(m_integAs[1] + GUIDE_KI * aAlt * dtc, GUIDE_MAX_CORR_AS * 0.5f);
+            GuideLawParams gp;
+            gp.kp = kp; gp.ki = GUIDE_KI; gp.maxCorr = GUIDE_MAX_CORR_AS;
+            gp.maxInteg = GUIDE_MAX_CORR_AS * 0.5f;
             base[0] = m_baseRateAs[0]; base[1] = m_baseRateAs[1];
-            corr[0] = clampf(kp * aAz  + m_integAs[0], GUIDE_MAX_CORR_AS);
-            corr[1] = clampf(kp * aAlt + m_integAs[1], GUIDE_MAX_CORR_AS);
-        }
-        // Never reverse an axis: a reversal is backlash, a move that does
-        // not happen. On the slow side a correction stops 1"/s short of
-        // zero; on the fast side it has the full range.
-        for (int i = 0; i < 2; ++i) {
-            if (base[i] > 1.0f && base[i] + corr[i] < 1.0f)   corr[i] = 1.0f - base[i];
-            if (base[i] < -1.0f && base[i] + corr[i] > -1.0f) corr[i] = -1.0f - base[i];
+            GuideAxisState sa{ m_integAs[0] }, sb{ m_integAs[1] };
+            corr[0] = GuideAxisStep(aAz,  base[0], dtc, gp, sa);
+            corr[1] = GuideAxisStep(aAlt, base[1], dtc, gp, sb);
+            m_integAs[0] = sa.integ; m_integAs[1] = sb.integ;
         }
         if (!m_threadRunning.load() || m_suspended.load()) continue;
         _DriveAxes(s.mount, base[0] + corr[0], base[1] + corr[1]);
