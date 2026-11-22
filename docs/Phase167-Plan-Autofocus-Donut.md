@@ -84,9 +84,13 @@ The owner at the scope, 2026-11-22 at 23:10, with the guard of 3.3.44 built: aut
 - **The focus reference was then armed from the faded frames.** The readout called the focused planet "OUT 28% of AF".
 
 **Built** (`FocusDirection.h`, gated by `af_sweep_judge`, which replays the night's own numbers):
-- **`JudgeSweep`.** When the outward and return passes disagree at the same positions by a median of over 1.5x, the sky changed and the sweep is void (tonight: 3.1x). A V-curve with backlash and seeing reads 1.09, and a steady 30% fade across the run (the 2026-11-08 case) reads 1.19; both stay usable. Scores spread under 10% have no peak to fit. Either way autofocus returns to the start and says why.
-- **`FadedTooFar`.** In the A/B, a start re-measured at under half its earlier score means start and fit cannot be compared, and the start stands.
-- **The reference is not armed** after a sweep that kept a fit only because the sky changed (`AFDiagnostics::skyChanged`). That closes part of 167.4.
+- **`FadedTooFar`, acted on.** In the same-sky A/B, a start re-measured at under half its earlier score means start and fit cannot be compared, so the start stands. That alone covers the night: 4.6 against 14.6.
+- **The focus reference is not armed** after a sweep that kept a fit only because the sky changed (`AFDiagnostics::skyChanged`). That closes part of 167.4.
+- **`JudgeSweep`, logged and not acted on** (`[AF] Sweep check (logged, not acted on)`). It records the outward/return disagreement and the spread for every sweep. As rules, they failed good sweeps in CI on the first build:
+  - **The spread rule:** a planet's coarse score is flat near focus (`app_headless`: 3%).
+  - **The disagreement rule:** a large backlash makes the two passes differ 2.0x (`af_overshoot`, slack 2000).
+
+  The night read 3.1x, so a threshold may exist between backlash and a fade. Real-sky figures from this log line will say, and only then does it act.
 
 **Owes:** a clean sweep on the sky (167.3, item 47); the emulator's `autofocus_saturn` passing with the check in place (CI).
 
