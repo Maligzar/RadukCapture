@@ -1770,6 +1770,19 @@ static int RunApp(bool useEmulator) {
     // the writer drains: feed the mount's heartbeat, let Windows see a live
     // message loop (PeekMessage without removing anything, so no click can
     // reach a half-finished run), and show the frames left in the title.
+    // 2026-11-22: each run's measured disk speed, kept per drive in rig.ini
+    // [DiskSpeed], so the next run can be checked before it starts.
+    capturer.SetWriteSpeedReport([](const std::string& path, double mbs) {
+        const std::string vol = raduk::core::VolumeOf(path);
+        if (vol.empty()) return;
+        const std::string ini = raduk::core::RigConfig::PublicIniPath();
+        char old[32] = {};
+        GetPrivateProfileStringA("DiskSpeed", vol.substr(0, 1).c_str(), "", old, sizeof(old), ini.c_str());
+        const double blended = raduk::core::BlendDiskSpeed(atof(old), mbs);
+        char v[32]; snprintf(v, sizeof(v), "%.0f", blended);
+        WritePrivateProfileStringA("DiskSpeed", vol.substr(0, 1).c_str(), v, ini.c_str());
+        Log("[DISK] %s wrote %.0f MB/s; kept as %s MB/s\n", vol.c_str(), mbs, v);
+    });
     capturer.SetDrainWaitHook([&](uint64_t pending) {
         if (mount && mount->IsConnected()) mount->Heartbeat();
         MSG m; PeekMessageW(&m, nullptr, 0, 0, PM_NOREMOVE);
@@ -4736,6 +4749,26 @@ static int RunApp(bool useEmulator) {
                 cam.GetControlValue(ControlId::ExposureUs) / 1.0e6);
             restoreBeforeRecording();   // phase 157.0c
             core.recCtl.Begin(roiWidth, roiHeight, roiBits, stopAtWindow);   // phase 153.2
+            // 2026-11-22 (core/DiskBudget.h): this run against what its disk
+            // has shown it can write. 1280x960 16-bit at 114 fps (280 MB/s)
+            // went to a slower S:, filled the buffer and hung the app at the end.
+            if (capturer.IsRecording()) {
+                const std::string vol = raduk::core::VolumeOf(cfg.outputDir);
+                char have[32] = {};
+                if (!vol.empty())
+                    GetPrivateProfileStringA("DiskSpeed", vol.substr(0, 1).c_str(), "", have, sizeof(have),
+                                             raduk::core::RigConfig::PublicIniPath().c_str());
+                const double frameBytes = (double)roiWidth * roiHeight * (roiBits == 16 ? 2.0 : 1.0);
+                const auto dv = raduk::core::JudgeDiskRate(frameBytes, (double)capture.Stats().fps.load(),
+                                                           atof(have), capturer.BufferBytes(), vol);
+                Log("[DISK] this run %.0f MB/s; %s has shown %s MB/s%s\n", dv.needMBs,
+                    vol.empty() ? "the output" : vol.c_str(), have[0] ? have : "(not yet measured)",
+                    dv.warn ? " - TOO FAST for it" : "");
+                if (dv.warn) {
+                    Log("[DISK] %s\n", dv.text.c_str());
+                    notifBar.NotifyWarn(raduk::core::ToWide(dv.text));
+                }
+            }
         }
         // Immediately sync the button visual — don't wait for the 500ms readout tick.
         // UpdateCaptureStatus sets m_status.recording and invalidates the owner-drawn

@@ -126,6 +126,7 @@ bool CaptureManager::StartRecording(int width, int height, int bitDepth) {
 
     // Reset stats
     m_status.framesRecorded.store(0);
+    m_speed.Reset();
     m_status.framesDropped.store(0);
     m_status.bytesWritten.store(0);
     m_paused.store(false);  // always start unpaused
@@ -213,6 +214,14 @@ void CaptureManager::StopRecording(bool normal) {
             Say(b);
         }
         if (m_drainHook) m_drainHook(0);
+        const double mbs = m_speed.MBs();
+        if (mbs > 0.0) {
+            char b[160];
+            snprintf(b, sizeof(b), "This disk wrote %.0f MB/s on this run (%.1f GB, busy time)",
+                     mbs, m_speed.Bytes() / 1.0e9);
+            Say(b);
+            if (m_speedReport) m_speedReport(m_writer->Path(), mbs);
+        }
     }
 
     // Phase 135.1: a failed write left frames in RAM that will never
@@ -633,8 +642,12 @@ void CaptureManager::WriterLoop() {
             if (t >= m_slowStartSec && (m_slowDurSec < 0.0 || t < m_slowStartSec + m_slowDurSec))
                 Sleep((DWORD)slowMs);
         }
+        const auto tw0 = std::chrono::steady_clock::now();
         bool ok = m_writer->WriteFrame(slot->data, slot->dataSize,
                                       slot->timestampUs, realSharp);
+        // 2026-11-22: the disk's own speed, from the time spent writing.
+        m_speed.Add((double)slot->dataSize,
+                    std::chrono::duration<double>(std::chrono::steady_clock::now() - tw0).count());
         m_writeBuffer.Pop();
 
         if (ok) {

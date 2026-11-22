@@ -13,6 +13,7 @@
 // completely decoupled from the capture thread.
 // ============================================================
 
+#include "DiskBudget.h"
 #include "WriteBuffer.h"
 #include "SERWriter.h"
 #include "FITSWriter.h"
@@ -322,6 +323,13 @@ public:
         m_logFn = std::move(cb);
     }
     uint64_t BufferPending()  const { return m_writeBuffer.Pending(); }
+    // The write buffer's size in bytes (slots x slot size), once allocated.
+    double   BufferBytes()    const { return (double)m_writeBuffer.NumSlots() * (double)m_writeBuffer.SlotCapacity(); }
+    // 2026-11-22 (core/DiskBudget.h): what the output disk showed it can
+    // write on the last run, MB/s, from the writer's busy time; 0 when too
+    // little was written to tell. Called with it after each run's writer
+    // has finished, on the thread that stopped the run.
+    void SetWriteSpeedReport(std::function<void(const std::string& path, double mbs)> f) { m_speedReport = std::move(f); }
     uint64_t BufferTotal()    const { return (uint64_t)m_writeBuffer.NumSlots(); }
 
     uint32_t LimitFrames()    const { return m_config.limitFrames; }
@@ -369,6 +377,8 @@ private:
     std::atomic<bool> m_writerRunning{false};
     std::atomic<bool> m_writerDone{true};      // set by WriterLoop as it returns
     std::function<void(uint64_t)> m_drainHook;
+    WriteSpeedMeter m_speed;   // written by the writer thread, read after it is joined
+    std::function<void(const std::string&, double)> m_speedReport;
     // Push failures repeat every frame; report the reason once.
     std::atomic<bool> m_pushFailureReported{false};
     std::atomic<bool> m_paused{false};         // Phase 41: pause without closing SER

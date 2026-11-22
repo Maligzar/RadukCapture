@@ -78,9 +78,11 @@ Each was read from the night's log and screenshots. Where noted, it was checked 
 
     **Fixed in 3.3.51:** while the writer drains, `CaptureManager` calls a hook every 200 ms. It feeds the mount's heartbeat, keeps Windows' message check alive (`PeekMessage`, removing nothing, so no click reaches a half-finished run), and shows `finishing the recording: N frames still to write` in the title. The log says how many frames waited and how long the drain took. Gated by `capture_write_fail` section 1b.
 
-    **Still open:**
-    - warn at the start of a run when its data rate (frame size x fps) is more than the output disk has shown it can write;
-    - say in the camera panel that 1280 is about 4.5 times 640's rate.
+    **Also fixed, in 3.3.52** (`core/DiskBudget.h`, test `disk_budget`):
+    - **Measuring each disk.** The writer measures what each disk writes from its busy time and keeps it per drive in `rig.ini` `[DiskSpeed]`. The figure moves halfway to each new run's measurement.
+    - **Warning before the run.** A run needing more than 95% of its disk's figure is warned at the start, with the rate, the disk's figure and when the buffer fills. Replayed on the night, that is 280 MB/s against S:, with the buffer full in about 54 s at 95 MB/s.
+
+    **Still open:** say in the camera panel that 1280 is about 4.5 times 640's rate.
 
 ## What went right (for the record)
 
