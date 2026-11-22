@@ -607,25 +607,18 @@ private:
             }
         }
 
-        // Phase 167.5 (2026-11-22, 23:10): judge the sweep before fitting
-        // anything to it. A sky that changed between the outward and return
-        // passes, or scores with no peak above their noise, fit to a position
-        // that means nothing; tonight that was 2,700 steps inward of a start
-        // already in focus. Back to the start, and say why.
+        // Phase 167.5 (2026-11-22, 23:10): the sweep's own figures, logged
+        // for every sweep but NOT acted on. As rules they failed good sweeps
+        // in CI: a planet's coarse score is flat near focus (app_headless,
+        // 3% spread), and a large backlash makes the outward and return
+        // passes differ 2x (af_overshoot). The night's fade is caught by the
+        // A/B's FadedTooFar below. Real-sky figures from this line will say
+        // whether a threshold exists that separates a fade from backlash.
         {
             const SweepJudgement sj = JudgeSweep(outScore, backScore);
-            Emit("[AF] Sweep check: out/back median ratio %.2f, spread %.0f%%: %s\n",
-                 sj.medianRatio, 100.0f * sj.spread, sj.usable ? "usable" : sj.why.c_str());
-            if (!sj.usable) {
-                m_diag.sweepVoid = sj.why;
-                if (!GoOneSided(m_startPosition)) {
-                    Finish(false, m_startPosition, 0.0f, startSharpness, MoveFailure());
-                    return;
-                }
-                const std::string msg = sj.why + " - left at the start; try again when the sky is steady";
-                Finish(false, m_startPosition, 0.0f, startSharpness, msg.c_str());
-                return;
-            }
+            Emit("[AF] Sweep check (logged, not acted on): out/back median ratio %.2f, spread %.0f%%%s%s\n",
+                 sj.medianRatio, 100.0f * sj.spread, sj.usable ? "" : " - would flag: ",
+                 sj.usable ? "" : sj.why.c_str());
         }
 
         // ── Fit parabola to find best position ────────────────
