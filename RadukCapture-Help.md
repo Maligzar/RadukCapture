@@ -333,6 +333,7 @@ emergency stop.
 | `Shift+H` | Close or reopen the **histogram window**. Open at startup. |
 | `Shift+Q` | Close or reopen the **sharpness window**. Open at startup. |
 | `Shift+D` | Close or reopen the **status window** — capture health and free space on every drive. |
+| `Ctrl+Shift+R` | **Report a problem to Claude** — describe what happened, press SEND, and carry on; the app gathers the evidence and sends it to Claude Code on this PC (3.3.44). Also REPORT on the left rail. |
 | `Shift+W` | Close or reopen the **weather window** — the whole reading (cloud, temperature, humidity, wind, gusts, dew, pressure, seeing, verdict), where it came from and how old, and ↻ REFRESH (3.3.45). `W` alone is still the advisories. |
 | `Shift+R` | Close or reopen the **SKY RUN window** — start, watch and stop the unattended test night (3.3.45). `R` alone is still the reticle. |
 | `Shift+A` | **ADC alignment window** — for dialling in a dispersion corrector. Inert unless *ADC fitted* is ticked on the READY screen. Until phase 132.7 this key also started or stopped autofocus. |
@@ -1872,6 +1873,34 @@ such a page cannot know.
   then refuses every connection rather than accept it. Delete the line and
   restart to have a new one generated.
 - **Connecting from another machine:** see the next section.
+
+### Reporting a problem to Claude (REPORT, `Ctrl+Shift+R`, 3.3.49)
+
+When something goes wrong at the scope, press **REPORT** on the left rail (or `Ctrl+Shift+R`). Say what you did, what you saw and what you expected, and press **SEND**. The window closes straight away, so you can get back to the telescope.
+
+Behind the scenes, the app:
+1. **Saves a report** in `<data root>\reports\<date_time>\`:
+   - your words;
+   - what the app was doing: target, profile, exposure, focuser, mount, lock, recording;
+   - the log's last 4000 lines;
+   - your `rig.ini`;
+   - screenshots of its windows, unless you untick that.
+2. **Removes your site and anything secret before anything leaves the PC:** the site lines in the log and `rig.ini`, the Dash token, keys, passwords and Leoben's address.
+3. **Sends it to Claude Code on this PC** (`tools\sky_handoff.py`). The report goes on its own branch, `report/<date_time>`, without the screenshots. Claude Code then looks into it, fixes the cause if the evidence is clear, and opens a draft pull request for you to review. It never merges.
+4. **A notice says how it went:** sent; saved but not sent, and why; or kept on the PC if you're running with `Offline=1`.
+
+Sending needs Python, git and Claude Code on this PC, and the app built from a clone of the repository (it finds the tools there). Without them, the report is still saved, and the notice says where.
+
+### Developing at the scope with Claude (3.3.49)
+Two tools make a night outside a working session with Claude, on master for every night:
+
+- **REPORT** (above) sends what went wrong, with the log and the app's state, without copying anything by hand. Each step is logged under `[REPORT]`: opened, shown at where, sent or not and why.
+- **`try_branch.bat`** builds a fix Claude has just pushed, in a few minutes, without waiting for its CI and merge (about an hour each):
+  - `try_branch.bat claude/<the branch>`: switch to the branch and build it.
+  - `try_branch.bat`: pull the branch you are on again and rebuild, after Claude pushes a correction.
+  - `try_branch.bat master`: back to master, up to date, and build.
+
+  The build closes RadukCapture, so never run it mid-recording. If git refuses because of local changes, nothing is switched or lost; paste the message to Claude. A test build is never merged as it is. The fixes in it reach master through their own PRs, after CI.
 
 ### The weather window (`Shift+W`, 3.3.45)
 
@@ -3599,6 +3628,7 @@ un-soak.ps1` runs the emulator for hours through GoTo, lock, autofocus and runs,
 | 3.3.45 | 166.0, 156.2c, 166.1, 166.2, 166.3, 156.4 | **The SKY RUN window, in the app (`Shift+R`).** It shows where the run is, the step running, every reason it won't start, and the plan with each group's and each item's status, with START and STOP (STOP parks). Dash's card now mirrors it. Your rule is written down and checked: the app is the instrument, and Dash is the remote for an iPhone or iPad and the test harness. CI reads every command Dash can send and fails if one has no control in the app itself, unless an open stage owes it; none is owed now. **The weather window (`Shift+W`, 166.1):** the whole reading, in °F and mph with °C and m/s, its source and age, and ↻ REFRESH, which Dash's button now mirrors. **Dash no longer makes things up (166.3):** the NASA / EVENTS and FAA / WILDFIRE panels (fixed lists written into the page, not data), the data-source lights for sources nothing asked, the wind score's deductions written for one telescope, and the forecast's assumed 10 mph wind are gone; a calm night's wind score is now 100. **Park's state on the mount window's PARK button (166.2):** PARKING..., PARKED, PARK FAILED (with the reason) or PARK (unset); before this, only Dash showed it. **Sending a night to Claude (156.4):** `tools\sky_handoff.py` takes any night: a sky run (the checklist marked from its results), a normal imaging night, or a Dash test night with Playwright's report. It bundles the summary, log lines, recordings list, Autorun rankings and validation log, commits them on the night's own branch in a separate worktree, pushes, and starts Claude Code to write the findings and open a draft pull request. It never merges. The log gives the exact command after a sky run and when the app closes. Also fixed: the sky run's log lines said `[SKYRUN]` twice. Gated by `sky_run_view`, `weather_view`, Dash's `dash-honest.spec.js`, `command_palette`, the parity check, the bundle and hand-off self-tests (a throwaway git repo and a stand-in for Claude), and `tests/scenarios/sky-run-refused.scn`, `sky-run-window.scn` and `weather-window.scn`. |
 | 3.3.47 | 172 (fix) | **PLANET LOCK no longer overshoots and gives up after a long centring.** On 2026-11-22 a lock started with Saturn 480 px off centre on the full frame: while both axes ran at their correction limits, the guider's integral term kept adding up the large error, so at the centre it was still pushing hard, carried the planet 146 px past and abandoned the lock ("corrections were making it worse"). The integral now holds still while an axis is at its limit, and works as before once near the centre, where it absorbs a tracking rate that has gone stale over a long lock. Gated by `guide_windup`, which replays that night's numbers through a model of the mount. Also: the status bar said `RAW8` whatever the bit depth; it now shows what the camera is set to and records (the files were always right). |
 | 3.3.48 | 167.5 | **Autofocus no longer keeps a fit made from a fade.** At the scope on 2026-11-22 Saturn faded about fourfold in haze halfway through a sweep, and autofocus moved 2,700 steps away from a start that was already in focus. Now, when the start re-measures at under half what it read before the sweep **and** the sweep's outward and return passes disagreed (they did by 3 times that night), the start stands and the log says `the curve was the fade`. A steady fade through a sweep that stays consistent still keeps its result, which is right. A sweep kept only because the sky changed no longer sets the focus readout's reference, which had made a focused planet read OUT. The status bar and Dash now say **APP (lock)** while PLANET LOCK drives the mount. Gated by `af_sweep_judge`. |
+| 3.3.49 | 171 | **REPORT: tell Claude what went wrong, from the app.** A **REPORT** button on the left rail (above HELP), `Ctrl+Shift+R`, or the command palette opens a small window: describe the problem and press SEND, and the window closes at once. The app saves your words, what it was doing, its windows' screenshots, the log's last 4,000 lines and your `rig.ini`, with the site, the Dash token, keys, passwords and Leoben's address removed, and hands it to Claude Code on this PC (`tools\sky_handoff.py`, its own `report/<time>` branch, screenshots never committed, a draft PR, never merged). A notice says whether it went. The rail buttons are 44 px tall (were 50) to fit it. Also written: the plans for phase 169 (manual focus, one behaviour from every control, including absolute moves dropped while the focuser moves) and 170 (auto-exposure settles on its own path). Gated by `problem_report`, `toolbar_layout`, `command_palette` and the hand-off's self-test.. **And for developing outside:** the REPORT window is now always on top (on 2026-11-22 it opened behind the always-on-top panels and seemed to do nothing), every step is logged under `[REPORT]`, and `try_branch.bat` builds a branch Claude has pushed, and goes back to master afterwards (see *Developing at the scope with Claude*). |
 
 ---
 

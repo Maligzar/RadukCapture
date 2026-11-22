@@ -144,6 +144,7 @@ public:
     // Shift+D — the stand-alone status window (disk, buffer, FPS, lost).
     void SetStatusToggleHandler(std::function<void()> h) { m_onStatusToggle = h; }
     void SetSkyRunToggleHandler(std::function<void()> h) { m_onSkyRunToggle = h; }   // phase 156.2c
+    void SetReportHandler(std::function<void()> h)       { m_onReport = h; }        // phase 171
     void SetWeatherToggleHandler(std::function<void()> h) { m_onWeatherToggle = h; } // phase 166.1
     void SetJogHandler(std::function<void(int,int,bool)> h)  { m_onJog              = h; }
     void SetAutofocusToggleHandler(std::function<void()> h)  { m_onAutofocusToggle  = h; }
@@ -326,6 +327,7 @@ private:
     std::function<void()>               m_onADCAlign;
     std::function<void()>               m_onStatusToggle;
     std::function<void()>               m_onSkyRunToggle;
+    std::function<void()>               m_onReport;
     std::function<void()>               m_onWeatherToggle;
     std::function<void(int,int,bool)>   m_onJog;
     std::function<void()>               m_onAutofocusToggle;

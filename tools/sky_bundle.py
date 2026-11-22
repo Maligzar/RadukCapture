@@ -8,6 +8,10 @@ Three kinds of night go through it the same way (the owner, 2026-11-21):
              the recordings, Autorun's rankings and the validation log
   dash-test  a night with Dash's Playwright suite run against the app: as
              imaging, plus Playwright's report
+  report     the troubleshooting button (phase 171): the owner's words and
+             the app's state in report.json, written by the app with the
+             site and secrets already removed, plus the log's last lines,
+             rig.ini (redacted) and screenshots
 
 Into the folder it writes:
 
@@ -257,6 +261,32 @@ def bundle_night(night, out_root, log_path=None, logs_dir=None, captures_dir=Non
     return out_dir, ["bundle.json", "summary.md", "log_excerpt.txt", "recordings.txt"] + more
 
 
+def bundle_report(report_dir):
+    """A troubleshooting report's bundle, in the folder the app wrote."""
+    with open(os.path.join(report_dir, "report.json"), encoding="utf-8") as f:
+        rep = json.load(f)
+    if rep.get("format") != "raduk-problem-report":
+        raise ValueError(f"{report_dir} is not a troubleshooting report")
+    stamp = rep.get("stamp", os.path.basename(os.path.normpath(report_dir)))
+    out = [f"# Problem report {stamp}", ""]
+    out.append(f"- App {rep.get('app', '?')}" + (" (emulator)" if rep.get("emulator") else "") +
+               f", night {rep.get('night', '?')}")
+    out += ["", "## What the owner said", "", rep.get("description", "").strip() or "(nothing written)", ""]
+    st = rep.get("state") or {}
+    if st:
+        out += ["## The app at the time", ""]
+        out += [f"- {k}: {v}" for k, v in st.items()]
+        out.append("")
+    files = sorted(n for n in os.listdir(report_dir) if n not in ("bundle.json", "summary.md"))
+    out += ["## In this folder", ""] + [f"- `{n}`" for n in files]
+    out += ["", "The site, the Dash token and any key, secret or password were removed by the app before this was written."]
+    write_text(os.path.join(report_dir, "summary.md"), "\n".join(out) + "\n")
+    write_text(os.path.join(report_dir, "bundle.json"),
+               json.dumps({"format": "raduk-night-bundle", "version": 1, "kind": "report", "night": rep.get("night", ""),
+                           "stamp": stamp, "emulator": bool(rep.get("emulator"))}, indent=1) + "\n")
+    return stamp, ["bundle.json", "summary.md"]
+
+
 def self_test():
     fails = []
 
@@ -374,6 +404,27 @@ def self_test():
         except ValueError:
             ok(True, "a night that is not YYYYMMDD is refused")
         ok(night_of("20261122_013000") == "20261121" and night_of("20261121_221500") == "20261121", "after midnight is the night before")
+    # Phase 171: a troubleshooting report.
+    with tempfile.TemporaryDirectory() as d:
+        rd = os.path.join(d, "reports", "20261122_021500")
+        os.makedirs(rd)
+        json.dump({"format": "raduk-problem-report", "version": 1, "stamp": "20261122_021500", "night": "20261121",
+                   "app": "3.3.44", "emulator": False, "description": "Autofocus took Saturn to a donut",
+                   "state": {"target": "Saturn", "focuser": "168655"}, "files": ["log_tail.txt"]},
+                  open(os.path.join(rd, "report.json"), "w"))
+        open(os.path.join(rd, "log_tail.txt"), "w").write("[AF] x\n")
+        stamp, w = bundle_report(rd)
+        sm = open(os.path.join(rd, "summary.md")).read()
+        ok(stamp == "20261122_021500" and json.load(open(os.path.join(rd, "bundle.json")))["kind"] == "report",
+           "a report: bundle.json says so")
+        ok("Autofocus took Saturn to a donut" in sm and "- target: Saturn" in sm and "`log_tail.txt`" in sm,
+           "its summary: the owner's words, the state, the files")
+        json.dump({"format": "x"}, open(os.path.join(rd, "report.json"), "w"))
+        try:
+            bundle_report(rd)
+            ok(False, "a folder that is not a report is refused")
+        except ValueError:
+            ok(True, "a folder that is not a report is refused")
     print("\n" + ("SOME CHECKS FAILED" if fails else "ALL CHECKS PASSED"))
     return 1 if fails else 0
 
