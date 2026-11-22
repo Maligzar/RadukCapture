@@ -9,6 +9,9 @@ Three kinds of night, the same way (the owner, 2026-11-21):
     python tools/sky_handoff.py <data root>/field-results/<night> --night <YYYYMMDD>
         --captures <capture folder> [--dash tests/web/results/dash-results.json] [options]
 
+  A troubleshooting report (the app's REPORT button writes the folder):
+    python tools/sky_handoff.py <data root>/reports/<stamp> [--logs <logs folder>] [--rig <rig.ini>]
+
   options: [--log <raduk_log.txt>] [--logs <logs folder>] [--rig <rig.ini>]
            [--no-claude] [--dry-run]
 
@@ -76,7 +79,19 @@ def handoff(night_dir, repo, log=None, logs=None, rig=None, use_claude=True, dry
             say=print, work_root=None, night=None, captures=None, dash=None):
     """Returns 'emulator', 'offline', 'pushed' (Claude missing or failed), 'handed-off' or 'dry-run'."""
     results = os.path.join(night_dir, "results.json")
-    if os.path.isfile(results):
+    stamp = ""
+    if os.path.isfile(os.path.join(night_dir, "report.json")):
+        # Phase 171: the troubleshooting button's report.
+        stamp, written = sky_bundle.bundle_report(night_dir)
+        with open(os.path.join(night_dir, "bundle.json"), encoding="utf-8") as f:
+            night = json.load(f).get("night", "") or night or ""
+        kind = "report"
+        if logs:
+            for name in sorted(os.listdir(logs)) if os.path.isdir(logs) else []:
+                if night and name.startswith(f"validation_{night}_") and name.endswith(".json"):
+                    shutil.copyfile(os.path.join(logs, name), os.path.join(night_dir, name))
+                    written.append(name)
+    elif os.path.isfile(results):
         with open(results, encoding="utf-8") as f:
             res = json.load(f)
         night = res.get("night") or os.path.basename(os.path.normpath(night_dir))
@@ -93,7 +108,8 @@ def handoff(night_dir, repo, log=None, logs=None, rig=None, use_claude=True, dry
         kind = "dash-test" if dash else "imaging"
     say(f"[HANDOFF] {kind} {night}: bundle: {', '.join(written)}")
     # One branch per night and kind; a rerun builds on what it pushed before.
-    branch = f"field/{night}" + {"sky-run": "", "imaging": "-imaging", "dash-test": "-dash"}[kind]
+    branch = (f"report/{stamp}" if kind == "report" else
+              f"field/{night}" + {"sky-run": "", "imaging": "-imaging", "dash-test": "-dash"}[kind])
     if dry_run:
         say(f"[HANDOFF] dry run: would make {branch} from origin/master, commit the bundle and the checklist, push, and start Claude Code")
         return "dry-run"
@@ -110,10 +126,17 @@ def handoff(night_dir, repo, log=None, logs=None, rig=None, use_claude=True, dry
     git(repo, "worktree", "add", "-B", branch, work, base)
     if again:
         say(f"[HANDOFF] {branch} was pushed before: this run adds to it")
-    dest = os.path.join(work, "field-results", night)
+    dest = os.path.join(work, "field-results", "reports", stamp) if kind == "report" else \
+        os.path.join(work, "field-results", night)
     os.makedirs(dest, exist_ok=True)
+    if kind == "report":
+        # The screenshots stay in the worktree for Claude to look at, and out
+        # of every commit (its own too), so the repository does not grow by images.
+        with open(os.path.join(dest, ".gitignore"), "w", encoding="utf-8") as f:
+            f.write("*.png\n")
     for name in os.listdir(night_dir):
-        if name in BUNDLE_FILES or (name.startswith(("validation_", "autorun_")) and name.endswith((".json", ".txt"))):
+        if kind == "report" or name in BUNDLE_FILES or \
+                (name.startswith(("validation_", "autorun_")) and name.endswith((".json", ".txt"))):
             shutil.copyfile(os.path.join(night_dir, name), os.path.join(dest, name))
     if kind == "sky-run":
         upd = subprocess.run([sys.executable, os.path.join(work, "tools", "sky_checklist_update.py"),
@@ -124,8 +147,10 @@ def handoff(night_dir, repo, log=None, logs=None, rig=None, use_claude=True, dry
         msg = f"Sky run {night}: the bundle, and the checklist marked from it"
     else:
         say("[HANDOFF] checklist: not marked (only a sky run's results mark it)")
-        msg = ("Dash test night" if kind == "dash-test" else "Imaging night") + f" {night}: the bundle"
+        msg = ({"dash-test": "Dash test night", "report": "Problem report"}.get(kind, "Imaging night") +
+               f" {stamp or night}: the bundle")
     git(work, "add", "-A")
+
     if not git(work, "status", "--porcelain"):
         say("[HANDOFF] nothing new to commit: the bundle is as it was")
     else:
@@ -144,8 +169,12 @@ def handoff(night_dir, repo, log=None, logs=None, rig=None, use_claude=True, dry
         return "pushed"
     # One line: on Windows `claude` is an npm .cmd shim, and cmd.exe ends an
     # argument at its first newline, so the prompt itself stays in the file.
-    prompt = (f"Read tools/sky_handoff_prompt.md and do what it says for the night {night}, a {kind} night: "
-              f"{{NIGHT}} in it means {night}.")
+    if kind == "report":
+        prompt = (f"Read tools/sky_handoff_prompt.md and do what it says for the problem report {stamp}: "
+                  f"its folder is field-results/reports/{stamp}, and {{NIGHT}} in it means {night}.")
+    else:
+        prompt = (f"Read tools/sky_handoff_prompt.md and do what it says for the night {night}, a {kind} night: "
+                  f"{{NIGHT}} in it means {night}.")
     r = subprocess.run([shutil.which(claude), "-p", prompt, "--permission-mode", "acceptEdits",
                         "--allowedTools", ALLOWED_TOOLS], cwd=work, capture_output=True, text=True)
     with open(os.path.join(night_dir, "handoff.log"), "w", encoding="utf-8") as f:
@@ -282,6 +311,28 @@ def self_test():
         said = []
         r = handoff(img, clone, log=logp, captures=caps, night="20261122", say=said.append, use_claude=False, work_root=d)
         ok(r == "pushed" and any("pushed before" in x for x in said), "run again: it builds on the branch it pushed, no rejected push")
+
+        # Phase 171: a troubleshooting report from the app's REPORT button.
+        rep = os.path.join(d, "data", "reports", "20261122_021500")
+        os.makedirs(rep)
+        with open(os.path.join(rep, "report.json"), "w") as f:
+            json.dump({"format": "raduk-problem-report", "version": 1, "stamp": "20261122_021500",
+                       "night": "20261121", "app": "3.3.44", "description": "Autofocus took Saturn to a donut",
+                       "state": {"target": "Saturn"}, "files": ["log_tail.txt", "screen_main.png"]}, f)
+        with open(os.path.join(rep, "log_tail.txt"), "w") as f:
+            f.write("[AF] Fine pass\n")
+        with open(os.path.join(rep, "screen_main.png"), "wb") as f:
+            f.write(b"\x89PNG fake")
+        said = []
+        r = handoff(rep, clone, say=said.append, use_claude=False, work_root=d)
+        ok(r == "pushed", "a report: bundled and pushed", said[-1] if said else "")
+        files = subprocess.run(["git", "-C", origin, "ls-tree", "-r", "--name-only", "report/20261122_021500"],
+                               capture_output=True, text=True).stdout.split()
+        ok("field-results/reports/20261122_021500/report.json" in files and
+           "field-results/reports/20261122_021500/summary.md" in files, "on its own branch, report/<stamp>")
+        ok(not any(f.endswith(".png") for f in files), "the screenshots are not committed")
+        ok(os.path.isfile(os.path.join(d, "report-20261122_021500", "field-results", "reports", "20261122_021500",
+                                       "screen_main.png")), "but they are in the worktree for Claude to look at")
     print("\n" + ("SOME CHECKS FAILED" if fails else "ALL CHECKS PASSED"))
     return 1 if fails else 0
 

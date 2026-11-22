@@ -121,6 +121,8 @@
 #include "app/SkyRunController.h"     // phase 156.2a: the unattended sky run
 #include "gui/StatusWindow.h"
 #include "gui/LinesWindow.h"       // phases 156.2c, 166.1: SKY RUN and the weather, in the app
+#include "gui/ReportDialog.h"      // phase 171: report a problem to Claude
+#include "core/ProblemReport.h"
 #include "app/WeatherView.h"
 #include "app/SkyRunView.h"         // phase 156.2c: what the SKY RUN window says
 #include "gui/ConfirmToast.h"
@@ -7717,6 +7719,146 @@ static int RunApp(bool useEmulator) {
     // Phase 49: Help toggle — toolbar [?] button and ? key
     auto doHelp = [&]() { helpWindow.Toggle(); };
     toolbar.SetHelpCallback([&]()       { doHelp(); });
+    // ── Phase 171: report a problem to Claude ─────────────────
+    // The owner, 2026-11-22: describe the issue, close the window, and
+    // the app builds the file and sends it to Claude. The words, the
+    // app's state and the screenshots are taken here, on the UI thread,
+    // the moment SEND is pressed; the log, rig.ini (both with the site and
+    // secrets removed, core/ProblemReport.h) and the hand-off
+    // (tools/sky_handoff.py: a report/<stamp> branch, pushed, Claude Code
+    // started on this PC) run behind, and a notice says how it went.
+    struct ReportNotices { std::mutex mx; std::vector<std::pair<bool, std::wstring>> q; };
+    static ReportNotices reportNotices;
+    static raduk::gui::ReportDialog reportDialog;
+    reportDialog.Create(window.Handle());
+    auto reportNotice = [](bool warn, const std::wstring& t) {
+        std::lock_guard<std::mutex> lk(reportNotices.mx);
+        reportNotices.q.push_back({warn, t});
+    };
+    auto sendReport = [&](const std::wstring& text, bool shots) {
+        namespace rep = raduk::core::report;
+        SYSTEMTIME lt; GetLocalTime(&lt);
+        char stampBuf[32];
+        snprintf(stampBuf, sizeof stampBuf, "%04d%02d%02d_%02d%02d%02d",
+                 lt.wYear, lt.wMonth, lt.wDay, lt.wHour, lt.wMinute, lt.wSecond);
+        rep::ReportState st;
+        st.stamp = stampBuf;
+        st.night = val::NightOf(lt.wYear, lt.wMonth, lt.wDay, lt.wHour);
+        st.version = RADUK_VERSION_A;
+#ifdef RADUK_EMULATOR
+        st.emulator = true;
+#endif
+        auto add = [&](const char* k, const std::string& v) { st.fields.push_back({k, v}); };
+        char b[96];
+        add("target", targetNow());
+        if (const auto* ap = profiles.Active()) add("profile", ap->name);
+        add("camera", cam.IsOpen() ? "open" : "not open");
+        if (cam.IsOpen()) {
+            snprintf(b, sizeof b, "%.2f ms, gain %ld", cam.GetControlValue(ControlId::ExposureUs) / 1000.0,
+                     (long)cam.GetControlValue(ControlId::Gain));
+            add("exposure", b);
+        }
+        snprintf(b, sizeof b, "%dx%d %d-bit", roiWidth, roiHeight, roiBits);
+        add("frame", b);
+        snprintf(b, sizeof b, "%.1f fps, %u dropped", capture.Stats().fps.load(),
+                 (unsigned)capture.Stats().droppedFrames.load());
+        add("capture", b);
+        add("recording", capturer.IsRecording() ? "yes" : "no");
+        add("auto exposure", ae.IsAuto() ? "auto" : "manual");
+        add("focuser", focuser.IsOpen() ? std::to_string(focuser.GetPosition()) + (focuser.IsMoving() ? " (moving)" : "")
+                                         : std::string("not open"));
+        add("autofocus", core.afCtl.Busy() ? "running" : "idle");
+        add("mount", mount && mount->IsConnected() ? (mount->IsSlewing() ? "slewing" : "connected") : "not connected");
+        add("tracker", raduk::core::AcquisitionStageName(tracker.Stage()));
+        add("sky run", raduk::app::SkyRunController::PhaseName(skyRun.phase()));
+        add("park", raduk::app::ParkController::Name(park.state()));
+
+        const std::string dir = raduk::core::Paths::EnsureSub("reports") + "\\" + st.stamp;
+        CreateDirectoryA(dir.c_str(), nullptr);
+        if (shots) {
+            // One PNG per visible window; the dialog is already hidden.
+            const int n = raduk::gui::ShotAllWindows(raduk::core::ToWide(dir), L"screen");
+            add("screenshots", std::to_string(n));
+        }
+        const std::string desc = raduk::core::ToUtf8(text);
+        Log("[REPORT] %s: saved to %s; sending to Claude\n", st.stamp.c_str(), dir.c_str());
+        notifBar.NotifyInfo(L"Report saved; sending it to Claude in the background");
+
+        const std::string logPath = raduk::core::Paths::LogFile();
+        const std::string logsDir = raduk::core::Paths::Logs();
+        const std::string iniPath = raduk::core::RigConfig::PublicIniPath();
+        std::thread([st, desc, dir, logPath, logsDir, iniPath, reportNotice]() mutable {
+            auto readAll = [](const std::string& p) {
+                std::string out;
+                if (FILE* f = fopen(p.c_str(), "rb")) {
+                    char buf[65536]; size_t n;
+                    while ((n = fread(buf, 1, sizeof buf, f)) > 0) out.append(buf, n);
+                    fclose(f);
+                }
+                return out;
+            };
+            auto writeAll = [](const std::string& p, const std::string& t) {
+                if (FILE* f = fopen(p.c_str(), "wb")) { fwrite(t.data(), 1, t.size(), f); fclose(f); return true; }
+                return false;
+            };
+            int removed = 0;
+            writeAll(dir + "\\log_tail.txt", rep::LogTail(readAll(logPath), 4000, &removed));
+            writeAll(dir + "\\rig_redacted.ini", rep::RedactIni(readAll(iniPath)));
+            st.files = {"log_tail.txt", "rig_redacted.ini"};
+            writeAll(dir + "\\report.json", rep::ReportJson(desc, st));
+
+            // The hand-off lives in the clone the app was built from:
+            // tools\sky_handoff.py, a few folders above the exe.
+            std::string tools, base = raduk::core::Paths::ExeDir();
+            for (int up = 0; up < 5 && tools.empty(); ++up) {
+                const std::string cand = base + "\\tools\\sky_handoff.py";
+                if (GetFileAttributesA(cand.c_str()) != INVALID_FILE_ATTRIBUTES) tools = cand;
+                const size_t sl = base.find_last_of("\\/");
+                if (sl == std::string::npos) break;
+                base.resize(sl);
+            }
+            if (tools.empty()) {
+                reportNotice(true, L"Report saved in " + raduk::core::ToWide(dir) +
+                             L", but tools\\sky_handoff.py was not found beside this build: send it by hand");
+                return;
+            }
+            const std::string cmd = "python \"" + tools + "\" \"" + dir + "\" --logs \"" + logsDir + "\" --rig \"" + iniPath + "\"";
+            SECURITY_ATTRIBUTES sa{ sizeof(sa), nullptr, TRUE };
+            HANDLE out = CreateFileA((dir + "\\handoff.log").c_str(), GENERIC_WRITE, FILE_SHARE_READ, &sa,
+                                     CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+            STARTUPINFOA si{}; si.cb = sizeof(si);
+            si.dwFlags = STARTF_USESTDHANDLES;
+            si.hStdOutput = out; si.hStdError = out; si.hStdInput = nullptr;
+            PROCESS_INFORMATION pi{};
+            std::vector<char> line(cmd.begin(), cmd.end()); line.push_back('\0');
+            const BOOL ok = CreateProcessA(nullptr, line.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW,
+                                           nullptr, nullptr, &si, &pi);
+            if (out != INVALID_HANDLE_VALUE) CloseHandle(out);
+            if (!ok) {
+                reportNotice(true, L"Report saved in " + raduk::core::ToWide(dir) +
+                             L", but Python would not start: run tools\\sky_handoff.py on it by hand");
+                return;
+            }
+            WaitForSingleObject(pi.hProcess, INFINITE);
+            DWORD code = 1;
+            GetExitCodeProcess(pi.hProcess, &code);
+            CloseHandle(pi.hProcess); CloseHandle(pi.hThread);
+            // The hand-off's last [HANDOFF] line says how it ended.
+            std::string last;
+            const std::string hl = readAll(dir + "\\handoff.log");
+            for (size_t p = hl.find("[HANDOFF]"); p != std::string::npos; p = hl.find("[HANDOFF]", p + 1)) {
+                const size_t e = hl.find('\n', p);
+                last = hl.substr(p, e == std::string::npos ? std::string::npos : e - p);
+            }
+            if (!last.empty() && last.back() == '\r') last.pop_back();
+            reportNotice(code != 0, (code == 0 ? L"Report sent: " : L"Report saved, sending failed: ") +
+                         raduk::core::ToWide(last.empty() ? std::string("see handoff.log in the report folder") : last));
+        }).detach();
+    };
+    reportDialog.SetSendCallback([&](const std::wstring& text, bool shots) { sendReport(text, shots); });
+    toolbar.SetReportCallback([&]() { reportDialog.Show(); });
+    window.SetReportHandler([&]() { reportDialog.Show(); });
+
     window.SetHelpToggleHandler([&]()   { doHelp(); });
 
     // ── Phase 132.7: the command palette (Ctrl+K) ────────────
@@ -8258,6 +8400,11 @@ static int RunApp(bool useEmulator) {
                 break;
             }
             // Phase 156.2c: the SKY RUN window, as a person would use it.
+            // Phase 171: "REPORT:SEND <words>" types them and presses SEND.
+            if (a.arg.rfind("REPORT:SEND ", 0) == 0) {
+                reportDialog.ScenarioSend(raduk::core::ToWide(a.arg.substr(12)));
+                break;
+            }
             if (a.arg == "SKYRUN:SHOW") { skyRunWindow.Show(); break; }
             if (a.arg == "WEATHER:SHOW") { weatherWindow.Show(); break; }
             if (a.arg.rfind("WEATHER:", 0) == 0) {
@@ -9477,6 +9624,14 @@ static int RunApp(bool useEmulator) {
                 // Phase 156.2c: the app's own SKY RUN window. Here, not in the
                 // telemetry block, which runs only while Dash is connected.
                 skyRunWindow.Update(raduk::app::SkyRunLines(raduk::app::BuildSkyRunView(skyRun)));
+                {   // phase 171: how a report's sending went, from its thread
+                    std::vector<std::pair<bool, std::wstring>> q;
+                    { std::lock_guard<std::mutex> lk(reportNotices.mx); q.swap(reportNotices.q); }
+                    for (auto& [warn, t] : q) {
+                        Log("[REPORT] %s\n", raduk::core::ToUtf8(t).c_str());
+                        if (warn) notifBar.NotifyWarn(t); else notifBar.NotifyInfo(t);
+                    }
+                }
                 // Phase 166.1: the weather window, from the same reading the
                 // Status row and Dash use.
                 {
