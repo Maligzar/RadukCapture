@@ -122,6 +122,7 @@
 #include "gui/StatusWindow.h"
 #include "gui/LinesWindow.h"       // phases 156.2c, 166.1: SKY RUN and the weather, in the app
 #include "app/WeatherView.h"
+#include "app/SkyRunView.h"         // phase 156.2c: what the SKY RUN window says
 #include "gui/ConfirmToast.h"
 #include "gui/ADCAlignWindow.h"
 #include "core/ADCAlignment.h"
