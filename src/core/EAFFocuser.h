@@ -84,6 +84,9 @@ private:
     // relative: a MoveRelative, allowed while the position is untrusted (157.0e).
     bool Command(int position, bool oneSided, bool pastGuard, const unsigned* sequence = nullptr,
                  bool relative = false);
+    // Phase 169.1: a new move stops the one in flight and replaces it.
+    static constexpr int kReplaceWaitMs = 3000;
+    bool ReplaceMoveInFlight(int position);
     // Phase 161.0b: every move, stop, second leg and SDK call, one at a
     // time. Recursive: a move reads the position under it.
     mutable std::recursive_mutex m_cmd;

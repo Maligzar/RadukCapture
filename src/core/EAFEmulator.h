@@ -235,6 +235,10 @@ public:
     // The motor stops this many steps short of every target (a slipping
     // coupling), and reports "not moving" there.
     void SetStopsShortBy(int steps) { m_shortBy.store(steps < 0 ? 0 : steps); }
+    // Phase 169.1: refuse a motor command while moving, as the real EAF does.
+    void SetRefusesWhileMoving(bool on) { m_refusesWhileMoving.store(on); }
+    // How many moves have replaced one in flight.
+    int  ReplacedMoves() const { return m_replaced.load(); }
     // The furthest the motor has been from where it was when this was
     // last reset: what a test asserts a fault could not exceed.
     void ResetExcursion()        { m_excursionFrom.store(m_position.load()); m_excursion.store(0); }
@@ -256,6 +260,8 @@ private:
             raduk::core::CoreLog("[EAFEmulator] move to %d refused: %s\n", position, m_trust.Problem().c_str());
             return false;
         }
+        // Phase 169.1: as EAFFocuser.cpp, a new move replaces the one in flight.
+        if (!ReplaceMoveInFlight(position)) return false;
         int from = 0;
         const bool known = TryGetPosition(from);
         const int  guard = m_maxTravel.load();
@@ -279,10 +285,38 @@ private:
         return true;
     }
 
+    // Phase 169.1: the motor is free for a new move, stopping the one in
+    // flight first. The emulator's motor stops at once.
+    bool MotorBusy() const {
+        std::lock_guard<std::mutex> lk(m_mutex);
+        return m_target != m_position.load();
+    }
+    bool ReplaceMoveInFlight(int position) {
+        if (!MotorBusy()) return true;
+        const int was = m_ledger.Target();
+        m_approach.Cancel();
+        {
+            std::lock_guard<std::mutex> lk(m_mutex);
+            m_target = m_position.load();
+            m_moving = false;
+        }
+        m_ledger.Idle();
+        ++m_replaced;
+        raduk::core::CoreLog("[EAFEmulator] move to %d replaces the move in flight to %d: stopped at %d\n",
+                             position, was, m_position.load());
+        return true;
+    }
+
     // The "device": one motor command.
     bool Leg(int position) {
         if (HandleDead()) {   // phase 157.0e: unplugged
             raduk::core::CoreLog("[EAFEmulator] MoveTo %d failed: the focuser is gone\n", position);
+            return false;
+        }
+        // Phase 169.1: the real EAF answers EAF_ERROR_MOVING to a move
+        // while it moves. Off unless a test asks for it.
+        if (m_refusesWhileMoving.load() && MotorBusy()) {
+            raduk::core::CoreLog("[EAFEmulator] MoveTo %d failed: 5 (moving)\n", position);
             return false;
         }
         int left = m_refuseMoves.load();
@@ -462,6 +496,8 @@ private:
     std::atomic<int>    m_position{166500};
     int                 m_target   = 166500;
     std::atomic<bool>   m_moving{false};
+    std::atomic<bool>   m_refusesWhileMoving{false};
+    std::atomic<int>    m_replaced{0};
     bool                m_reversed = false;
     int                 m_backlash = 0;
     mutable ApproachSequencer m_approach;
