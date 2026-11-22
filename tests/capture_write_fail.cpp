@@ -128,6 +128,43 @@ int main() {
               std::to_string(w.written.load()) + " frame(s)");
     }
 
+    printf("\n1b. A slow disk: the end of the run waits live (2026-11-22, 03:07)\n");
+    {
+        // A 1280x960 16-bit run filled the write buffer on a slow disk, and
+        // StopRecording froze the window while it drained; the watchdog
+        // stopped the mount and Windows closed the app as hung. Now the
+        // wait calls the drain hook, with the frames left, until it is done.
+        CaptureManager cm;
+        CaptureConfig cfg;
+        cfg.outputDir = dir; cfg.filePrefix = "wslow";
+        cfg.limitType = LimitType::Frames; cfg.limitFrames = 100000;
+        cm.SetConfig(cfg);
+        StubWriter w;                         // 2 ms a frame: 300 frames take ~0.6 s
+        cm.SetWriterOverride(&w);
+        cm.SetFreeSpaceProbe([](const std::string&) { return UINT64_MAX; });
+        std::atomic<int> hookCalls{0};
+        std::atomic<uint64_t> firstPending{0}, lastPending{999999};
+        cm.SetDrainWaitHook([&](uint64_t pending) {
+            if (hookCalls++ == 0) firstPending = pending;
+            lastPending = pending;
+        });
+        Check(cm.StartRecording(W, H, 8), "recording starts");
+        int accepted = 0;
+        for (int i = 0; i < 300; ++i) {
+            slot.timestamp = (uint64_t)(20000 + i);
+            if (cm.SubmitFromCaptureThread(&slot)) ++accepted;
+        }
+        cm.StopRecording(true);
+        Check(hookCalls.load() >= 2, "the wait called the hook while the writer drained",
+              std::to_string(hookCalls.load()) + " calls");
+        Check(firstPending.load() > 0, "with frames still to write",
+              std::to_string(firstPending.load()));
+        Check(lastPending.load() == 0, "and told it when the writer was done");
+        Check(w.written == accepted, "every accepted frame was written",
+              std::to_string(w.written.load()) + " of " + std::to_string(accepted));
+        Check(!cm.IsRecording(), "the run is closed");
+    }
+
     printf("\n2. The disk runs low\n");
     {
         CaptureManager cm;

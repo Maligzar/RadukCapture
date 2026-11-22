@@ -3,6 +3,8 @@
 // Out-of-line definitions for CaptureManager.h.
 // ============================================================
 
+#include <chrono>
+#include <thread>
 #include "CaptureManager.h"
 #include "ThreadName.h"
 #include <cstdio>
@@ -150,7 +152,8 @@ bool CaptureManager::StartRecording(int width, int height, int bitDepth) {
 
     // Start writer thread
     m_writerRunning.store(true);
-    m_writerThread = std::thread(&CaptureManager::WriterLoop, this);
+    m_writerDone.store(false);
+    m_writerThread = std::thread([this]() { WriterLoop(); m_writerDone.store(true); });
 
     m_status.recording.store(true);
 
@@ -187,7 +190,30 @@ void CaptureManager::StopRecording(bool normal) {
 
     // Signal writer thread to finish draining and exit
     m_writerRunning.store(false);
-    if (m_writerThread.joinable()) m_writerThread.join();
+    if (m_writerThread.joinable()) {
+        // 2026-11-22: wait live, not frozen (see SetDrainWaitHook).
+        const auto t0 = std::chrono::steady_clock::now();
+        const uint64_t pending0 = m_writeBuffer.Pending();
+        if (pending0 > 0) {
+            char b[160];
+            snprintf(b, sizeof(b), "Finishing the recording: %llu frames still to write",
+                     (unsigned long long)pending0);
+            Say(b);
+        }
+        while (!m_writerDone.load()) {
+            if (m_drainHook) m_drainHook(m_writeBuffer.Pending());
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        }
+        m_writerThread.join();
+        const double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+        if (pending0 > 0 || secs > 1.0) {
+            char b[160];
+            snprintf(b, sizeof(b), "Finished writing: %llu frames were waiting, took %.1f s",
+                     (unsigned long long)pending0, secs);
+            Say(b);
+        }
+        if (m_drainHook) m_drainHook(0);
+    }
 
     // Phase 135.1: a failed write left frames in RAM that will never
     // reach this file. Counted as dropped, said, and discarded.
