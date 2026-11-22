@@ -100,6 +100,7 @@ $Tests = @(
     @{ Name = "display_stretch";   Sources = @() }
     @{ Name = "af_direction_fit";  Sources = @() }
     @{ Name = "focuser_safety";    Sources = @() }
+    @{ Name = "focus_replace";     Sources = @() }
     @{ Name = "focuser_trust";     Sources = @() }
     @{ Name = "af_exposure_window"; Sources = @() }
     @{ Name = "af_sample_window";  Sources = @() }

@@ -1,6 +1,6 @@
 # Phase 169: manual focus, one behaviour from every control (QA and rebuild)
 
-Raised by the owner at the scope, 2026-11-21: "The focuser manual commands need a QA; they do not seem to behave the same way. Maybe the features have passed the functionality and we need to rebuild the manual focus." Tech debt, after the open branches merge. Status: `PLANNED`.
+Raised by the owner at the scope, 2026-11-21: "The focuser manual commands need a QA; they do not seem to behave the same way. Maybe the features have passed the functionality and we need to rebuild the manual focus." Tech debt, after the open branches merge. Status: `PARTIAL`: 169.1's dropped-move fix `WRITTEN` (3.3.61); the rest `PLANNED`.
 
 ## Why they differ (found by reading the code, 2026-11-22)
 Each manual control reaches the focuser by its own path, and the paths have collected different rules over phases 85, 139, 157 and 161:
@@ -22,6 +22,12 @@ So a relative step and an absolute move to the same place can end at different m
 - **The panel's step buttons and the keyboard use different step sizes:** the panel's are fixed, the keyboard's come from the profile.
 - **Steps end differently from typed positions.** Relative steps never finish outward with the backlash; absolute moves do.
 - **An absolute move sent while the focuser is moving is dropped, silently.** Seen at the scope on 2026-11-21: `EAFMove(154144) failed: 5` at 18:24:12. Code 5 is `EAF_ERROR_MOVING` in the vendored `external/EAF_SDK/include/EAF_focuser.h`. `EAFFocuser::Command` (absolute: GO TO, a typed position, a profile's position) calls `EAFMove` without checking `IsMoving()`. `MoveRelative` already chains onto the move in flight. The failure is logged and nothing else: the panel looks as if it ignored the press. **169.1 fixes it:** an absolute move while moving either waits for the move to finish or stops and replaces it (one rule, the owner's choice), and the panel says which. It never drops the move without a word.
+  - **Written (3.3.61): stop and replace.** The newest command is the one meant, so it is the default and the rule can change later if the owner prefers waiting.
+  - **How.** `EAFFocuser::Command`, the one path every move takes, checks `EAFIsMoving` first. If the motor is moving it cancels the second leg, calls `EAFStop`, waits up to 3 s for the motor to rest, and only then sends the new move. It logs `move to N replaces the move in flight to M: stopped at P`, or refuses with a reason if the motor will not stop.
+  - **Relative steps were hit too.** They already computed their target from the move in flight, but then sent it while moving, so a second `F` press mid-move hit the same error. They now replace the move as well, and two presses land at the sum of both steps.
+  - **The emulator.** It has the same rule, plus `SetRefusesWhileMoving`, which reproduces the real device's error 5.
+  - **Tests.** Gated by `focus_replace` (absolute, relative, one-sided with backlash, idle).
+  - **Still owed.** The panel saying which happened: today it is in the log only.
 
 ## Stages
 1. **169.0, the QA.** Each manual control is driven on the emulator focuser, which has slack and a guard, and its logged moves are recorded. Measure the end position, the direction of the final approach, the step size, and the refusal behaviour. Do the same on the real EAF indoors. The result is a table of what each actually does, against what the Help says.

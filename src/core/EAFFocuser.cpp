@@ -5,6 +5,8 @@
 #include "EAFFocuser.h"
 #include <cstdio> 
 #include "CoreLog.h"
+#include <chrono>
+#include <thread>
 
 // Manual definitions for ZWO EAF types
 #ifndef EAF_BOOL
@@ -198,6 +200,11 @@ bool EAFFocuser::Command(int position, bool oneSided, bool pastGuard, const unsi
         raduk::core::CoreLog("[EAFFocuser] move to %d refused: %s\n", position, m_trust.Problem().c_str());
         return false;
     }
+    // Phase 169.1: the EAF refuses a move while it is moving
+    // (EAF_ERROR_MOVING, seen at the scope 2026-11-21: "EAFMove(154144)
+    // failed: 5"), and the press was dropped without a word. The newest
+    // command is the one meant: stop the move in flight and replace it.
+    if (!ReplaceMoveInFlight(position)) return false;
     int from = 0;
     const bool known = TryGetPosition(from);
     const int  guard = m_maxTravel.load();
@@ -220,6 +227,39 @@ bool EAFFocuser::Command(int position, bool oneSided, bool pastGuard, const unsi
         return false;
     }
     m_ledger.Commanded(position, leg);
+    return true;
+}
+
+// Phase 169.1: true when the motor is free for a new move (it was idle,
+// or the move in flight was stopped and the motor came to rest).
+bool EAFFocuser::ReplaceMoveInFlight(int position) {
+    bool moving = false, hand = false;
+    if (EAFIsMoving(m_focuserId, &moving, &hand) != EAF_SUCCESS || !moving) return true;
+    const int was = m_ledger.Target();
+    m_approach.Cancel();
+    EAFStop(m_focuserId);
+    const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(kReplaceWaitMs);
+    for (;;) {
+        moving = false;
+        if (EAFIsMoving(m_focuserId, &moving, &hand) == EAF_SUCCESS && !moving) break;
+        if (std::chrono::steady_clock::now() >= until) {
+            m_ledger.Idle();
+            m_ledger.Refuse(MoveRefusal::Device, 0, position, 0);
+            raduk::core::CoreLog("[EAFFocuser] move to %d refused: the move in flight did not stop within %d ms\n",
+                                 position, kReplaceWaitMs);
+            return false;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    m_ledger.Idle();
+    int at = 0;
+    const bool known = TryGetPosition(at);
+    if (was >= 0)
+        raduk::core::CoreLog("[EAFFocuser] move to %d replaces the move in flight to %d: stopped at %s\n",
+                             position, was, known ? std::to_string(at).c_str() : "an unread position");
+    else
+        raduk::core::CoreLog("[EAFFocuser] move to %d: the motor was moving (another controller?), stopped first\n",
+                             position);
     return true;
 }
 
