@@ -143,6 +143,7 @@ public:
     void SetADCAlignHandler(std::function<void()> h) { m_onADCAlign = h; }
     // Shift+D — the stand-alone status window (disk, buffer, FPS, lost).
     void SetStatusToggleHandler(std::function<void()> h) { m_onStatusToggle = h; }
+    void SetDarksHandler(std::function<void()> h)        { m_onDarks = h; }          // phase 173
     void SetSkyRunToggleHandler(std::function<void()> h) { m_onSkyRunToggle = h; }   // phase 156.2c
     void SetReportHandler(std::function<void()> h)       { m_onReport = h; }        // phase 171
     void SetWeatherToggleHandler(std::function<void()> h) { m_onWeatherToggle = h; } // phase 166.1
@@ -326,6 +327,7 @@ private:
     std::function<void()>               m_onOverlayToggle;
     std::function<void()>               m_onADCAlign;
     std::function<void()>               m_onStatusToggle;
+    std::function<void()>               m_onDarks;
     std::function<void()>               m_onSkyRunToggle;
     std::function<void()>               m_onReport;
     std::function<void()>               m_onWeatherToggle;

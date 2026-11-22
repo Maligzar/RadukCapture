@@ -132,6 +132,7 @@
 #include "core/SkyConditions.h"
 #include "gui/MountController.h"
 #include "gui/GamePad.h"          // Phase 172.0
+#include "app/DarkRunController.h"  // Phase 173
 #include "core/TrackingConfirm.h"
 #include "gui/StatusBar.h"
 #include "gui/HelpWindow.h"
@@ -4678,6 +4679,7 @@ static int RunApp(bool useEmulator) {
         }
     };
 
+    std::vector<std::string> recordedDirs;   // phase 173: this session's capture folders
     // ── Record toggle — also notifies USB manager ──────────────
     auto doRecord = [&]() {
         // Phase 113: RECORD during a sequence stops the sequence, and the
@@ -4729,6 +4731,9 @@ static int RunApp(bool useEmulator) {
             cfg.winJuposNames     = rig.winJuposNames;
             capturer.SetConfig(cfg);
             CreateDirectoryA(cfg.outputDir.c_str(), nullptr);
+            // Phase 173: RUN DARKS reads every folder recorded to tonight.
+            if (std::find(recordedDirs.begin(), recordedDirs.end(), cfg.outputDir) == recordedDirs.end())
+                recordedDirs.push_back(cfg.outputDir);
 
             // roiBits, not 8.
             //
@@ -4780,6 +4785,128 @@ static int RunApp(bool useEmulator) {
     controls.SetFullscreenToggleCallback(doFullscreen);
     controls.SetRecordStartCallback(doRecord);
 
+    // ── Phase 173: RUN DARKS ───────────────────────────────────
+    // The owner, 2026-11-22: "at the end of the night I click run darks and
+    // it runs my darks based on what is in the capture folders for the
+    // night." Ctrl+Shift+D (or the palette's "darks"): the first press reads
+    // tonight's observation records and shows the plan; the second, within a
+    // minute and with the scope capped, records each set into a Darks folder
+    // beside its lights. ESC stops it; the camera is put back either way.
+    auto nightStartUnix = []() -> int64_t {
+        // The night began at the local noon before now.
+        std::time_t t = std::time(nullptr);
+        std::tm lt{}; localtime_s(&lt, &t);
+        if (lt.tm_hour < 12) { t -= 24 * 3600; localtime_s(&lt, &t); }
+        lt.tm_hour = 12; lt.tm_min = 0; lt.tm_sec = 0;
+        return (int64_t)std::mktime(&lt);
+    };
+    auto readRecordsIn = [](const std::string& dir, const std::string& lightsFolder,
+                            std::vector<raduk::core::FoundRecord>& found) {
+        WIN32_FIND_DATAA fd{};
+        HANDLE h = FindFirstFileA((dir + "\\*_observation.txt").c_str(), &fd);
+        if (h == INVALID_HANDLE_VALUE) return;
+        do {
+            FILE* f = fopen((dir + "\\" + fd.cFileName).c_str(), "rb");
+            if (!f) continue;
+            std::string text; char buf[4096]; size_t n;
+            while ((n = fread(buf, 1, sizeof(buf), f)) > 0) text.append(buf, n);
+            fclose(f);
+            raduk::core::FoundRecord fr;
+            if (raduk::core::ParseObservation(text, fr.rec)) { fr.folder = lightsFolder; found.push_back(fr); }
+        } while (FindNextFileA(h, &fd));
+        FindClose(h);
+    };
+    auto readNightRecords = [&](std::vector<std::string> dirs) {
+        std::vector<raduk::core::FoundRecord> found;
+        const std::string current = controls.GetOutputDir();
+        if (!current.empty() && std::find(dirs.begin(), dirs.end(), current) == dirs.end())
+            dirs.push_back(current);
+        for (const auto& d : dirs) {
+            readRecordsIn(d, d, found);                                                // the lights
+            readRecordsIn(raduk::app::DarkRunController::DarksFolder(d), d, found);   // darks already taken
+        }
+        return found;
+    };
+    raduk::app::DarkRunHooks darkHooks;
+    darkHooks.capture = [&] {
+        raduk::app::DarkCameraState st;
+        st.width = roiWidth; st.height = roiHeight; st.bitDepth = roiBits;
+        st.exposureMs = cam.GetControlValue(ControlId::ExposureUs) / 1000.0;
+        st.gain = (double)cam.GetControlValue(ControlId::Gain);
+        st.aeEnabled = ae.IsEnabled(); st.aeAuto = ae.IsAuto();
+        return st;
+    };
+    darkHooks.applyFormat = [&](int w, int h, int bits) {
+        if (w == roiWidth && h == roiHeight && bits == roiBits) return true;
+        return applyFormat(w, h, bits, roiStartX + roiWidth / 2, roiStartY + roiHeight / 2, "darks");
+    };
+    darkHooks.setExposure = [&](double ms) {
+        cam.SetControlValue(ControlId::ExposureUs, (long)std::lround(ms * 1000.0));
+    };
+    darkHooks.setGain = [&](double g) {
+        cam.SetControlValue(ControlId::Gain, (long)std::lround(g));
+        controls.UpdateSlider(false, (int)std::lround(g));
+    };
+    darkHooks.setAeAuto = [&](bool on) {
+        ae.SetEnabled(on);
+        if (!on) { controls.SetAEState(0); controls.SetAEStatus(L"AE: off for the darks"); }
+    };
+    darkHooks.startDarkRecording = [&](const std::string& prefix, const std::string& folder, int frames) {
+        if (capturer.IsRecording()) return false;
+        CaptureConfig cfg = capturer.Config();
+        cfg.filePrefix = prefix;
+        cfg.outputDir = folder;
+        cfg.frameType = "Dark";
+        cfg.limitType = LimitType::Frames;
+        cfg.limitFrames = frames;
+        cfg.derotationStopSec = 0.0;
+        capturer.SetConfig(cfg);
+        CreateDirectoryA(folder.c_str(), nullptr);
+        core.recCtl.Begin(roiWidth, roiHeight, roiBits, false);
+        return capturer.IsRecording();
+    };
+    darkHooks.recording = [&] { return capturer.IsRecording(); };
+    darkHooks.restore = [&](const raduk::app::DarkCameraState& st) {
+        if (st.width > 0 && (st.width != roiWidth || st.height != roiHeight || st.bitDepth != roiBits))
+            applyFormat(st.width, st.height, st.bitDepth, roiStartX + roiWidth / 2, roiStartY + roiHeight / 2, "darks done");
+        cam.SetControlValue(ControlId::ExposureUs, (long)std::lround(st.exposureMs * 1000.0));
+        cam.SetControlValue(ControlId::Gain, (long)std::lround(st.gain));
+        controls.UpdateSlider(false, (int)std::lround(st.gain));
+        ae.SetEnabled(st.aeEnabled);
+        if (st.aeEnabled) ae.SetAuto(st.aeAuto);
+        controls.SetAEState(!st.aeEnabled ? 0 : (st.aeAuto ? 2 : 1));
+        // The lights' own settings come back for the next run.
+        CaptureConfig cfg = capturer.Config();
+        cfg.frameType = controls.GetFrameType();
+        cfg.filePrefix = controls.GetFilePrefix();
+        cfg.outputDir = controls.GetOutputDir();
+        capturer.SetConfig(cfg);
+    };
+    darkHooks.log = [](const std::string& s) { Log("%s\n", s.c_str()); };
+    static raduk::app::DarkRunController darkRun(darkHooks);
+    auto darkNow = [] {
+        return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    };
+    auto runDarks = [&]() {
+        if (darkRun.Running()) { notifBar.NotifyInfo(L"RUN DARKS is running - ESC stops it"); return; }
+        if (darkRun.Armed()) {
+            if (capturer.IsRecording()) { notifBar.NotifyWarn(L"RUN DARKS: stop the recording first"); return; }
+            if (darkRun.Confirm(darkNow())) notifBar.NotifyInfo(L"RUN DARKS: running - keep the scope capped");
+            else notifBar.NotifyWarn(L"RUN DARKS did not start - see the log ([DARKS])");
+            return;
+        }
+        const auto plan = raduk::core::PlanDarks(readNightRecords(recordedDirs), nightStartUnix());
+        const int frames = (int)GetPrivateProfileIntA("Rig", "DarkFrames", 200,
+                                                      raduk::core::RigConfig::PublicIniPath().c_str());
+        const double fps = (std::max)(1.0, (double)capture.Stats().fps.load());
+        const std::string text = darkRun.Arm(plan, frames > 0 ? frames : 200, fps, darkNow());
+        if (plan.lightsUnusable > 0)
+            Log("[DARKS] %d light record(s) had no exposure, gain or frame size and were left out\n", plan.lightsUnusable);
+        if (darkRun.Armed()) notifBar.NotifyWarn(raduk::core::ToWide(text));
+        else notifBar.NotifyInfo(raduk::core::ToWide(text));
+    };
+    window.SetDarksHandler(runDarks);
+
     // Auto-stack hangs off the recording COMPLETING, not off the button.
     // A planned capture ends by reaching its frame limit inside
     // SubmitFrame, so a button hook would almost never fire. 'normal' is
@@ -4797,7 +4924,8 @@ static int RunApp(bool useEmulator) {
         // AutoStakkert act on it here.
         const auto c = core.recCtl.Complete(path, normal,
                                             raduk::core::RigConfig::Get().autoStackOnStop,
-                                            autorun.Running() || moonMap.runner.Running() || skyRec.active.load(),
+                                            autorun.Running() || moonMap.runner.Running() || skyRec.active.load() ||
+                                                darkRun.Running(),   // phase 173: never stack darks
                                             raduk::core::IsFitsCapture(path));
         // Phase 113: anything but a normal end stops a sequence, whoever
         // did it: Escape, a format change, the hardware going away.
@@ -5743,6 +5871,7 @@ static int RunApp(bool useEmulator) {
         gotoPanel.StopSatellite("emergency stop");
         autorun.Abort("emergency stop");
         moonMap.Stop("emergency stop");   // phase 162
+        darkRun.Stop("emergency stop");   // phase 173
         nightPlan.Stop("emergency stop"); // phase 163
         park.Unpark("emergency stop");    // phase 156.2a: cancels a park slew
         skyRun.Abort("emergency stop", core.Clock().Now());   // and the run, without a park
@@ -10641,6 +10770,7 @@ static int RunApp(bool useEmulator) {
                         preview.QuickLookReason());
             }
 
+            darkRun.Tick(darkNow());   // phase 173
             lastReadout = now;
         }
     });
