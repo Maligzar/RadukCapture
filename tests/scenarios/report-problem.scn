@@ -1,0 +1,16 @@
+# Phase 171: the troubleshooting button. The owner describes a problem and
+# presses SEND; the window closes and the app saves the report (the words,
+# its state, the log's last lines and rig.ini with the site and secrets
+# removed, and screenshots) and starts the hand-off to Claude Code in the
+# background. In the emulator's sandbox the hand-off is not expected to
+# reach Claude; the scenario checks the report is saved and the send is
+# started.
+
+name    Report a problem: saved and handed off from the app
+timeout 90
+
+expect 30  [SCENARIO] Report
+wait   3
+press  REPORT:SEND The scenario's test report: autofocus went out of focus
+expect 15  [REPORT]
+shot   after-send

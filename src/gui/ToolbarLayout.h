@@ -49,7 +49,8 @@ enum ToolbarCmd : int {
     ID_TB_RUNS      = 3024,   // Phase 113: a sequence of runs
     ID_TB_STATS     = 3025,   // Phase 124: every session, in the browser
     ID_TB_MOON      = 3026,   // Phase 162b: the Moon map, which had no button
-    ID_TB_LAST      = 3026,
+    ID_TB_REPORT    = 3027,   // Phase 171: describe a problem; it goes to Claude Code
+    ID_TB_LAST      = 3027,
 };
 
 static constexpr int kToolbarButtons = ID_TB_LAST - ID_TB_FIRST + 1;
@@ -97,6 +98,7 @@ static constexpr ToolbarItem kRailItems[] = {
     { ID_TB_DASH,  L"DASH",   L"DASH",   L'\xE9D9' },
     { ID_TB_AI,    L"AI",     L"AI",     L'\xE8BD' },
     { ID_TB_HW,    L"HW OFF", L"HW OFF", L'\xE950' },
+    { ID_TB_REPORT, L"REPORT", L"REPORT", L'\xE939' },   // phase 171: the Feedback glyph
     { ID_TB_HELP,  L"HELP",   L"HELP",   L'\xE9CE' },
     { ID_TB_EXIT,  L"EXIT",   L"EXIT",   L'\xE7E8' },   // always last, at the foot
 };
@@ -130,8 +132,9 @@ template <int N>
 constexpr int ItemCount(const ToolbarItem (&)[N]) { return N; }
 
 // 50, not 56, since phase 162b's MOON made eleven: at 56 the tenth met
-// EXIT at the 600 px the layout test holds it to.
-static constexpr int kRailBtnH  = 50;
+// EXIT at the 600 px the layout test holds it to. 44 since phase 171's
+// REPORT made twelve, for the same reason.
+static constexpr int kRailBtnH  = 44;
 static constexpr int kRailGap   = 2;
 static constexpr int kRailTop   = 6;
 static constexpr int kViewBtnH  = 28;

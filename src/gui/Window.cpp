@@ -413,6 +413,8 @@ bool Window::HandleKeyDown(WPARAM wParam, LPARAM lParam) {
             if (firstPress && m_onAutofocusToggle) m_onAutofocusToggle();
             return true;
         case 'R':
+            // Phase 171: Ctrl+Shift+R reports a problem to Claude.
+            if (shift && ModCtrl()) { if (firstPress && m_onReport) m_onReport(); return true; }
             // Phase 156.2c: Shift+R is the SKY RUN window; R alone the reticle.
             if (shift) { if (firstPress && m_onSkyRunToggle) m_onSkyRunToggle(); return true; }
             if (firstPress && m_onReticleToggle) m_onReticleToggle();
