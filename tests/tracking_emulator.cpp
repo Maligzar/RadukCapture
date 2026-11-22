@@ -18,6 +18,8 @@
 //    3. Reset, then lock again: LOCKED again and centred.
 //    4. A new GoTo, then lock: LOCKED and centred, not stuck centring.
 //    5. A GoTo while guiding hands the mount back first.
+//   Locks 3 and 4 keep the first lock's response and re-measure only the
+//   rates (phase 172 finding 11); 5b turns that off and locks in full.
 //
 //  Real time: about three minutes; progress is printed as it goes.
 // ============================================================
@@ -157,6 +159,8 @@ static void RunModel(bool nexstar) {
     st = r.RunUntilLocked(150);
     Check(st == AcquisitionStage::Locked, "reaches LOCKED again", AcquisitionStageName(st));
     Check(r.inFrame.load() && r.Err() <= 15.0f, "centred again", std::to_string((int)r.Err()) + " px");
+    // Finding 11: the second lock keeps the first one's response.
+    Check(r.calOk && r.calMsg.rfind("quick:", 0) == 0, "the second lock is a quick calibration", r.calMsg);
 
     printf("  4. a new GoTo from the map, then lock (calibration under 15 min old)\n");
     r.t.Reset();                          // what main.cpp's GoTo-complete does
@@ -171,6 +175,8 @@ static void RunModel(bool nexstar) {
     st = r.RunUntilLocked(150);
     Check(st == AcquisitionStage::Locked, "reaches LOCKED after the GoTo", AcquisitionStageName(st));
     Check(r.inFrame.load() && r.Err() <= 15.0f, "centred after the GoTo", std::to_string((int)r.Err()) + " px");
+    // A GoTo changes the rates, not the geometry: still quick, still centred.
+    Check(r.calOk && r.calMsg.rfind("quick:", 0) == 0, "the lock after the GoTo is a quick calibration", r.calMsg);
 
     if (st == AcquisitionStage::Locked) {
         printf("  5. a GoTo while guiding: the mount is handed back first\n");
@@ -181,6 +187,21 @@ static void RunModel(bool nexstar) {
               IMount::TrackingModeName(r.m.GetTrackingMode()));
         r.t.Tick();
         Check(lost, "the main thread is told to reset");
+        r.t.Reset();
+    }
+
+    printf("  5b. QuickRecalibrate off: the full calibration, and LOCKED\n");
+    {
+        r.t.Reset();
+        r.t.SetQuickRecalibrate(false);
+        r.calDone = false; r.abortMsg.clear();
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+        const bool full = r.t.StartAutoAcquire(why);
+        Check(full, "auto-acquire starts", why);
+        const auto fs = r.RunUntilLocked(150);
+        Check(fs == AcquisitionStage::Locked, "reaches LOCKED with a full calibration", AcquisitionStageName(fs));
+        Check(r.calOk && r.calMsg.rfind("app-driven:", 0) == 0, "the calibration was the full one", r.calMsg);
+        r.t.SetQuickRecalibrate(true);
         r.t.Reset();
     }
 

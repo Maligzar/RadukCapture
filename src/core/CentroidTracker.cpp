@@ -560,6 +560,64 @@ void CentroidTracker::_RunCalibration(IMount* mount) {
     }
     _DriveAxes(mount, rAz, rAlt);
 
+    // Phase 172 finding 11: keep the last calibration's response when
+    // nothing about it can have changed, and measure only the drift once.
+    {
+        GuideCalibration prev;
+        uint32_t fw = 0, fh = 0;
+        float sAz = 1.0f, sAlt = 1.0f;
+        {
+            std::lock_guard<std::mutex> lk(m_mutex);
+            prev = m_cal; fw = m_frameW; fh = m_frameH;
+            sAz = m_axisSign[0]; sAlt = m_axisSign[1];
+        }
+        const double age = prev.valid ? (double)secs(prev.when, clk::now()) : -1.0;
+        GeometryReuse reuse = CanReuseGeometry(prev.valid, prev.altDeg, prev.frameW, prev.frameH,
+                                               prev.axisSignAz, prev.axisSignAlt,
+                                               fw, fh, sAz, sAlt, age);
+        if (reuse.ok && !m_quickRecal.load()) { reuse.ok = false; reuse.why = "QuickRecalibrate is off"; }
+        if (reuse.ok) {
+            CoreLog("[CAL] quick: keeping the response from %.0f min ago (%s); measuring the drift once\n",
+                    age / 60.0, reuse.why);
+            auto quickFail = [&](const char* why) {
+                // The next lock calibrates in full.
+                { std::lock_guard<std::mutex> lk(m_mutex); m_cal = GuideCalibration{}; }
+                finish(false, why);
+            };
+            if (!_CalSettle(TAKEOVER_SETTLE_MS)) return quickFail("aborted");
+            float qx0, qy0;
+            if (!_WaitCentroidAvg(CAL_SAMPLES, qx0, qy0)) return quickFail("target lost after taking the axes");
+            const clk::time_point tq0 = clk::now();
+            if (!_CalSettle(CAL_DRIFT_MS)) return quickFail("aborted while measuring drift");
+            float qx1, qy1;
+            if (!_WaitCentroidAvg(CAL_SAMPLES, qx1, qy1)) return quickFail("target lost while measuring drift");
+            const float qdt = secs(tq0, clk::now());
+            const float vx = (qx1 - qx0) / qdt, vy = (qy1 - qy0) / qdt;
+            const GuideResponse resp = RescaleForAltitude({prev.exPerMs, prev.eyPerMs, prev.nxPerMs, prev.nyPerMs},
+                                                          prev.altDeg, (float)alt1);
+            const GuidePulses d = SolveGuidePulses(resp, -vx, -vy);
+            if (!d.valid) return quickFail("the kept response could not be solved");
+            const float dAz  = d.eastMs  * GUIDE_OFFSET_AS / 1000.0f;
+            const float dAlt = d.northMs * GUIDE_OFFSET_AS / 1000.0f;
+            GuideCalibration cal = prev;
+            cal.when = clk::now();
+            {
+                std::lock_guard<std::mutex> lk(m_mutex);
+                m_baseRateAs[0] += dAz;
+                m_baseRateAs[1] += dAlt;
+                m_cal = cal;
+            }
+            CoreLog("[CAL] quick: drift (%.1f, %.1f) px/s over %.1f s taken out of the rates: az %+.2f alt %+.2f \"/s\n",
+                    vx, vy, qdt, dAz, dAlt);
+            char qb[240];
+            snprintf(qb, sizeof(qb),
+                     "quick: response kept from %.0f min ago (same frame, same axis directions); "
+                     "tracking az %.1f alt %.1f\"/s re-measured", age / 60.0, rAz, rAlt);
+            return finish(true, qb);
+        }
+        if (prev.valid) CoreLog("[CAL] full calibration: %s\n", reuse.why);
+    }
+
     // 3. Drift while this app tracks, in DRIFT_WINDOWS consecutive
     //    windows after a settle. On 2026-11-07 the image drifted 7-9"/s
     //    right after takeover with the encoders exactly on the commanded
@@ -679,7 +737,12 @@ void CentroidTracker::_RunCalibration(IMount* mount) {
     cal.arcsecPerPx = RigConfig::Get().plateScaleArcsecPx;
     cal.when = clk::now();
     cal.altDeg = (float)alt1;
-    { std::lock_guard<std::mutex> lk(m_mutex); m_cal = cal; }
+    {
+        std::lock_guard<std::mutex> lk(m_mutex);
+        cal.frameW = m_frameW; cal.frameH = m_frameH;          // finding 11
+        cal.axisSignAz = m_axisSign[0]; cal.axisSignAlt = m_axisSign[1];
+        m_cal = cal;
+    }
 
     const float secOff = offMs / 1000.0f;
     char buf[320];
