@@ -159,6 +159,7 @@ struct AFDiagnostics {
     std::string fadeAction;         // "steady" | "corrected" | "gave up"
     std::string sweepVoid;          // 167.5: why the sweep was not trusted, empty if it was
     bool  skyChanged = false;       // 167.5: kept a fit after the sky changed; not a focus reference
+    float sweepRatio = 1.0f;        // 167.5: the last coarse sweep's out/back median disagreement
     int   fadesCorrected = 0;       // fine passes this sweep that corrected for a fade
     // The last fine pass, in the order travelled: position, edge score,
     // and each point's frame-to-frame spread relative to its median.
@@ -607,16 +608,16 @@ private:
             }
         }
 
-        // Phase 167.5 (2026-11-22, 23:10): the sweep's own figures, logged
-        // for every sweep but NOT acted on. As rules they failed good sweeps
-        // in CI: a planet's coarse score is flat near focus (app_headless,
-        // 3% spread), and a large backlash makes the outward and return
-        // passes differ 2x (af_overshoot). The night's fade is caught by the
-        // A/B's FadedTooFar below. Real-sky figures from this line will say
-        // whether a threshold exists that separates a fade from backlash.
+        // Phase 167.5 (2026-11-22, 23:10): the sweep's own figures. Alone
+        // they decide nothing: as rules they failed good sweeps in CI (a
+        // planet's coarse score is flat near focus, app_headless 3%; a large
+        // backlash makes the passes differ 2x, af_overshoot). The A/B below
+        // uses the disagreement only when the start has also faded under half
+        // (SweepSpoiledByFade).
         {
             const SweepJudgement sj = JudgeSweep(outScore, backScore);
-            Emit("[AF] Sweep check (logged, not acted on): out/back median ratio %.2f, spread %.0f%%%s%s\n",
+            m_diag.sweepRatio = sj.medianRatio;
+            Emit("[AF] Sweep check (used only with a faded start): out/back median ratio %.2f, spread %.0f%%%s%s\n",
                  sj.medianRatio, 100.0f * sj.spread, sj.usable ? "" : " - would flag: ",
                  sj.usable ? "" : sj.why.c_str());
         }
@@ -828,13 +829,14 @@ private:
             // of focus), so the same-sky A/B scores start and fit back to
             // back on the edge metric, as the Moon path does.
             // Phase 167.5: a target that faded to under half (tonight 4.6
-            // against 14.6) leaves start and fit indistinguishable, and the
-            // fit came from faded data. Back to the start.
-            const bool faded = FadedTooFar(startNow, startSharpness);
+            // against 14.6) during a sweep whose passes disagreed (3.1x):
+            // the fit came from the fade. Back to the start. A fade with a
+            // consistent sweep keeps the fit, as before (2026-11-08).
+            const bool faded = SweepSpoiledByFade(startNow, startSharpness, m_diag.sweepRatio);
             if (faded) {
-                Emit("[AF] The target faded to %.0f%% of its score at the start: start and fit "
-                     "cannot be told apart, so the start stands\n",
-                     100.0f * startNow / startSharpness);
+                Emit("[AF] The target faded to %.0f%% of its score at the start, and the sweep's "
+                     "passes disagreed %.1fx: the curve was the fade, so the start stands\n",
+                     100.0f * startNow / startSharpness, m_diag.sweepRatio);
                 m_diag.sweepVoid = "the target faded during the sweep";
             }
             int nS = 0, nF = 0;
