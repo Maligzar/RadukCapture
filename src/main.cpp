@@ -1881,8 +1881,10 @@ static int RunApp(bool useEmulator) {
         ri.mountConnected = mount && mount->IsConnected();
         ri.mountAligned   = ri.mountConnected && mount->IsAligned();
         ri.trackingKnown  = ri.mountConnected && mount->TrackingModeKnown();
-        ri.trackingOn     = ri.trackingKnown &&
-                            mount->GetTrackingMode() != IMount::OFF;
+        // PLANET LOCK driving the axes is tracking (core/TrackingState.h).
+        ri.trackingOn     = (ri.trackingKnown &&
+                             mount->GetTrackingMode() != IMount::OFF) ||
+                            (ri.mountConnected && core.tracker.IsAppDriving());
         ri.siteSet        = raduk::core::RigConfig::Get().SiteIsSet();
         ri.profileLoaded  = profiles.Active() != nullptr;
         ri.filterName     = raduk::core::RigConfig::Get().filterName;
@@ -2238,6 +2240,8 @@ static int RunApp(bool useEmulator) {
     // Lets you stop the mount even when RadukCapture is not focused.
     raduk::gui::MountController mountCtrl;
     mountCtrl.SetMount(mount);
+    // 2026-11-22: "TRK: OFF" while PLANET LOCK drove the axes.
+    mountCtrl.SetAppDrivingQuery([&] { return core.tracker.IsAppDriving(); });
 
 
 
@@ -8970,7 +8974,8 @@ static int RunApp(bool useEmulator) {
                     snprintf(decBuf, 16, "%+.1f deg", dec);
                     aiState.mountRA  = raBuf;
                     aiState.mountDec = decBuf;
-                    aiState.tracking = (mount->GetTrackingMode() != raduk::core::IMount::OFF);
+                    aiState.tracking = (mount->GetTrackingMode() != raduk::core::IMount::OFF) ||
+                                       core.tracker.IsAppDriving();   // PLANET LOCK drives
                 }
                 aiState.mountAlt = 0.0f;  // alt injected via planner context
                 aiState.mountAz  = 0.0f;
