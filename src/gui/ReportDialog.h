@@ -49,7 +49,10 @@ public:
         wc.lpszClassName = L"RadukReport";
         RegisterClassExW(&wc);
         m_parent = parent;
-        m_hwnd = CreateWindowExW(WS_EX_TOOLWINDOW, L"RadukReport", L"Report a problem to Claude",
+        // 2026-11-22 at the scope: REPORT pressed and "nothing happened".
+        // The mount controller, GoTo and Help are all topmost; this window
+        // was not, so it could open behind them. It is topmost now.
+        m_hwnd = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_TOPMOST, L"RadukReport", L"Report a problem to Claude",
                                  WS_POPUP | WS_CAPTION | WS_SYSMENU,
                                  CW_USEDEFAULT, CW_USEDEFAULT, 560, 380, parent, nullptr,
                                  GetModuleHandle(nullptr), this);
@@ -79,8 +82,10 @@ public:
     bool IsVisible() const { return m_hwnd && IsWindowVisible(m_hwnd); }
 
     // Opens centred on the main window, the box empty and focused.
-    void Show() {
-        if (!m_hwnd) return;
+    // Returns false, with the reason in LastError(), when it cannot show.
+    bool Show() {
+        if (!m_hwnd && m_parent) Create(m_parent);   // a failed first Create gets a second try
+        if (!m_hwnd) { m_lastError = GetLastError(); return false; }
         RECT pr{}, r{};
         GetWindowRect(m_parent, &pr);
         GetWindowRect(m_hwnd, &r);
@@ -88,10 +93,14 @@ public:
         SetWindowPos(m_hwnd, HWND_TOP, pr.left + ((pr.right - pr.left) - w) / 2,
                      pr.top + ((pr.bottom - pr.top) - h) / 2, 0, 0, SWP_NOSIZE);
         SetWindowTextW(m_edit, L"");
-        ShowWindow(m_hwnd, SW_SHOW);
+        SetWindowPos(m_hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+        ShowWindow(m_hwnd, SW_SHOWNORMAL);
         SetForegroundWindow(m_hwnd);
         SetFocus(m_edit);
+        return IsWindowVisible(m_hwnd) != FALSE;
     }
+    unsigned long LastError() const { return m_lastError; }
+    RECT Placement() const { RECT r{}; if (m_hwnd) GetWindowRect(m_hwnd, &r); return r; }
     void Hide() { if (m_hwnd) ShowWindow(m_hwnd, SW_HIDE); }
 
     // Phase 127's scenarios: type the words, then SEND.
@@ -157,6 +166,7 @@ private:
     }
 
     HWND m_hwnd = nullptr, m_parent = nullptr;
+    unsigned long m_lastError = 0;
     HWND m_label = nullptr, m_edit = nullptr, m_shots = nullptr, m_send = nullptr, m_cancel = nullptr;
     SendFn m_onSend;
 };

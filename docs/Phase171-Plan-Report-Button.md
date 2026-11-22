@@ -35,3 +35,17 @@ The owner, at the scope on 2026-11-22: "I want a troubleshooting button built in
 
 ## Owes
 One real report from the capture PC, which needs Python, git with push rights and Claude Code logged in there.
+
+## At the scope, 2026-11-22 (the first try)
+The owner pressed REPORT in a test build and "nothing happened. If it popped a window it could have been hidden behind another."
+
+**What the code showed.** The wiring was right: rail button, `Ctrl+Shift+R` and the palette all open the dialog. But the dialog was the one window not on top, while the mount controller, GoTo and Help are all `WS_EX_TOPMOST`. Nothing was logged either way, so the cause could not be read from the night's log.
+
+**Fixed:**
+- the window is topmost;
+- a window that failed to create is created again on the next press;
+- each step logs under `[REPORT]`: opened from where, shown at what position, or could not be shown with the Windows error, plus a notice on screen.
+
+**Owes:** one report sent from StarMachine.
+
+**`try_branch.bat`** (the owner: "I want this all on the master so future nights it's easier to develop outside"): one command to build a pushed branch at the scope and one to return to master.

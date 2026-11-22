@@ -7722,7 +7722,9 @@ static int RunApp(bool useEmulator) {
     struct ReportNotices { std::mutex mx; std::vector<std::pair<bool, std::wstring>> q; };
     static ReportNotices reportNotices;
     static raduk::gui::ReportDialog reportDialog;
-    reportDialog.Create(window.Handle());
+    if (!reportDialog.Create(window.Handle()))
+        Log("[REPORT] the report window could not be created (error %lu); REPORT will try again\n",
+            (unsigned long)GetLastError());
     auto reportNotice = [](bool warn, const std::wstring& t) {
         std::lock_guard<std::mutex> lk(reportNotices.mx);
         reportNotices.q.push_back({warn, t});
@@ -7848,8 +7850,20 @@ static int RunApp(bool useEmulator) {
         }).detach();
     };
     reportDialog.SetSendCallback([&](const std::wstring& text, bool shots) { sendReport(text, shots); });
-    toolbar.SetReportCallback([&]() { reportDialog.Show(); });
-    window.SetReportHandler([&]() { reportDialog.Show(); });
+    // 2026-11-22: REPORT pressed at the scope and nothing was seen. Each
+    // step is logged now, and a window that cannot be shown says so.
+    auto openReport = [&](const char* from) {
+        Log("[REPORT] opened from %s\n", from);
+        if (!reportDialog.Show()) {
+            Log("[REPORT] the report window could not be shown (error %lu)\n", reportDialog.LastError());
+            notifBar.NotifyWarn(L"REPORT: the report window could not open - see the log ([REPORT])");
+            return;
+        }
+        const RECT r = reportDialog.Placement();
+        Log("[REPORT] window shown at %ld,%ld (%ldx%ld)\n", r.left, r.top, r.right - r.left, r.bottom - r.top);
+    };
+    toolbar.SetReportCallback([openReport]() { openReport("the REPORT button"); });
+    window.SetReportHandler([openReport]() { openReport("Ctrl+Shift+R"); });
 
     window.SetHelpToggleHandler([&]()   { doHelp(); });
 
