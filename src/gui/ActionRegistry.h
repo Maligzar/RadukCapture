@@ -70,6 +70,8 @@ inline const std::vector<Action>& All() {
         {"sharpness",   "Sharpness window",         "seeing quality focus graph",           "Shift+Q",      'Q', true,  false, 0, false},
         {"temperature", "Temperature window",       "sensor focuser heat dew",              "Shift+T",      'T', true,  false, 0, false},
         {"status",      "Status window",            "sky altitude airmass weather",         "Shift+D",      'D', true,  false, 0, false},
+        {"weather",     "Weather window",           "cloud wind dew seeing forecast refresh", "Shift+W", 'W', true, false, 0, false},
+        {"skyrun",      "Sky run window",           "unattended test night checklist park start stop", "Shift+R", 'R', true, false, 0, false},
         {"adc",         "ADC alignment window",     "atmospheric dispersion corrector prism", "Shift+A",    0,   false, false, L'A', false},
         {"objectpanel", "Object panel",             "info facts audience about",            "Shift+I",      'I', true,  false, 0, false},
         {"objectfull",  "Object panel fullscreen",  "info audience screen",                 "Ctrl+Shift+I", 'I', true,  true,  0, false},

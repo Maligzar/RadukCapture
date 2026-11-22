@@ -68,6 +68,9 @@ As the remote, Dash can reach every control a person needs at the telescope. A n
 
 Today Dash sends `start_capture`, `stop_capture`, `set_gain`, `set_exposure`, `set_gamma`, `autofocus`, `autofocus_abort`, `calibrate_focus`, `move_eaf`, `move_eaf_rel`, `centroid_start`, `centroid_lock`, `centroid_roi`, `centroid_reset`, `cables_dressed`, `mount_stop`, `jog`, `load_profile`, `goto_target`, `moonmap` and `weather_refresh` (main.cpp's WebSocket command handler). Controls with no Dash equivalent yet are listed in "Owed" below, as they are found.
 
+### Sending a Dash test night to Claude Code
+After running the suite against the app, `python tools\sky_handoff.py "<data root>\field-results\<night>" --night <night> --dash tests\web\results\dash-results.json` (with `--log`, `--logs` and `--captures` as the app's closing line gives them) bundles the report with the night. Claude Code then looks into each failure, on its own branch `field/<night>-dash`. See the Help's "Sending a night to Claude Code".
+
 ### Setting it up on the imaging PC
 Node and Playwright are installed on StarMachine. Once, in the repository:
 ```
@@ -108,6 +111,7 @@ Results go to `tests\web\results\dash-results.json`. Phase 156's bundle picks th
 | `acquire-wide.spec.js` (`@live`) | the app running | Dash loads the Star profile (640x480), CENTROID widens the frame and the ROI row reads `WIDE`, RESET puts 640x480 back (157.0c) |
 | `weather.spec.js` | nothing | Dash's weather (165.4): no location and no app asks nothing; with a location Dash asks Open-Meteo (answered by the test) and shows `--` for a value not given; the app's telemetry replaces Dash's own fetch; the app offline stops the panel and the forecast tab, and ↻ sends `weather_refresh` |
 | `park.spec.js` | nothing | Dash's PARK (156.2a): no control for an app that does not report park; disabled with the key named when `SkyParkAltAz` is unset; two taps send `park`, one tap sends nothing and disarms after 4 s; slewing, parked and a failure with its reason are shown |
+| `dash-honest.spec.js` | nothing | Dash shows only what the app knows (166.3): none of the invented panels (NASA / EVENTS, FAA / WILDFIRE), fixed status lights or one-telescope wording come back, and the wind score has no focal-length or payload deduction |
 | `moon-map.spec.js` (`@live`) | the app running | Dash's MOON MAP: NEW shows a grid with one square a section, a click picks one, MARK turns it green and counts it, CLEAR undoes that, and the empty project is discarded (162). The run itself is `tests\scenarios\moon-map.scn` |
 
 ### Found by it already
