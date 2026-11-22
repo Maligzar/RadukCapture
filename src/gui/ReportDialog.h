@@ -23,6 +23,7 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
+#include <cstdio>
 #include <windows.h>
 #include <dwmapi.h>
 #include <functional>
@@ -39,7 +40,13 @@ public:
     using SendFn = std::function<void(const std::wstring& text, bool screenshots)>;
     void SetSendCallback(SendFn f) { m_onSend = std::move(f); }
 
-    bool Create(HWND parent) {
+    bool Create(HWND parent) { return CreateStyled(parent, false); }
+
+    // 2026-11-22: on the owner's PC the owned tool window was created but
+    // never became visible ("could not be shown (error 0)", twice). The
+    // fallback is the plainest window Windows has: no owner, a normal title
+    // bar, in the taskbar, centred on the main screen's work area.
+    bool CreateStyled(HWND parent, bool plain) {
         WNDCLASSEXW wc = {};
         wc.cbSize        = sizeof(wc);
         wc.lpfnWndProc   = WndProc;
@@ -52,10 +59,15 @@ public:
         // 2026-11-22 at the scope: REPORT pressed and "nothing happened".
         // The mount controller, GoTo and Help are all topmost; this window
         // was not, so it could open behind them. It is topmost now.
-        m_hwnd = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_TOPMOST, L"RadukReport", L"Report a problem to Claude",
-                                 WS_POPUP | WS_CAPTION | WS_SYSMENU,
-                                 CW_USEDEFAULT, CW_USEDEFAULT, 560, 380, parent, nullptr,
-                                 GetModuleHandle(nullptr), this);
+        m_plain = plain;
+        m_hwnd = plain
+            ? CreateWindowExW(WS_EX_APPWINDOW | WS_EX_TOPMOST, L"RadukReport", L"Report a problem to Claude",
+                              WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
+                              0, 0, 560, 380, nullptr, nullptr, GetModuleHandle(nullptr), this)
+            : CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_TOPMOST, L"RadukReport", L"Report a problem to Claude",
+                              WS_POPUP | WS_CAPTION | WS_SYSMENU,
+                              0, 0, 560, 380, parent, nullptr, GetModuleHandle(nullptr), this);
+        if (!m_hwnd) m_lastError = GetLastError();
         if (!m_hwnd) return false;
         BOOL dark = TRUE;
         DwmSetWindowAttribute(m_hwnd, 20, &dark, sizeof(dark));
@@ -84,10 +96,40 @@ public:
     // Opens centred on the main window, the box empty and focused.
     // Returns false, with the reason in LastError(), when it cannot show.
     bool Show() {
-        if (!m_hwnd && m_parent) Create(m_parent);   // a failed first Create gets a second try
-        if (!m_hwnd) { m_lastError = GetLastError(); return false; }
+        m_diag.clear();
+        if (ShowOnce()) return true;
+        // Not visible: say everything about the window, then the plain one.
+        m_diag = Describe();
+        if (m_hwnd) { DestroyWindow(m_hwnd); m_hwnd = nullptr; }
+        if (!CreateStyled(m_parent, true)) return false;
+        return ShowOnce();
+    }
+    bool UsedFallback() const { return m_plain; }
+    // What the first attempt looked like when it failed (empty if it did not).
+    const std::string& FailureDetail() const { return m_diag; }
+
+    std::string Describe() const {
+        char b[320];
+        if (!m_hwnd) { snprintf(b, sizeof(b), "no window (create error %lu)", m_lastError); return b; }
+        RECT r{}; GetWindowRect(m_hwnd, &r);
+        const LONG_PTR st = GetWindowLongPtrW(m_hwnd, GWL_STYLE), ex = GetWindowLongPtrW(m_hwnd, GWL_EXSTYLE);
+        HWND owner = GetWindow(m_hwnd, GW_OWNER);
+        snprintf(b, sizeof(b), "hwnd %p IsWindow %d visible-style %d style 0x%llx ex 0x%llx rect %ld,%ld %ldx%ld "
+                 "owner %p owner-visible %d iconic-owner %d plain %d",
+                 (void*)m_hwnd, IsWindow(m_hwnd) ? 1 : 0, (st & WS_VISIBLE) ? 1 : 0,
+                 (unsigned long long)st, (unsigned long long)ex, r.left, r.top, r.right - r.left, r.bottom - r.top,
+                 (void*)owner, owner ? (IsWindowVisible(owner) ? 1 : 0) : -1, owner ? (IsIconic(owner) ? 1 : 0) : -1,
+                 m_plain ? 1 : 0);
+        return b;
+    }
+
+private:
+    bool ShowOnce() {
+        if (!m_hwnd && m_parent) CreateStyled(m_parent, m_plain);   // a failed Create gets a second try
+        if (!m_hwnd) { if (!m_lastError) m_lastError = GetLastError(); return false; }
         RECT pr{}, r{};
-        GetWindowRect(m_parent, &pr);
+        if (m_plain || !m_parent || !GetWindowRect(m_parent, &pr) || pr.right <= pr.left)
+            SystemParametersInfoW(SPI_GETWORKAREA, 0, &pr, 0);   // the main screen's work area
         GetWindowRect(m_hwnd, &r);
         const int w = r.right - r.left, h = r.bottom - r.top;
         SetWindowPos(m_hwnd, HWND_TOP, pr.left + ((pr.right - pr.left) - w) / 2,
@@ -99,6 +141,8 @@ public:
         SetFocus(m_edit);
         return IsWindowVisible(m_hwnd) != FALSE;
     }
+
+public:
     unsigned long LastError() const { return m_lastError; }
     RECT Placement() const { RECT r{}; if (m_hwnd) GetWindowRect(m_hwnd, &r); return r; }
     void Hide() { if (m_hwnd) ShowWindow(m_hwnd, SW_HIDE); }
@@ -167,6 +211,8 @@ private:
 
     HWND m_hwnd = nullptr, m_parent = nullptr;
     unsigned long m_lastError = 0;
+    bool m_plain = false;
+    std::string m_diag;
     HWND m_label = nullptr, m_edit = nullptr, m_shots = nullptr, m_send = nullptr, m_cancel = nullptr;
     SendFn m_onSend;
 };

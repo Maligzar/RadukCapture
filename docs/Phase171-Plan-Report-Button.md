@@ -49,3 +49,19 @@ The owner pressed REPORT in a test build and "nothing happened. If it popped a w
 **Owes:** one report sent from StarMachine.
 
 **`try_branch.bat`** (the owner: "I want this all on the master so future nights it's easier to develop outside"): one command to build a pushed branch at the scope and one to return to master.
+
+## At the scope, 2026-11-22 (the second try, 3.3.49)
+The log, in both sessions:
+```
+[REPORT] opened from the REPORT button
+[REPORT] the report window could not be shown (error 0)
+```
+- **What it shows.** The button worked, and the window had been created at startup with no error logged. But after it was shown and set topmost, Windows did not report it as visible.
+- **The cause is not yet known.** The code is right on paper, and error 0 means Windows recorded none.
+
+**3.3.57:**
+- **When it fails,** the window's state is logged in full: handle, whether it still exists, style and extended style, position, owner, the owner's visibility and whether the owner is minimised.
+- **Then a fallback.** The owned tool window is destroyed and a plain top-level window is opened in its place: no owner, a normal title bar, in the taskbar, topmost, centred on the main screen's work area.
+- **The log says which window opened.**
+
+**Owes:** one press at the scope. The log line names the cause for the code to fix properly.
