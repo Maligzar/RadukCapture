@@ -85,7 +85,7 @@ The owner at the scope, 2026-11-22 at 23:10, with the guard of 3.3.44 built: aut
 
 **Built** (`FocusDirection.h`, gated by `af_sweep_judge`, which replays the night's own numbers):
 - **`SweepSpoiledByFade`, acted on in the same-sky A/B.** The start stands when it re-measures at under half its earlier score **and** the sweep's outward and return passes disagreed by a median of over 1.5x. The night had both: 4.6 against 14.6, and passes 3.11x apart. Either fact alone is not enough:
-  - **A fade with a consistent sweep:** `autofocus_saturn`'s fading cases (the 2026-11-08 kind) re-measure at 46-49% with passes 1.21-1.23x apart, and their fit is right.
+  - **A fade with a consistent sweep:** `autofocus_saturn`'s fading cases (the 2026-11-08 kind) re-measure at 46-49% with passes 1.21x and 1.23x apart, and their fit is right.
   - **Disagreement without a fade:** a large backlash makes the passes differ 2.0x (`af_overshoot`).
 
   The first build used the fade alone, and CI sent those fading cases back to a defocused start.
