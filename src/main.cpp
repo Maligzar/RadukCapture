@@ -126,6 +126,7 @@
 #include "core/SkyConditions.h"
 #include "gui/MountController.h"
 #include "gui/GamePad.h"          // Phase 172.0
+#include "core/TrackingConfirm.h"
 #include "gui/StatusBar.h"
 #include "gui/HelpWindow.h"
 #include "gui/AIChatPanel.h"
@@ -3070,22 +3071,28 @@ static int RunApp(bool useEmulator) {
         // SyncRADec's return and claimed "Aligned" unconditionally.
         Log("[ALIGN] One-point align on %s (RA=%.4fh Dec=%.4f)\n",
             name.c_str(), ra_h, dec_deg);
-        bool synced = false, tracking = false;
+        bool synced = false, tracking = false, trackingPending = false;
         if (mount && mount->IsConnected()) {
             // A sync changes where the mount thinks it is; guiding holds
             // the axes with tracking off. End guiding first (2026-11-12).
             if (tracker.Stage() != raduk::core::AcquisitionStage::Off) tracker.Reset();
             synced = mount->SyncRADec(ra_h, dec_deg);
             if (synced) tracking = mount->SetTrackingMode(IMount::ALT_AZ);
+            // 2026-11-21: an ACK the hand control would not read back is
+            // "confirming", settled by the position poll; never REFUSED.
+            trackingPending = tracking && !mount->TrackingModeKnown();
             Log("[ALIGN] sync=%s tracking=%s\n",
-                synced ? "ok" : "REFUSED", tracking ? "ALT-AZ" : "REFUSED");
+                synced ? "ok" : "REFUSED",
+                !tracking ? "REFUSED" : trackingPending ? "ALT-AZ sent, confirming" : "ALT-AZ");
             slog.Mount("Align: %s sync=%s tracking=%s", name.c_str(),
                        synced ? "ok" : "refused",
                        tracking ? "alt-az" : "refused");
         }
         for (auto* m : kMaps) m->SetMountPosition(ra_h, dec_deg, true);
         std::wstring wname(name.begin(), name.end());
-        if (synced && tracking)
+        if (synced && tracking && trackingPending)
+            notifBar.NotifyInfo(L"★ Aligned on " + wname + L" - tracking sent, confirming (TRK line)");
+        else if (synced && tracking)
             notifBar.NotifyInfo(L"★ Aligned on " + wname + L" - tracking ALT-AZ");
         else if (synced)
             notifBar.NotifyWarn(L"Synced on " + wname + L" - mount refused tracking");
@@ -7757,9 +7764,17 @@ static int RunApp(bool useEmulator) {
                 notifBar.NotifyInfo(L"Guiding ended - the hand control is tracking again");
                 return;
             }
-            auto mode = mount->GetTrackingMode();
-            mount->SetTrackingMode(mode == IMount::OFF
-                ? IMount::ALT_AZ : IMount::OFF);
+            // 2026-11-21: with the mode unknown (a tracking ACK not yet
+            // confirmed), T asks for ON: it turned tracking OFF when the
+            // owner meant ON, because the cache it toggled was a guess.
+            const bool known = mount->TrackingModeKnown();
+            const auto mode  = mount->GetTrackingMode();
+            const auto want  = (IMount::TrackingMode)raduk::core::ToggleTarget(
+                                   known, (int)mode, (int)IMount::ALT_AZ);
+            Log("[MOUNT] T: tracking %s -> %s\n",
+                known ? IMount::TrackingModeName(mode) : "unknown",
+                IMount::TrackingModeName(want));
+            mount->SetTrackingMode(want);
             slog.Mount("Tracking toggled");
         }
     });
