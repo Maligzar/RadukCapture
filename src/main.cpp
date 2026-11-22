@@ -134,6 +134,7 @@
 #include "gui/GamePad.h"          // Phase 172.0
 #include "app/DarkRunController.h"  // Phase 173
 #include "core/FocusHistory.h"       // Phase 174.0
+#include "core/FocusTempModel.h"     // Phase 174.1
 #include "core/TrackingConfirm.h"
 #include "gui/StatusBar.h"
 #include "gui/HelpWindow.h"
@@ -5278,6 +5279,28 @@ static int RunApp(bool useEmulator) {
             { std::lock_guard<std::mutex> lk(focusCtx.mx); focusFollow.SweepEnded(sw.id, sw.unixSec, result.bestPosition); }
             Log("[FOCUSHIST] sweep %s written (%s, %d -> %d)\n", sw.id.c_str(),
                 result.success ? "ok" : "failed", result.startPosition, result.bestPosition);
+            // Phase 174.1: what the temperature model would have said, beside
+            // what the sweep found. Logged only; nothing acts on it yet.
+            if (std::isfinite(sw.at.focuserTempC)) {
+                namespace ft = raduk::core::focustemp;
+                std::string text;
+                {
+                    std::lock_guard<std::mutex> lk(focusFileMx);
+                    const std::string path = raduk::core::Paths::Logs() + "\\focus_history.jsonl";
+                    if (FILE* hf = fopen(path.c_str(), "rb")) {
+                        char buf[65536]; size_t n;
+                        while ((n = fread(buf, 1, sizeof(buf), hf)) > 0) text.append(buf, n);
+                        fclose(hf);
+                    }
+                }
+                const ft::Fit tf = ft::FitPoints(ft::KeyOf(sw.at.target, sw.at.filter), ft::PointsFromHistory(text));
+                if (tf.ok)
+                    Log("[FOCUSTEMP] %s at %.1f C: the model predicts %.0f (%.1f steps/C, scatter %.0f, %d points over %d nights, %s); the sweep found %d\n",
+                        sw.at.target.c_str(), sw.at.focuserTempC, tf.Predict(sw.at.focuserTempC), tf.slope, tf.scatter,
+                        tf.points, tf.nights, tf.confident ? "confident" : ("not yet: " + tf.why).c_str(), result.bestPosition);
+                else
+                    Log("[FOCUSTEMP] %s: no model yet (%s)\n", sw.at.target.c_str(), tf.why.c_str());
+            }
         }
         core.afCtl.OnComplete(result);
     });
