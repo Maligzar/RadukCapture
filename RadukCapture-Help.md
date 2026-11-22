@@ -333,6 +333,7 @@ emergency stop.
 | `Shift+H` | Close or reopen the **histogram window**. Open at startup. |
 | `Shift+Q` | Close or reopen the **sharpness window**. Open at startup. |
 | `Shift+D` | Close or reopen the **status window** — capture health and free space on every drive. |
+| `Ctrl+Shift+R` | **Report a problem to Claude** — describe what happened, press SEND, and carry on; the app gathers the evidence and sends it to Claude Code on this PC (3.3.44). Also REPORT on the left rail. |
 | `Shift+W` | Close or reopen the **weather window** — the whole reading (cloud, temperature, humidity, wind, gusts, dew, pressure, seeing, verdict), where it came from and how old, and ↻ REFRESH (3.3.45). `W` alone is still the advisories. |
 | `Shift+R` | Close or reopen the **SKY RUN window** — start, watch and stop the unattended test night (3.3.45). `R` alone is still the reticle. |
 | `Shift+A` | **ADC alignment window** — for dialling in a dispersion corrector. Inert unless *ADC fitted* is ticked on the READY screen. Until phase 132.7 this key also started or stopped autofocus. |
@@ -1872,6 +1873,23 @@ such a page cannot know.
   then refuses every connection rather than accept it. Delete the line and
   restart to have a new one generated.
 - **Connecting from another machine:** see the next section.
+
+### Reporting a problem to Claude (REPORT, `Ctrl+Shift+R`, 3.3.48)
+
+When something goes wrong at the scope, press **REPORT** on the left rail (or `Ctrl+Shift+R`). Say what you did, what you saw and what you expected, and press **SEND**. The window closes straight away, so you can get back to the telescope.
+
+Behind the scenes, the app:
+1. **Saves a report** in `<data root>\reports\<date_time>\`:
+   - your words;
+   - what the app was doing: target, profile, exposure, focuser, mount, lock, recording;
+   - the log's last 4000 lines;
+   - your `rig.ini`;
+   - screenshots of its windows, unless you untick that.
+2. **Removes your site and anything secret before anything leaves the PC:** the site lines in the log and `rig.ini`, the Dash token, keys, passwords and Leoben's address.
+3. **Sends it to Claude Code on this PC** (`tools\sky_handoff.py`). The report goes on its own branch, `report/<date_time>`, without the screenshots. Claude Code then looks into it, fixes the cause if the evidence is clear, and opens a draft pull request for you to review. It never merges.
+4. **A notice says how it went:** sent; saved but not sent, and why; or kept on the PC if you're running with `Offline=1`.
+
+Sending needs Python, git and Claude Code on this PC, and the app built from a clone of the repository (it finds the tools there). Without them, the report is still saved, and the notice says where.
 
 ### The weather window (`Shift+W`, 3.3.45)
 
