@@ -125,6 +125,7 @@
 #include "core/ADCAlignment.h"
 #include "core/SkyConditions.h"
 #include "gui/MountController.h"
+#include "gui/GamePad.h"          // Phase 172.0
 #include "gui/StatusBar.h"
 #include "gui/HelpWindow.h"
 #include "gui/AIChatPanel.h"
@@ -8303,8 +8304,45 @@ static int RunApp(bool useEmulator) {
         }
     };
 
+    // Phase 172.0: an Xbox controller through XInput. Every action goes
+    // through a path the app already has (core/PadMap.h): jogs through the
+    // arrow keys' handler, so PLANET LOCK suspends and re-centres exactly
+    // as for the keys; B is ESC's emergency stop. A controller lost mid-jog
+    // releases its jogs. Autofocus on Y stays off until Phase 167 closes.
+    raduk::gui::GamePad gamePad;
+    raduk::core::PadMapper padMap;
+    Log("[PAD] XInput %s\n", gamePad.Available() ? "available" : "not found - no controller support");
+    auto padTick = [&]() {
+        if (!gamePad.Available()) return;
+        const auto act = padMap.Update(gamePad.Read());
+        if (!act.Any()) return;
+        if (act.connectedChanged) {
+            Log("[PAD] controller %s\n", padMap.Connected() ? "connected" : "disconnected");
+            if (padMap.Connected()) notifBar.NotifyInfo(L"Controller connected: stick jogs, B stops, A locks");
+            else                    notifBar.NotifyInfo(L"Controller disconnected: any jog it held was stopped");
+        }
+        if (act.stop) {
+            Log("[PAD] B: emergency stop\n");
+            window.PadEmergencyStop();
+        }
+        for (const auto& j : act.jogs) window.PadJog(j.axis, j.dir, j.pressed);
+        if (act.rateDelta) {
+            static const int kRates[] = { 5, 7, 8, 9 };   // FINE, MED, FAST, 9x
+            int i = 0;
+            while (i < 3 && kRates[i] != controls.JogRate()) ++i;
+            i = std::max(0, std::min(3, i + act.rateDelta));
+            controls.SetJogRate(kRates[i]);
+            mountCtrl.SetJogRate(kRates[i]);
+            Log("[PAD] jog rate %dx\n", kRates[i]);
+        }
+        if (act.lockToggle   && !controls.PressByName("PLANET LOCK")) Log("[PAD] A: no PLANET LOCK button\n");
+        if (act.recordToggle && !controls.PressByName("RECORD"))      Log("[PAD] X: no RECORD button\n");
+        if (act.autofocus    && !controls.PressByName("AUTO FOCUS"))  Log("[PAD] Y: no AUTO FOCUS button\n");
+    };
+
     window.Run([&]() {
         scenarioStep();
+        padTick();
 
         // Phase 128: NEO positions every ten seconds, and the fetch's news.
         for (const auto& m : neoDesk.TakeMessages()) Log("%s\n", m.c_str());
