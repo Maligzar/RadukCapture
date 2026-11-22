@@ -66,3 +66,7 @@ satellites.tle
 # Phase 162: Moon map projects, written by the app. They are the
 # operator's nights, like captures/.
 moonmaps/
+
+# Python bytecode caches
+__pycache__/
+*.pyc
