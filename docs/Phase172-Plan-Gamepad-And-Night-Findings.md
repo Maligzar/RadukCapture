@@ -57,6 +57,8 @@ Each was read from the night's log and screenshots. Where noted, it was checked 
 
     **Fixed** (`core/GuideLaw.h`, test `guide_windup`): conditional integration. An axis pinned at a limit by the error's own sign does not integrate. In a model of the mount fed the night's numbers, the old law overshoots about 24" (about 120 px) and the new one 3.7", settling in 22 s. A tracking rate 9 "/s stale (19:47 the same night) is still absorbed. **Owes:** a long centring on the sky (from a full-frame position more than 400 px off) that settles without abandoning.
 
+13. **The status bar said `640x480 RAW8` while 16b was selected and 16-bit files were written.** The once-a-second update passed a literal `8` to `StatusBar::SetCameraStats` instead of `roiBits`, which the recording uses. **Fixed** in 3.3.47. It was display only.
+
 ## What went right (for the record)
 
 - Two derotation-window runs stopped on time at 440.5 s, with 0 drops each: run 1 at 39.9 fps (25 ms, gain 230) and run 2 at 105.1 fps (9.44 ms, gain 324).
