@@ -133,6 +133,7 @@
 #include "gui/MountController.h"
 #include "gui/GamePad.h"          // Phase 172.0
 #include "app/DarkRunController.h"  // Phase 173
+#include "core/FocusHistory.h"       // Phase 174.0
 #include "core/TrackingConfirm.h"
 #include "gui/StatusBar.h"
 #include "gui/HelpWindow.h"
@@ -183,6 +184,9 @@ static void LogInit() {
     AllocConsole();
     freopen("CONOUT$", "w", stdout);
 }
+
+// Phase 174.0: the mount's altitude, for the focus history (NaN unknown).
+static std::atomic<float> g_focusAltDeg{NAN};
 
 static void Log(const char* fmt, ...) {
     va_list args;
@@ -5191,6 +5195,22 @@ static int RunApp(bool useEmulator) {
         };
         core.afCtl.SetHooks(std::move(h));
     }
+    // ── Phase 174.0: the focus history ─────────────────────────
+    // The owner, 2026-11-22, imaging through cloud: "capture the meta data
+    // in a way that I can build a history of focusing so that my
+    // autofocuser starts to learn." Every sweep, whole, with the conditions
+    // before it, and then where the owner took the focuser by hand, one JSON
+    // line each in <logs>\focus_history.jsonl (core/FocusHistory.h).
+    struct FocusCtx { std::mutex mx; raduk::core::focushist::Conditions at; };
+    static FocusCtx focusCtx;
+    static raduk::core::focushist::FollowupTracker focusFollow;   // under focusCtx.mx
+    static std::mutex focusFileMx;
+    auto appendFocusLine = [](const std::string& line) {
+        std::lock_guard<std::mutex> lk(focusFileMx);
+        const std::string path = raduk::core::Paths::Logs() + "\\focus_history.jsonl";
+        if (FILE* f = fopen(path.c_str(), "ab")) { fputs(line.c_str(), f); fputc('\n', f); fclose(f); }
+        else Log("[FOCUSHIST] could not write %s\n", path.c_str());
+    };
     autofocus.SetOnComplete([&](raduk::core::AFResult result) {
         // Phase 155.4: every autofocus result, on the sweep's own thread.
         {
@@ -5225,6 +5245,39 @@ static int RunApp(bool useEmulator) {
             fr.fineSpread.assign(d.fineSpread.begin(), d.fineSpread.end());
             std::lock_guard<std::mutex> lk(valMu);
             valLog.AddFocus(fr);
+        }
+        // Phase 174.0: the whole sweep, and its conditions, as one line.
+        {
+            namespace fh = raduk::core::focushist;
+            const raduk::core::AFDiagnostics& d = autofocus.Diagnostics();
+            fh::Sweep sw;
+            { std::lock_guard<std::mutex> lk(focusCtx.mx); sw.at = focusCtx.at; }
+            sw.unixSec = (int64_t)std::time(nullptr);
+            sw.id = std::to_string(sw.unixSec) + "-" + std::to_string(result.startPosition);
+            sw.appVersion = RADUK_VERSION_A;
+            sw.success = result.success; sw.fineOnly = autofocus.FineOnly();
+            sw.start = result.startPosition; sw.result = result.bestPosition;
+            sw.resultSharp = result.bestSharpness; sw.improvement = result.improvement;
+            sw.message = result.message;
+            sw.backlashMeasured = d.backlashThisSweep; sw.backlashInUse = autofocus.BacklashInUse();
+            sw.coarsePos = d.coarsePos;
+            sw.coarseOut.assign(d.coarseOut.begin(), d.coarseOut.end());
+            sw.coarseBack.assign(d.coarseBack.begin(), d.coarseBack.end());
+            sw.coarsePeakOut = d.coarsePeakOut; sw.coarsePeakBack = d.coarsePeakBack;
+            sw.coarsePeak = d.coarsePeak; sw.sweepRatio = d.sweepRatio;
+            sw.fineUsed = d.fineUsed; sw.finePeak = d.finePeak; sw.finePasses = d.finePasses;
+            sw.finePos = d.finePos;
+            sw.fineScore.assign(d.fineScore.begin(), d.fineScore.end());
+            sw.fineSpread.assign(d.fineSpread.begin(), d.fineSpread.end());
+            sw.fadeRatio = d.fadeRatio; sw.fadeAction = d.fadeAction;
+            sw.abRan = d.abRan; sw.abStartBefore = d.abStartBefore; sw.abStartNow = d.abStartNow;
+            sw.abFit = d.abFit; sw.abEdgeStart = d.abEdgeStart; sw.abEdgeFit = d.abEdgeFit;
+            sw.abVerdict = d.abVerdict; sw.skyChanged = d.skyChanged;
+            sw.startSharp = d.abRan ? d.abStartBefore : NAN;
+            appendFocusLine(fh::SweepJson(sw));
+            { std::lock_guard<std::mutex> lk(focusCtx.mx); focusFollow.SweepEnded(sw.id, sw.unixSec, result.bestPosition); }
+            Log("[FOCUSHIST] sweep %s written (%s, %d -> %d)\n", sw.id.c_str(),
+                result.success ? "ok" : "failed", result.startPosition, result.bestPosition);
         }
         core.afCtl.OnComplete(result);
     });
@@ -10102,6 +10155,7 @@ static int RunApp(bool useEmulator) {
                     }
                     if (alt >= 0.0f) {
                         preview.SetMountAltitude(alt);
+                        g_focusAltDeg.store((float)alt);   // phase 174.0
                         auto adcResult = raduk::core::ADCAssistant::Compute(alt);
                         auto adcText   = raduk::core::ADCAssistant::SuggestionText(adcResult);
                         wchar_t adcBuf[64];
@@ -10771,10 +10825,51 @@ static int RunApp(bool useEmulator) {
             }
 
             darkRun.Tick(darkNow());   // phase 173
+            // Phase 174.0: the conditions a sweep starts from (held while one
+            // runs), and the owner's hand moves after one.
+            {
+                namespace fh = raduk::core::focushist;
+                const bool afBusy = core.afCtl.Busy();
+                fh::Followup fu;
+                bool done = false;
+                {
+                    std::lock_guard<std::mutex> lk(focusCtx.mx);
+                    if (!afBusy) {
+                        auto& c = focusCtx.at;
+                        c.target = targetNow();
+                        c.filter = raduk::core::RigConfig::Get().filterName;
+                        const auto* ap = profiles.Active();
+                        c.profile = ap ? ap->name : "";
+                        c.exposureMs = cam.IsOpen() ? cam.GetControlValue(ControlId::ExposureUs) / 1000.0 : NAN;
+                        c.gain = cam.IsOpen() ? (double)cam.GetControlValue(ControlId::Gain) : NAN;
+                        c.width = roiWidth; c.height = roiHeight; c.bitDepth = roiBits;
+                        c.focuserTempC = focuser.IsOpen() ? (double)focuser.GetTemperature() : NAN;
+                        c.sensorTempC = cam.IsOpen() ? (double)cam.GetTemperatureC() : NAN;
+                        c.altDeg = (double)g_focusAltDeg.load();
+                        c.seeing = lastAnalysis.valid ? (double)lastAnalysis.seeingScore : NAN;
+                        c.sharpnessPct = lastAnalysis.valid ? (double)lastAnalysis.sharpnessPct : NAN;
+                    }
+                    done = focusFollow.Tick((int64_t)std::time(nullptr), afBusy,
+                                            focuser.IsOpen() ? focuser.GetPosition() : 0,
+                                            lastAnalysis.valid ? (double)lastAnalysis.sharpnessPct : NAN, fu);
+                }
+                if (done) {
+                    appendFocusLine(fh::FollowupJson(fu));
+                    Log("[FOCUSHIST] after sweep %s: %zu hand rest(s), settled at %d\n", fu.sweepId.c_str(),
+                        fu.rests.size(), fu.rests.empty() ? fu.sweepResult : fu.rests.back().pos);
+                }
+            }
             lastReadout = now;
         }
     });
 
+    // Phase 174.0: a followup still open is written as it stands.
+    {
+        raduk::core::focushist::Followup fu;
+        bool done;
+        { std::lock_guard<std::mutex> lk(focusCtx.mx); done = focusFollow.Close("app closing", fu); }
+        if (done) appendFocusLine(raduk::core::focushist::FollowupJson(fu));
+    }
     // ── Cleanup ────────────────────────────────────────────────
     Log("\nShutting down...\n");
     gotoPanel.StopSatellite("closing");

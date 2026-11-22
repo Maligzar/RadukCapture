@@ -23,6 +23,7 @@ Into the folder it writes:
   recordings.txt        each recording's path, from the log; no recordings
                         are copied (too large)
   validation_*.json     the night's validation log(s) (155.4)
+  focus_history.jsonl   every autofocus sweep and the hand corrections after it (174.0)
   autorun_*.txt         Autorun's ranked runs for the night, if any
   dash-results.json     Playwright's report, for a dash-test night
 
@@ -192,6 +193,12 @@ def _copy_night_files(out_dir, night, logs_dir, captures_dir, dash_path):
             if name.startswith(f"validation_{night}_") and name.endswith(".json"):
                 shutil.copyfile(os.path.join(logs_dir, name), os.path.join(out_dir, name))
                 written.append(name); validations.append(name)
+        # Phase 174.0: the focus history, whole (every night's sweeps and the
+        # hand corrections after them; small, and the history is the point).
+        fh = os.path.join(logs_dir, "focus_history.jsonl")
+        if os.path.isfile(fh):
+            shutil.copyfile(fh, os.path.join(out_dir, "focus_history.jsonl"))
+            written.append("focus_history.jsonl")
     if captures_dir and os.path.isdir(captures_dir) and night:
         for name in sorted(os.listdir(captures_dir)):
             if name.startswith("autorun_") and name.endswith(".txt"):

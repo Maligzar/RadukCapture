@@ -160,6 +160,16 @@ struct AFDiagnostics {
     std::string sweepVoid;          // 167.5: why the sweep was not trusted, empty if it was
     bool  skyChanged = false;       // 167.5: kept a fit after the sky changed; not a focus reference
     float sweepRatio = 1.0f;        // 167.5: the last coarse sweep's out/back median disagreement
+    // Phase 174.0 (focus history): the last coarse sweep as data, each
+    // position's score going out and coming back and the planet's peak
+    // brightness there (a fade shows in the peak before the score), and
+    // the same-sky A/B's readings when it ran.
+    std::vector<int>   coarsePos;
+    std::vector<float> coarseOut, coarseBack;
+    std::vector<int>   coarsePeakOut, coarsePeakBack;
+    bool  abRan = false;
+    float abStartBefore = 0, abStartNow = 0, abFit = 0, abEdgeStart = 0, abEdgeFit = 0;
+    std::string abVerdict;          // "kept fit" | "start stands" | "start stands (fade)"
     int   fadesCorrected = 0;       // fine passes this sweep that corrected for a fade
     // The last fine pass, in the order travelled: position, edge score,
     // and each point's frame-to-frame spread relative to its median.
@@ -467,6 +477,7 @@ private:
         // difference is the backlash measured on the sky.
         std::vector<float> outScore((size_t)n, 0.0f), backScore((size_t)n, 0.0f);
         std::vector<int>   posAt((size_t)n, 0);
+        std::vector<int>   peakOut((size_t)n, -1), peakBack((size_t)n, -1);   // 174.0
         for (int v = 0; v < 2 * n; v++) {
             const int i = (v < n) ? v : (2 * n - 1 - v);
             if (m_abortFlag.load()) {
@@ -571,6 +582,7 @@ private:
 
             posAt[(size_t)i] = pos;
             if (nSamples > 0) (v < n ? outScore : backScore)[(size_t)i] = meanSharp;
+            (v < n ? peakOut : peakBack)[(size_t)i] = peakMax;   // 174.0
             Emit("[AF] Step %d/%d (%s)  pos=%d  sharp=%.1f%%  (%d samples, "
                  "%d distinct, centroid %d/%d ok, peak %d-%d)\n",
                  v + 1, 2 * n, v < n ? "out" : "back", pos, meanSharp, nSamples, nDistinct,
@@ -617,6 +629,11 @@ private:
         {
             const SweepJudgement sj = JudgeSweep(outScore, backScore);
             m_diag.sweepRatio = sj.medianRatio;
+            m_diag.coarsePos = posAt;            // 174.0: the last coarse pass, as data
+            m_diag.coarseOut = outScore;
+            m_diag.coarseBack = backScore;
+            m_diag.coarsePeakOut = peakOut;
+            m_diag.coarsePeakBack = peakBack;
             Emit("[AF] Sweep check (used only with a faded start): out/back median ratio %.2f, spread %.0f%%%s%s\n",
                  sj.medianRatio, 100.0f * sj.spread, sj.usable ? "" : " - would flag: ",
                  sj.usable ? "" : sj.why.c_str());
@@ -853,6 +870,10 @@ private:
             }
             const bool keep = !faded &&
                               KeepAfterAB(startNow, finalSharp, fineUsed && nS > 0 && nF > 0, eStart, eFit);
+            m_diag.abRan = true;                 // 174.0
+            m_diag.abStartBefore = startSharpness; m_diag.abStartNow = startNow; m_diag.abFit = finalSharp;
+            m_diag.abEdgeStart = eStart; m_diag.abEdgeFit = eFit;
+            m_diag.abVerdict = keep ? "kept fit" : (faded ? "start stands (fade)" : "start stands");
             if (!keep && startNow > finalSharp * 1.10f)
                 Emit("[AF] HFD says the start is sharper (%.1f against %.1f at the fit): "
                      "the start wins over the edge metric\n", startNow, finalSharp);
