@@ -350,6 +350,13 @@ struct RigConfig {
     // one is fitted. Everything ADC -- the preview arrow, the FOCUSER
     // readout and the Shift+A alignment window -- keys off this.
     bool adcFitted = false;
+    // Phase 168: where the zenith lies in the camera's frame, degrees
+    // clockwise from the frame's top, for the preview's RGB ALIGN. On an
+    // alt-az mount it is fixed to the camera: jog up in altitude and watch
+    // which way the target moves in the frame; the zenith is the opposite.
+    // 180 (zenith toward the bottom) is what RGB ALIGN always assumed.
+    //   CameraZenithAngleDeg=180
+    float cameraZenithAngleDeg = 180.0f;
 
     // Phase 12b: unprompted advice from the local LLM. Off by default --
     // it costs GPU time and not everyone wants a running commentary.
@@ -734,6 +741,7 @@ private:
         cfg.panelSnap             = rf("PanelSnap", 1.0) != 0.0;
         cfg.overlayTelemetry      = rf("OverlayTelemetry", 1.0) != 0.0;
         cfg.adcFitted             = rf("ADCFitted", 0.0) != 0.0;
+        cfg.cameraZenithAngleDeg  = (float)rf("CameraZenithAngleDeg", cfg.cameraZenithAngleDeg);
         cfg.advisoryEnabled       = rf("AdvisoryEnabled", 0.0) != 0.0;
         cfg.advisoryIntervalS     = (int)rf("AdvisoryIntervalS", 180.0);
         if (cfg.advisoryIntervalS < 30 || cfg.advisoryIntervalS > 3600)
