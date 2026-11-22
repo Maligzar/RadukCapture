@@ -622,8 +622,8 @@ private:
                     Finish(false, m_startPosition, 0.0f, startSharpness, MoveFailure());
                     return;
                 }
-                Finish(false, m_startPosition, 0.0f, startSharpness,
-                       sj.why + " - left at the start; try again when the sky is steady");
+                const std::string msg = sj.why + " - left at the start; try again when the sky is steady";
+                Finish(false, m_startPosition, 0.0f, startSharpness, msg.c_str());
                 return;
             }
         }
