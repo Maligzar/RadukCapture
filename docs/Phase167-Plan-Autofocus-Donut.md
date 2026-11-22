@@ -72,6 +72,28 @@ The owner's screenshot at the scope (2026-11-22): **`OUT 31% of AF 44%`** under 
   - a reference taken on a donut-flagged frame is discarded;
   - a CLEAR on the readout lets the owner drop a bad reference by hand.
 
+### 167.5: judge the sweep before fitting it — `WRITTEN` 2026-11-22 (3.3.48)
+The owner at the scope, 2026-11-22 at 23:10, with the guard of 3.3.44 built: autofocus "did not give me a donut but messed up the image and I had to correct it".
+
+**What the log showed:**
+- **The outward pass started flat.** It read 14.6% at seven positions, with the planet's peak at about 200.
+- **Saturn then faded about fourfold in haze.** The score fell to 8.3, 6.3, 5.1 and 4.8%, and the peak to about 55.
+- **The return pass read 4.5 to 4.8% everywhere,** including 168665, which had read 14.3% a minute before.
+- **The fit chose 165984.** That was 2,681 steps inward of a start that was in focus (the owner's correction: 168,893).
+- **The same-sky A/B could not tell start from fit.** Both read 4.6, so it kept the fit: "The sky changed, not the focus".
+- **The focus reference was then armed from the faded frames.** The readout called the focused planet "OUT 28% of AF".
+
+**Built** (`FocusDirection.h`, gated by `af_sweep_judge`, which replays the night's own numbers):
+- **`SweepSpoiledByFade`, acted on in the same-sky A/B.** The start stands when it re-measures at under half its earlier score **and** the sweep's outward and return passes disagreed by a median of over 1.5x. The night had both: 4.6 against 14.6, and passes 3.11x apart. Either fact alone is not enough:
+  - **A fade with a consistent sweep:** `autofocus_saturn`'s fading cases (the 2026-11-08 kind) re-measure at 46-49% with passes 1.21x and 1.23x apart, and their fit is right.
+  - **Disagreement without a fade:** a large backlash makes the passes differ 2.0x (`af_overshoot`).
+
+  The first build used the fade alone, and CI sent those fading cases back to a defocused start.
+- **The focus reference is not armed** after a sweep that kept a fit only because the sky changed (`AFDiagnostics::skyChanged`). That closes part of 167.4.
+- **`[AF] Sweep check` logs both figures for every sweep.** A rule on the disagreement or spread alone failed good sweeps in CI: a planet's flat coarse score (`app_headless`, 3%) and a large backlash.
+
+**Owes:** a clean sweep on the sky (167.3, item 47); the emulator's `autofocus_saturn` passing with the check in place (CI).
+
 ## Evidence wanted from the night of 2026-11-21
 The `[AF]` lines of the failed sweep:
 - `Scan:`;

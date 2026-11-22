@@ -4929,6 +4929,14 @@ static int RunApp(bool useEmulator) {
         h.failed  = [&]() { core.arCtl.NoteFocusFailed(); skyAfOk = false; ++skyAfSeq; };
         h.succeeded = [&]() {
             skyAfOk = true; ++skyAfSeq;   // phase 156.2b: the sky run reads each sweep's result
+            // Phase 167.5 (2026-11-22): a sweep that kept its fit after the
+            // sky changed is no reference. Armed from it, the readout called
+            // a focused Saturn "OUT 28% of AF". Keep the reference there was.
+            if (autofocus.Diagnostics().skyChanged) {
+                Log("[FOCUS] autofocus kept a fit after the sky changed: the focus reference "
+                    "is left as it was\n");
+                return;
+            }
             focusRef.ArmAfterAutofocus();
             Log("[FOCUS] autofocus succeeded: the next %d readings are the reference\n",
                 raduk::core::FocusReference::kRefSamples);
@@ -9583,7 +9591,12 @@ static int RunApp(bool useEmulator) {
                             // claim about the hardware we cannot support, and
                             // it sent a whole session chasing a tracking bug
                             // that was really a comms failure.
-                            mount->TrackingModeKnown()
+                            // 2026-11-22: and "APP (lock)" while PLANET LOCK
+                            // drives the axes with the hand control OFF on
+                            // purpose (core/TrackingState.h).
+                            tracker.IsAppDriving()
+                                ? std::string("APP (lock)")
+                                : mount->TrackingModeKnown()
                                 ? std::string(IMount::TrackingModeName(mount->GetTrackingMode()))
                                 : std::string("UNKNOWN"),
                             true);
@@ -10193,8 +10206,10 @@ static int RunApp(bool useEmulator) {
                     mount->GetRADec(ra, dec);
                     telemetry.mount_ra       = IMount::FormatRA(ra);
                     telemetry.mount_dec      = IMount::FormatDec(dec);
-                    telemetry.mount_tracking = IMount::TrackingModeName(
-                                                  mount->GetTrackingMode());
+                    // Dash shows the same as the app's status bar (166's rule).
+                    telemetry.mount_tracking = tracker.IsAppDriving()
+                        ? "APP_LOCK"
+                        : IMount::TrackingModeName(mount->GetTrackingMode());
                 }
 
                 telemetry.recording        = capturer.IsRecording();

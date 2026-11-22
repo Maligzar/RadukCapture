@@ -50,6 +50,16 @@ Each was read from the night's log and screenshots. Where noted, it was checked 
 
 10. **"tracking=REFUSED" while the mount tracked, and T then turned it off.** All night every `T 1` (ALT-AZ) was ACKed and every 't' readback 250 ms later failed ("ACKed but readback failed", from 17:42), while `T 0` read back every time; the mount tracked regardless (PLANET LOCK calibrated on it and held Saturn for two hours). `SetTrackingMode` returned false, ALIGN reported REFUSED, and the T key toggled a cache it could not trust, turning tracking OFF when the owner meant ON. **Fixed, first priority** (`core/TrackingConfirm.h`, test `tracking_confirm`): an ACK with no readback is "sent, confirming", the mode shows TRK: ? until the position poll (whose own 't' read never failed that night) reads it, then the log says "confirmed by the position poll" or "NOT RUNNING (mount likely unaligned)" as before; ALIGN says "tracking sent, confirming"; T and the TRACKING button ask for ON when the mode is unknown. **Owes:** the night's log on the next session to see "confirmed by the position poll", and why the readback right after `T 1` fails (it is not the poll's read, which works) - a serial-level NexStar emulator would let CI reproduce it; there is none today (`MountEmulator` sits above the protocol).
 
+11. **After ★ ALIGN, the lock takes about 40 s to come back, and once gave up.** From the owner's log, 2026-11-22:
+    - **22:52:07, ALIGN.** It ends the lock, as it must: a sync moves where the mount thinks it is.
+    - **22:52:09, tracking confirmed** by the poll.
+    - **22:52:57, PLANET LOCK pressed.**
+    - **22:52:57 to 22:53:33, calibration: 36 s.** That is 3 s of hand-control rates, three drift windows of 3.4 s, and two 4 s offset moves. The drift windows disagreed: (5.3, -9.3), (5.6, -2.2) and (0.6, -5.4) px/s.
+    - **22:53:49, "Guiding abandoned".** The planet ran to 197 px from centre after reaching 12 px.
+    - **The owner restarted the lock at 22:55.**
+
+    **Planned:** a sync changes neither the motor axes, nor their signs, nor the camera's rotation, so ALIGN should keep the calibration's geometry and re-measure only the base rates (about 3 s, not 36). Whether that holds on the NexStar is to be checked by comparing two calibrations either side of a sync. The abandonment is to be read from the night's `[GUIDE]` lines between 22:53:33 and 22:53:49. The candidates are a frame change mid-centring, or the drift not yet settled after the sync.
+
 12. **PLANET LOCK overshot and gave up after a long centring (integral windup).** From the owner's log, 2026-11-22:
     - **22:53:34 to :42.** From 480 px off on the full frame, both corrections sat at the never-reverse limit (azimuth: a correction of -16.47 on a base of 17.47 "/s; altitude: +6.32 on -7.32), while the integral summed the large error to its 15 "/s clamp.
     - **22:53:44, at 2.4" from centre.** The corrections were still near full: az -14.21; alt 0.5 x -2.6 + 15 clipped to +6.32.
