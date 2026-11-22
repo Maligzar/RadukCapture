@@ -9550,7 +9550,9 @@ static int RunApp(bool useEmulator) {
                 stats.fps.load(),
                 (int)stats.droppedFrames.load(),
                 cam.IsOpen() ? cam.GetTemperatureC() : 0.0f,
-                roiWidth, roiHeight, 8);
+                // roiBits, not 8: the bar said RAW8 all night on 2026-11-22
+                // while 16-bit files were written (the recording reads roiBits).
+                roiWidth, roiHeight, roiBits);
 
             // Phase 58: surface camera faults (USB drop / wedge) once per
             // transition — CaptureThread keeps retrying recovery itself.
