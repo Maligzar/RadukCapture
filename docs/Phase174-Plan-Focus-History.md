@@ -1,6 +1,6 @@
 # Phase 174: a focus history that learns
 
-Written 2026-11-22 at the owner's request, imaging through cloud: "a big learning opportunity for my autofocus so I want to make sure that I capture the meta data in a way that I can build a history of focusing so that my autofocuser starts to learn ... maybe we even build a skill, an MCP server, and allow an LLM or SLM to get involved with the auto focusing." Status: 174.0 `WRITTEN` (3.3.54); 174.2 `WRITTEN` (3.3.56); 174.1 and 174.3 `PLANNED`.
+Written 2026-11-22 at the owner's request, imaging through cloud: "a big learning opportunity for my autofocus so I want to make sure that I capture the meta data in a way that I can build a history of focusing so that my autofocuser starts to learn ... maybe we even build a skill, an MCP server, and allow an LLM or SLM to get involved with the auto focusing." Status: 174.0 `WRITTEN` (3.3.54); 174.2 `WRITTEN` (3.3.56); 174.1 `WRITTEN` (3.3.58); 174.3 `PLANNED`.
 
 ## The principle
 **The model reads the history and proposes; the deterministic routine focuses; replay judges every proposal against real sweeps before it reaches the sky.**
@@ -29,7 +29,19 @@ The one live decision it could own is **when** to refocus (from temperature, tim
 
 A new sweep or the app closing ends it. Leaving the result alone is recorded too. The settled position is the ground truth. On 2026-11-22 it was 168,893 against autofocus's 165,984.
 
-## 174.1: a temperature model (`PLANNED`)
+## 174.1: a temperature model (`WRITTEN` 3.3.58, first half)
+**What is written.**
+- `core/FocusTempModel.h` joins each sweep to its followup and makes a point: the focuser's temperature and where the owner settled. A sweep with no followup or no temperature gives no point, so settled focus is never guessed.
+- The fit is per target and filter. The slope is the median of pairwise slopes, taken only across at least 0.5 C. The intercept is the median of the points' intercepts, and the scatter is 1.4826 x the median absolute residual. One bad sweep does not bend it.
+- Before anything may act on the fit, it needs **6 points, 2 nights and 2 C of range**. Below that it still fits and reports what it lacks.
+- `RefocusSuggested(fit, tempAtFocus, tempNow, zoneSteps)` gives true only for a confident fit and a known zone.
+- `focus_replay <history> --temp` prints the fit for every target and filter.
+- The app logs `[FOCUSTEMP]` beside every sweep: the model's prediction against the sweep's result. That puts the evidence into the history before the model is used.
+- Gated by `focus_temp_model`: a -120 steps/C fit over three nights with an outlier, the one-night case, missing data, flat temperature, separate keys, and the night boundary.
+
+**Still to do.** Start autofocus at the predicted position with a narrower sweep, and raise "refocus suggested". Both wait for the model to be confident on real nights and for a critical focus zone in steps (no code holds one yet).
+
+### The original plan
 1. **The fit.** Fit settled focus against focuser temperature, per target and filter, robustly: the median slope over pairs (Theil-Sen), with its spread.
 2. **Using it.** Autofocus starts at the predicted position with a narrower sweep when the model is confident. A temperature change worth more than the critical focus zone (Phase 161's focus calibration) raises "refocus suggested".
 3. **The amount of data needed.** It reports how many sweeps and nights it rests on, and acts only above a minimum.
