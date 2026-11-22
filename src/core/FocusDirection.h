@@ -307,17 +307,49 @@ inline bool PassHasPeak(const std::vector<float>& sc, float minRise = 1.15f) {
 }
 
 // The A/B's verdict on a fade. The start stands only when the target faded
-// to under half AND neither pass of the sweep found a peak: then the curve
+// to under half AND neither pass of the sweep found a peak AND the passes
+// do not agree by position (PassesAgree): then the curve
 // was the fade (2026-11-22, 23:10: 4.6 against 14.6, no peak either way).
 // A fade alone is not enough, nor a fade with the passes disagreeing: in
 // autofocus_saturn's case 3 the target fades through the whole sweep, the
 // passes disagree 4.45x, and each still peaks where focus is; its fit is
 // right. (The first rule, fade plus disagreement, failed that case on CI.)
+// The two passes tell the same story by POSITION: each swings well over
+// its own range (1.3x), and they rise and fall together across the sweep
+// (correlation 0.7 or more). Then the curve is focus, even with focus near
+// an end of the sweep where neither pass can show a peak. CI's
+// autofocus_saturn case 9 (2026-11-22): focus 500 steps inside the sweep's
+// end, passes 12x and 16x, together; the night of 2026-11-22 23:10 was the
+// opposite: the return pass flat at 1.07x, so position explained nothing.
+inline bool PassesAgree(const std::vector<float>& out, const std::vector<float>& back,
+                        float minRange = 1.3f, float minCorr = 0.7f) {
+    const size_t n = (std::min)(out.size(), back.size());
+    std::vector<double> a, b;
+    for (size_t i = 0; i < n; ++i)
+        if (out[i] > 0.0f && back[i] > 0.0f) { a.push_back(out[i]); b.push_back(back[i]); }
+    if (a.size() < 3) return false;
+    auto range = [](const std::vector<double>& v) {
+        const auto mm = std::minmax_element(v.begin(), v.end());
+        return *mm.first > 0.0 ? *mm.second / *mm.first : 0.0;
+    };
+    if (range(a) < minRange || range(b) < minRange) return false;
+    double ma = 0, mb = 0;
+    for (size_t i = 0; i < a.size(); ++i) { ma += a[i]; mb += b[i]; }
+    ma /= a.size(); mb /= b.size();
+    double sab = 0, saa = 0, sbb = 0;
+    for (size_t i = 0; i < a.size(); ++i) {
+        sab += (a[i] - ma) * (b[i] - mb); saa += (a[i] - ma) * (a[i] - ma); sbb += (b[i] - mb) * (b[i] - mb);
+    }
+    if (saa <= 0.0 || sbb <= 0.0) return false;
+    return sab / std::sqrt(saa * sbb) >= minCorr;
+}
+
 inline bool SweepSpoiledByFade(float startNow, float startBefore,
                                const std::vector<float>& outScore,
                                const std::vector<float>& backScore) {
     if (!FadedTooFar(startNow, startBefore)) return false;
-    return !PassHasPeak(outScore) && !PassHasPeak(backScore);
+    if (PassHasPeak(outScore) || PassHasPeak(backScore)) return false;
+    return !PassesAgree(outScore, backScore);
 }
 
 inline int FineSpanFrom(const std::vector<int>& pos, const std::vector<float>& score, int backlash) {
