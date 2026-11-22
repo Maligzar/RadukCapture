@@ -89,6 +89,7 @@ $Tests = @(
     @{ Name = "focus_history"; Sources = @() }
     @{ Name = "focus_replay"; Sources = @() }
     @{ Name = "focus_temp_model"; Sources = @() }
+    @{ Name = "screen_rotation"; Sources = @() }
     @{ Name = "problem_report"; Sources = @() }
     @{ Name = "mutual_events";     Sources = @() }
     @{ Name = "sntp_offset";       Sources = @() }
