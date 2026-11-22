@@ -1,6 +1,6 @@
 # Phase 174: a focus history that learns
 
-Written 2026-11-22 at the owner's request, imaging through cloud: "a big learning opportunity for my autofocus so I want to make sure that I capture the meta data in a way that I can build a history of focusing so that my autofocuser starts to learn ... maybe we even build a skill, an MCP server, and allow an LLM or SLM to get involved with the auto focusing." Status: 174.0 `WRITTEN` (3.3.54); 174.2 `WRITTEN` (3.3.56); 174.1 `WRITTEN` (3.3.58); 174.3 `PLANNED`.
+Written 2026-11-22 at the owner's request, imaging through cloud: "a big learning opportunity for my autofocus so I want to make sure that I capture the meta data in a way that I can build a history of focusing so that my autofocuser starts to learn ... maybe we even build a skill, an MCP server, and allow an LLM or SLM to get involved with the auto focusing." Status: 174.0 `WRITTEN` (3.3.54); 174.2 `WRITTEN` (3.3.56); 174.1 `WRITTEN` (3.3.58); 174.3 `WRITTEN` (3.3.59).
 
 ## The principle
 **The model reads the history and proposes; the deterministic routine focuses; replay judges every proposal against real sweeps before it reaches the sky.**
@@ -60,7 +60,30 @@ A new sweep or the app closing ends it. Leaving the result alone is recorded too
 
   It also checks that a wrong rule is caught as a regression. The converter's self-test runs in CI.
 
-## 174.3: an MCP server for focus history (`PLANNED`)
+## 174.3: an MCP server for focus history (`WRITTEN` 3.3.59)
+**What is written.** `tools/focus_mcp.py`: newline-delimited JSON-RPC on stdin/stdout, standard library only.
+- **`list_sweeps(night?, target?)`, `get_sweep(id)`.** Each sweep comes with where the owner settled.
+- **`failure_summary`.** Every failed or hand-corrected sweep (moved 200 or more steps) is classified from the record:
+  - fade (sky changed, or the start stood);
+  - plateau (no peak, by `PassHasPeak`'s 1.15x rule);
+  - edge (best at an end);
+  - backlash (measured against in use);
+  - otherwise unclassified.
+
+  Donut and seeing are not in the record yet, so they are not guessed.
+- **`temperature_model(target?, filter?)`.** The same Theil-Sen fit and minimums as `core/FocusTempModel.h`.
+- **`replay()`.** Runs the built `focus_replay` over the history. A rule change is a code change: rebuild, then replay. No free-form `rule_change` argument is accepted, because one could not be checked.
+- **`propose(change, why)`.** The only writer. It appends to `focus_proposals.md` beside the history with `Status: proposed`.
+- **There is no tool that moves the focuser or changes a setting.**
+
+**Connecting it:**
+```
+claude mcp add focus-history -- python tools/focus_mcp.py --history <logs>\focus_history.jsonl
+```
+
+**The self-test runs in CI.** It covers every tool on the night's record, and the real stdio loop end to end.
+
+### The original plan
 `tools/focus_mcp.py` is a local MCP server, standard library only, needing nothing online (rule 7).
 
 **Read-only tools:**
