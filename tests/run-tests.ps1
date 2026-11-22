@@ -82,6 +82,7 @@ $Tests = @(
     @{ Name = "tracking_state"; Sources = @() }
     @{ Name = "pad_map"; Sources = @() }
     @{ Name = "tracking_confirm"; Sources = @() }
+    @{ Name = "af_sweep_judge"; Sources = @() }
     @{ Name = "guide_windup"; Sources = @() }
     @{ Name = "problem_report"; Sources = @() }
     @{ Name = "mutual_events";     Sources = @() }
