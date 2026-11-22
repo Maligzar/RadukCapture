@@ -8,6 +8,7 @@
 #include "ButtonIcons.h"
 #include "ToolbarLayout.h"
 #include "ControlPanel.h"
+#include "core/TrackingConfirm.h"
 #include "../core/ExposureScale.h"
 #include "../core/CameraEntry.h"
 #include "Theme.h"
@@ -1124,11 +1125,12 @@ bool ControlPanel::HandleCommand(WPARAM wParam, LPARAM lParam) {
         case ID_BTN_TRACKING: {
             // Toggle tracking on/off
             if (m_mount && m_mount->IsConnected()) {
+                // 2026-11-21: unknown asks for ON (core/TrackingConfirm.h).
                 auto mode = m_mount->GetTrackingMode();
-                bool tracking = (mode != raduk::core::IMount::TrackingMode::OFF);
-                m_mount->SetTrackingMode(tracking
-                    ? raduk::core::IMount::TrackingMode::OFF
-                    : raduk::core::IMount::TrackingMode::ALT_AZ);
+                const int want = raduk::core::ToggleTarget(
+                    m_mount->TrackingModeKnown(), (int)mode,
+                    (int)raduk::core::IMount::TrackingMode::ALT_AZ);
+                m_mount->SetTrackingMode((raduk::core::IMount::TrackingMode)want);
                 // Button text updates on next UpdateReadouts tick
             }
             return true;

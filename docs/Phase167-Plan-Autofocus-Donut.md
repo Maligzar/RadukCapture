@@ -4,7 +4,7 @@ Planned 2026-11-22, from the owner's report at the scope with the real camera:
 
 > "My auto focus thinks a donut is in focus and a focused Saturn is 31% in focus only."
 
-Autofocus started from a Saturn that was nearly in focus and finished entirely out of focus, on a defocused ring: the "donut" an 8SE makes, because its secondary mirror shadows the middle of a defocused image. Status: `PARTIAL`: **167.2's checks `WRITTEN` 2026-11-22 (3.3.42)**; the cause of the bad sweep itself waits on the night's `[AF]` lines. **Urgent:** autofocus should not be used on the sky until this is fixed. `AutorunRefocusEvery=0` keeps `[RUNS]` from calling it.
+Autofocus started from a Saturn that was nearly in focus and finished entirely out of focus, on a defocused ring: the "donut" an 8SE makes, because its secondary mirror shadows the middle of a defocused image. Status: `PARTIAL`: **167.2's checks `WRITTEN` 2026-11-22 (3.3.44)**; the cause of the bad sweep itself waits on the night's `[AF]` lines. **Urgent:** autofocus should not be used on the sky until this is fixed. `AutorunRefocusEvery=0` keeps `[RUNS]` from calling it.
 
 ## Why the tests never saw it
 - **The emulator blurs a defocused planet with a box blur** (`CameraEmulator.h`, Phase 73). Only a star gets the doughnut.
@@ -51,10 +51,10 @@ Autofocus started from a Saturn that was nearly in focus and finished entirely o
   - the Moon, which fills the frame (it takes the fine-only path).
 - **Tested on:** the emulator's donut and its sharp targets, plus a synthetic Saturn with Cassini's division.
 
-### 167.2: HFD has the last word, measured fairly (size S) — the checks `WRITTEN` 2026-11-22 (3.3.42)
+### 167.2: HFD has the last word, measured fairly (size S) — the checks `WRITTEN` 2026-11-22 (3.3.44)
 - **A fair aperture:** sized from the target's outer edge, hole included, so a donut's light is not clipped.
 - **HFD can veto the fine pass:** its result is rejected if its HFD is worse than the coarse peak's, beyond the measurement's own spread.
-- **The final check (WRITTEN, 3.3.42):** a result a tenth or more worse than the start always takes the same-sky A/B; halving was too loose. In the A/B, HFD a tenth better at the start wins outright (`KeepAfterAB` in `FocusDirection.h`, tested by `af_keep`); the edge metric judges only near focus.
+- **The final check (WRITTEN, 3.3.44):** a result a tenth or more worse than the start always takes the same-sky A/B; halving was too loose. In the A/B, HFD a tenth better at the start wins outright (`KeepAfterAB` in `FocusDirection.h`, tested by `af_keep`); the edge metric judges only near focus.
 - **The fine span:** limited to the coarse curve's width near its bottom, never the whole scan.
 
 ### 167.3: on the sky, then trusted again (owed, item 47)

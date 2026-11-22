@@ -890,6 +890,28 @@ two surfaces that actually scale.
 
 Open with `MOUNT CTRL` button or from the TELESCOPE section. Always stays on top.
 
+**Tracking without the hand control (3.3.43).** After power-on, let the hand
+control finish **Quick Align** (it needs no stars); from then on the app does
+the rest:
+
+1. GoTo the target from the GoTo panel.
+2. Centre it roughly and press **★ ALIGN**: it syncs and switches tracking on.
+   (`T` or TRACKING also switches it on.)
+3. Press **PLANET LOCK**. It measures the mount's own tracking, then drives the
+   axes itself; the line reads **TRK: APP (lock)**.
+4. Fine-tune with the arrow keys (or the controller's stick), never the hand
+   control: the lock re-sends the axis rates every quarter second, so a hand
+   control press is undone.
+
+The **TRK** line: `ALT/AZ` (the hand control tracks), `APP (lock)` (PLANET LOCK
+drives), `OFF`, or `?` (the mode is not confirmed yet). Some hand controls
+acknowledge a tracking command but do not answer the mode query right after
+it; the app then says "tracking sent, confirming" and the position poll settles
+it within about a second, logging "confirmed by the position poll" or "NOT
+RUNNING (mount likely unaligned)". Before 3.3.43 that case was reported as
+"mount refused tracking", and `T` could then switch tracking off when you meant
+on; `T` now asks for on whenever the mode is not known.
+
 - **N / S / E / W** — Hold to slew. Release to stop.
 - **9× / FAST / MED / FINE** — Slew rate selector. **This also sets the
   speed of the arrow keys**, and it is currently the only place the rate
@@ -2890,7 +2912,7 @@ rig.ini; an entry marked manual is never replaced by an automatic estimate.
   diagnosis — the confirming measurement collected nothing. If you see it
   now, the target really is too faint.
 - Check EAF is not at travel limits (safe zone: 10000–490000)
-- **It took a nearly focused planet out of focus, to a donut** (3.3.42 fixes the part that let it stay there). Since 3.3.42, autofocus never keeps a result that measures a tenth or more worse than where it began without first going back and comparing the two under the same sky. If the start's half-flux diameter is a tenth better, the focuser returns to the start and says `HFD says the start is sharper` in the log. Before, it only checked when the score had **halved**. On a planet as big as Saturn, that doesn't happen until the image is already turning into a donut, the ring an SCT's secondary mirror makes of a defocused planet. If you see `Focus got worse … reverted to start`, focus by hand. The `[AF]` lines show what the sweep saw: send them in, or send the night to Claude.
+- **It took a nearly focused planet out of focus, to a donut** (3.3.44 fixes the part that let it stay there). Since 3.3.44, autofocus never keeps a result that measures a tenth or more worse than where it began without first going back and comparing the two under the same sky. If the start's half-flux diameter is a tenth better, the focuser returns to the start and says `HFD says the start is sharper` in the log. Before, it only checked when the score had **halved**. On a planet as big as Saturn, that doesn't happen until the image is already turning into a donut, the ring an SCT's secondary mirror makes of a defocused planet. If you see `Focus got worse … reverted to start`, focus by hand. The `[AF]` lines show what the sweep saw: send them in, or send the night to Claude.
 
 A move that makes no progress for 5 s is reported as stalled. Long moves are
 fine - the sweep's first hop is 3000 steps and is allowed to take as long as
@@ -3515,7 +3537,8 @@ un-soak.ps1` runs the emulator for hours through GoTo, lock, autofocus and runs,
 | 3.3.39 | 156.2a | The sky run's first group, and park. **PARK** is a new button in the mount window and in Dash: it slews to `rig.ini` `SkyParkAltAz=az:alt` and turns tracking off, with no default position, refusing (and saying why) outside the slew bounds, unaligned or with no site. Dash gets a **SKY RUN** card: start, the plan with each group's status, the step running, STOP (parks). The app runs the night itself, so a closed browser does not stop it. The **tracking group** runs on any bright target: a box change from full to a third to a sixth and back with the lock held (item 48), a 200-pixel jog re-centred within 25 s (49), and the lock made in a small box, then a calibration refused near an edge with "centre it roughly" (50). The other groups say not built yet. ESC stops the run without a park. Gated by `sky_run_controller`, `park_controller`, `sky_run`, and the Dash specs `park` and `skyrun`. |
 | 3.3.40 | 156.2b | The sky run's **planet group**. On any planet in view, after the lock: autofocus from +700 and from -700 steps (item 47's repeatability, and the fine pass for item 58), a 60-second throughput recording judged on unexplained drops and the camera's own rate (item 13), and the exposure ladder at 2, 5, 10 and 15 ms with the gain chosen so the highlight sits near 70% (item 55). The gain is found by halving the camera's own range, so it works on any make. **Each checklist item now gets its own status**, in `results.json` and in `sky_checklist_update.py`, so the ladder is never marked passed because throughput was. The camera's exposure, gain and AE are put back afterwards; the run's recordings are not auto-stacked. Gated by `sky_run_controller` (61 checks), `sky_run` and the updater's self-test. |
 | 3.3.41 | 168 | **RGB ALIGN fixed.** It moved blue and red apart by one and a half times the colour spread it computed, so the preview looked doubled at the scope. Blue and red now move together by exactly that spread, split around green, along the zenith's direction in the frame (rig.ini `CameraZenithAngleDeg`, default 180 as before). With an ADC fitted, it adds nothing of its own. Display only; recordings were never affected. Gated by `rgb_align`. |
-| 3.3.42 | 167 | **Autofocus no longer keeps a result that's worse than where it began.** At the scope on 2026-11-21 it took a nearly focused Saturn out to a donut and stayed there. The check that should have caught it only stepped in once the focus score had halved, and on a disc as large as Saturn the score is still over half while the image is already turning into a donut (shown on a synthetic Saturn defocused through an SCT, `focus_donut`). Now any result a tenth or more worse is compared with the start under the same sky. If the start's half-flux diameter is a tenth better, it goes back there, whatever the edge score says. The cause of the bad sweep itself is still to be read from that night's `[AF]` lines. Gated by `focus_donut`, `af_keep` and `autofocus_saturn`. |
+| 3.3.43 | 172 (fix) | **Tracking is no longer reported as refused when the mount accepted it.** On 2026-11-21 every tracking-on command was acknowledged and the mode check right after it failed, all night, while the mount tracked; the app said "mount refused tracking" and `T` then switched tracking off. Now that case reads "tracking sent, confirming" and TRK: ? until the position poll confirms it (or reports it not running); `T` and TRACKING ask for on when the mode is unknown. The mount window says **TRK: APP (lock)** while PLANET LOCK drives the axes (it said OFF). **An Xbox controller** (Bluetooth or USB, nothing to install): stick or D-pad jog through the arrow keys' path (the lock pauses and re-centres), B is ESC, A is PLANET LOCK, X is RECORD, LB/RB the jog rate; Y (autofocus) and the triggers (focus) are off until phases 167 and 169. Gated by `tracking_confirm`, `tracking_state` and `pad_map`; plan and the night's findings in `docs/Phase172-Plan-Gamepad-And-Night-Findings.md`. |
+| 3.3.44 | 167 | **Autofocus no longer keeps a result that's worse than where it began.** At the scope on 2026-11-21 it took a nearly focused Saturn out to a donut and stayed there. The check that should have caught it only stepped in once the focus score had halved, and on a disc as large as Saturn the score is still over half while the image is already turning into a donut (shown on a synthetic Saturn defocused through an SCT, `focus_donut`). Now any result a tenth or more worse is compared with the start under the same sky. If the start's half-flux diameter is a tenth better, it goes back there, whatever the edge score says. The cause of the bad sweep itself is still to be read from that night's `[AF]` lines. Gated by `focus_donut`, `af_keep` and `autofocus_saturn`. |
 
 ---
 
