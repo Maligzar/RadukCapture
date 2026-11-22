@@ -85,6 +85,7 @@ $Tests = @(
     @{ Name = "af_sweep_judge"; Sources = @() }
     @{ Name = "guide_windup"; Sources = @() }
     @{ Name = "disk_budget"; Sources = @() }
+    @{ Name = "dark_plan"; Sources = @() }
     @{ Name = "problem_report"; Sources = @() }
     @{ Name = "mutual_events";     Sources = @() }
     @{ Name = "sntp_offset";       Sources = @() }

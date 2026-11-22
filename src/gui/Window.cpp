@@ -420,6 +420,8 @@ bool Window::HandleKeyDown(WPARAM wParam, LPARAM lParam) {
             if (firstPress && m_onReticleToggle) m_onReticleToggle();
             return true;
         case 'D':
+            // Phase 173: Ctrl+Shift+D runs tonight's darks (press twice).
+            if (shift && ModCtrl()) { if (firstPress && m_onDarks) m_onDarks(); return true; }
             // Shift+D is the status window. D is otherwise unused, and
             // status no longer has a small version to sit beside the way
             // the histogram and sharpness windows do.

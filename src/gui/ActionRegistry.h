@@ -72,6 +72,7 @@ inline const std::vector<Action>& All() {
         {"status",      "Status window",            "sky altitude airmass weather",         "Shift+D",      'D', true,  false, 0, false},
         {"weather",     "Weather window",           "cloud wind dew seeing forecast refresh", "Shift+W", 'W', true, false, 0, false},
         {"report",      "Report a problem to Claude", "troubleshoot bug issue feedback send help", "Ctrl+Shift+R", 'R', true, true, 0, false},
+        {"darks",       "Run tonight's darks (press twice: plan, then run)", "dark frames calibration end of night cap", "Ctrl+Shift+D", 'D', true, true, 0, false},
         {"skyrun",      "Sky run window",           "unattended test night checklist park start stop", "Shift+R", 'R', true, false, 0, false},
         {"adc",         "ADC alignment window",     "atmospheric dispersion corrector prism", "Shift+A",    0,   false, false, L'A', false},
         {"objectpanel", "Object panel",             "info facts audience about",            "Shift+I",      'I', true,  false, 0, false},
