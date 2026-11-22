@@ -59,6 +59,14 @@ Each was read from the night's log and screenshots. Where noted, it was checked 
     - **The owner restarted the lock at 22:55.**
 
     **Planned:** a sync changes neither the motor axes, nor their signs, nor the camera's rotation, so ALIGN should keep the calibration's geometry and re-measure only the base rates (about 3 s, not 36). Whether that holds on the NexStar is to be checked by comparing two calibrations either side of a sync. The abandonment is to be read from the night's `[GUIDE]` lines between 22:53:33 and 22:53:49. The candidates are a frame change mid-centring, or the drift not yet settled after the sync.
+12. **PLANET LOCK overshot and gave up after a long centring (integral windup).** From the owner's log, 2026-11-22:
+    - **22:53:34 to :42.** From 480 px off on the full frame, both corrections sat at the never-reverse limit (az 17.47-16.47, alt -7.32+6.32), while the integral summed the large error to its 15 "/s clamp.
+    - **22:53:44, at 2.4" from centre.** The corrections were still near full: az -14.21; alt 0.5 x -2.6 + 15 clipped to +6.32.
+    - **The planet overshot** to 94, then 146 px. The runaway check abandoned the lock at 197 px.
+
+    **Fixed** (`core/GuideLaw.h`, test `guide_windup`): conditional integration. An axis pinned at a limit by the error's own sign does not integrate. In a model of the mount fed the night's numbers, the old law overshoots about 24" (about 120 px) and the new one 3.7", settling in 22 s. A tracking rate 9 "/s stale (19:47 the same night) is still absorbed. **Owes:** a long centring on the sky (from a full-frame position more than 400 px off) that settles without abandoning.
+
+13. **The status bar said `640x480 RAW8` while 16b was selected and 16-bit files were written.** The once-a-second update passed a literal `8` to `StatusBar::SetCameraStats` instead of `roiBits`, which the recording uses. **Fixed** in 3.3.47. It was display only.
 
 ## What went right (for the record)
 
