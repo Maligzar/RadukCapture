@@ -769,7 +769,15 @@ private:
         // catches a fit that landed somewhere bad while leaving ordinary
         // seeing variation alone. A fair same-moment A/B would need a
         // re-measure back at the start position; that is a larger change.
-        const float REGRESSION_FRAC = 0.50f;
+        // Phase 167 (the owner at the scope, 2026-11-21: autofocus took a
+        // nearly focused Saturn "entirely out of focus", to a donut): 0.50
+        // was far too loose for a planet. Its half-flux diameter grows
+        // slowly with defocus, and a synthetic Saturn defocused until its
+        // middle was already dark scored 54% of focus
+        // (tests/focus_donut.cpp), so the check never ran. Any drop of a
+        // tenth or more now takes the same-sky A/B below, which costs a
+        // move back and a few seconds and is the only fair judge anyway.
+        const float REGRESSION_FRAC = 0.90f;
         if (startSharpness > 0.0f && finalSharp < startSharpness * REGRESSION_FRAC) {
             // 2026-11-08: that A/B, done now. Saturn faded steadily through
             // the run (dew or haze), so the start's reading from a minute
@@ -796,26 +804,29 @@ private:
             }
             Emit("[AF] Re-measured start pos=%d now: %.1f (was %.1f); fit pos=%d: %.1f\n",
                  m_startPosition, startNow, startSharpness, finalPos, finalSharp);
-            bool keep = startNow > 0.0f && finalSharp >= startNow * 0.95f;
+            // Phase 167: the verdict is FocusDirection.h's KeepAfterAB (HFD a
+            // tenth better at the start wins outright; near focus the edge
+            // metric judges), tested on its own in tests/af_keep.cpp.
             // Phase 155: after a fine pass the coarse score is the wrong
-            // judge. Near focus its curve is flat (a big disc: 900 steps
-            // off scored within 3% of focus), so a 5% margin on 5 samples
-            // was decided by noise and could revert a good fit. The edge
-            // metric found the fit and separates focus from 600 steps off
-            // about fourfold, so the same-sky A/B uses it, as the Moon
-            // path does: start and fit scored back to back, under one sky.
+            // judge near focus (a big disc: 900 steps off scored within 3%
+            // of focus), so the same-sky A/B scores start and fit back to
+            // back on the edge metric, as the Moon path does.
+            int nS = 0, nF = 0;
+            float eStart = 0.0f, eFit = 0.0f;
             if (fineUsed) {
-                int nS = 0, nF = 0;
-                const float eStart = ScoreHere(&nS);   // the focuser is at the start
+                eStart = ScoreHere(&nS);   // the focuser is at the start
                 if (!DriveFinal(finalPos)) {
                     Finish(false, m_startPosition, 0.0f, startSharpness, MoveFailure());
                     return;
                 }
-                const float eFit = ScoreHere(&nF);
+                eFit = ScoreHere(&nF);
                 Emit("[AF] Same sky, edge metric: start pos=%d %.4f, fit pos=%d %.4f\n",
                      m_startPosition, eStart, finalPos, eFit);
-                if (nS > 0 && nF > 0) keep = eFit >= eStart * 0.95f;
             }
+            const bool keep = KeepAfterAB(startNow, finalSharp, fineUsed && nS > 0 && nF > 0, eStart, eFit);
+            if (!keep && startNow > finalSharp * 1.10f)
+                Emit("[AF] HFD says the start is sharper (%.1f against %.1f at the fit): "
+                     "the start wins over the edge metric\n", startNow, finalSharp);
             if (keep) {
                 Emit("[AF] The sky changed, not the focus: keeping pos=%d\n", finalPos);
                 if (Over() > 0) {
