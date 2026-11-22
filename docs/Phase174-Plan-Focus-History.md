@@ -1,6 +1,6 @@
 # Phase 174: a focus history that learns
 
-Written 2026-11-22 at the owner's request, imaging through cloud: "a big learning opportunity for my autofocus so I want to make sure that I capture the meta data in a way that I can build a history of focusing so that my autofocuser starts to learn ... maybe we even build a skill, an MCP server, and allow an LLM or SLM to get involved with the auto focusing." Status: 174.0 `WRITTEN` (3.3.54); 174.1 to 174.3 `PLANNED`.
+Written 2026-11-22 at the owner's request, imaging through cloud: "a big learning opportunity for my autofocus so I want to make sure that I capture the meta data in a way that I can build a history of focusing so that my autofocuser starts to learn ... maybe we even build a skill, an MCP server, and allow an LLM or SLM to get involved with the auto focusing." Status: 174.0 `WRITTEN` (3.3.54); 174.2 `WRITTEN` (3.3.56); 174.1 and 174.3 `PLANNED`.
 
 ## The principle
 **The model reads the history and proposes; the deterministic routine focuses; replay judges every proposal against real sweeps before it reaches the sky.**
@@ -34,11 +34,19 @@ A new sweep or the app closing ends it. Leaving the result alone is recorded too
 2. **Using it.** Autofocus starts at the predicted position with a narrower sweep when the model is confident. A temperature change worth more than the critical focus zone (Phase 161's focus calibration) raises "refocus suggested".
 3. **The amount of data needed.** It reports how many sweeps and nights it rests on, and acts only above a minimum.
 
-## 174.2: replay (`PLANNED`)
-`tools/focus_replay` feeds each recorded sweep's coarse and fine readings through the routine's decision code: the fit, the sweep judge and the A/B. It reports what each rule version would have chosen against the followup's settled position.
+## 174.2: replay (`WRITTEN` 3.3.56)
+- **`core/FocusReplay.h`** reads `focus_history.jsonl`. It includes a small JSON reader, so it has no dependencies. For each sweep it re-runs the decisions that can be repeated from what was recorded:
+  - the coarse fit (`FitDirections` on the recorded passes);
+  - the same-sky A/B (`SweepSpoiledByFade`, `KeepAfterAB`).
 
-- **Tonight's fade becomes a permanent case.**
-- **The gate for any rule change,** whether hand-written or model-proposed: it must not make a single recorded sweep end further from where the owner settled.
+  The fine pass cannot be re-run without its frames, so a replayed result is the recorded one or the start, as the A/B now decides. Each sweep with a followup is scored as recorded and replayed distance from where the owner settled. `Regressions()` lists any sweep that ends more than 50 steps further away.
+- **`tools/focus_replay.exe <logs>\focus_history.jsonl`** prints the table and exits 1 on a regression. It is built beside the app.
+- **`tools/af_log_to_history.py`** turns a `raduk_log` from before 3.3.54 into history lines. The night and the settled positions are given on the command line (`--night 20261121 --settled 23:10=168893`); a log carries neither.
+- **Gated by `focus_replay`**, which holds two sweeps:
+  - **The night of 2026-11-22.** The recorded result was 2,909 steps from where the owner settled; replayed today, the start stands, 228 steps away.
+  - **CI's case 3.** The fit stays.
+
+  It also checks that a wrong rule is caught as a regression. The converter's self-test runs in CI.
 
 ## 174.3: an MCP server for focus history (`PLANNED`)
 `tools/focus_mcp.py` is a local MCP server, standard library only, needing nothing online (rule 7).

@@ -191,6 +191,12 @@ target_include_directories(phemu_lightcurve PRIVATE ${CMAKE_SOURCE_DIR}/src)
 add_executable(ser_drop_audit tools/ser_drop_audit.cpp)
 target_include_directories(ser_drop_audit PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
+# focus_replay (phase 174.2): recorded autofocus sweeps through today's
+# rules, scored against where the owner settled; exit 1 on a regression.
+# Built beside the app: build\Release\focus_replay.exe.
+add_executable(focus_replay tools/focus_replay.cpp)
+target_include_directories(focus_replay PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
 # ── Include directories ────────────────────────────────────────
 
 target_include_directories(RadukCapture PRIVATE
