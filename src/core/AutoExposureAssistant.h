@@ -139,6 +139,9 @@ public:
 
         // How many ticks to wait after a change before sampling again
         int    settleFrames = 5;
+        // Phase 170.0: in band but off the light path, slide along it at
+        // the same light, at most this many stops a step. 0 = off.
+        double rebalanceMaxStops = 1.0;
     };
 
     AutoExposureAssistant() = default;
@@ -275,6 +278,32 @@ public:
         float deadband = (m_cfg.targetHi - m_cfg.targetLo) / 2.0f;
 
         if (fabsf(error) <= deadband) {
+            // Phase 170.0: the brightness is right, but is the setting on
+            // the path? If not, trade one lever against the other at the
+            // same light (LightLadder.h RebalanceStep), a stop at a time.
+            if (m_cfg.rebalanceMaxStops > 0.0) {
+                const Rebalance rb = RebalanceStep(Ladder(), {m_currentExpMs, m_currentGain},
+                                                   m_cfg.rebalanceMaxStops);
+                const double expMinStepR = (std::max)(m_cfg.expMinStepMs, m_currentExpMs * m_cfg.expMinStepFrac);
+                const bool expMove  = fabs(rb.to.expMs - m_currentExpMs) >= expMinStepR;
+                const bool gainMove = abs(rb.to.gain - m_currentGain) >= m_cfg.gainMinStep;
+                if (rb.move && (expMove || gainMove)) {
+                    s.exposureMs = rb.to.expMs;
+                    s.gain       = rb.to.gain;
+                    char buf[128];
+                    snprintf(buf, sizeof(buf),
+                             "AE: = rebalance, same light: exp %.2f -> %.2fms  gain %d -> %d (%.2f stop%s off the path)",
+                             m_currentExpMs, rb.to.expMs, m_currentGain, rb.to.gain,
+                             fabs(rb.offStops), fabs(rb.offStops) == 1.0 ? "" : "s");
+                    s.text = buf;
+                    m_settling = m_cfg.settleFrames;
+                    // Not settled: autofocus waits for the settings to stop
+                    // changing, or its first frames would straddle the step.
+                    m_lastSuggestion = s;
+                    Say(s.text);
+                    return s;
+                }
+            }
             // In target range — no action
             char buf[64];
             snprintf(buf, sizeof(buf),
