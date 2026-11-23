@@ -178,6 +178,35 @@ def report(rows):
     return "\n".join(out)
 
 
+def diagnose(lines, t_from=None, t_to=None):
+    """Why nothing was found: no [GUIDE] lines, lines in another format,
+    all outside the window, or no LOCKED stage among them."""
+    guide = [l.rstrip("\n") for l in lines if "[GUIDE]" in l]
+    status = [l for l in guide if " err " in l and "axis err" in l]
+    parsed_all = parse(lines)
+    parsed_win = parse(lines, t_from, t_to)
+    out = ["why: %d [GUIDE] line(s) in the file, %d of them status lines, %d read, %d inside the window"
+           % (len(guide), len(status), len(parsed_all), len(parsed_win))]
+    if not guide:
+        out.append("  no [GUIDE] lines at all: PLANET LOCK did not drive in this log (try the other log file)")
+    elif status and not parsed_all:
+        out.append("  the status lines are in a format this tool does not read; first one:")
+        out.append("    " + status[0][:200])
+    elif parsed_all and not parsed_win:
+        def hm(t):
+            t %= 86400
+            return "%02d:%02d" % (t // 3600, t % 3600 // 60)
+        out.append("  every line is outside the window; the log's [GUIDE] lines run %s to %s"
+                   % (hm(parsed_all[0]["t"]), hm(parsed_all[-1]["t"])))
+    elif parsed_win:
+        stages = {}
+        for r in parsed_win:
+            stages[r["stage"]] = stages.get(r["stage"], 0) + 1
+        out.append("  stages seen: " + ", ".join("%s %d" % kv for kv in sorted(stages.items()))
+                   + " (a stretch needs 8 or more LOCKED lines with no gap over 10 s)")
+    return "\n".join(out)
+
+
 def main(argv):
     if len(argv) >= 2 and argv[1] == "--self-test":
         return self_test()
@@ -199,8 +228,11 @@ def main(argv):
             print("unknown argument " + argv[i], file=sys.stderr)
             return 2
     with open(argv[1], encoding="utf-8", errors="replace") as f:
-        rows = parse(f.readlines(), t_from, t_to)
+        lines = f.readlines()
+    rows = parse(lines, t_from, t_to)
     print(report(rows))
+    if not stretches(rows):
+        print(diagnose(lines, t_from, t_to))
     return 0
 
 
@@ -256,6 +288,13 @@ def self_test():
     ok(len(parse(late, 23 * 60 + 50, 0 * 60 + 10)) == 20, "a window across midnight keeps both sides")
     ok(stretches(parse(late))[0][-1]["t"] > stretches(parse(late))[0][0]["t"], "time keeps rising past midnight")
     ok("no LOCKED stretch" in report(parse(["nothing"])), "an empty log says so")
+    ok("no [GUIDE] lines at all" in diagnose(["nothing"]), "it says when there are no guide lines")
+    ok("outside the window" in diagnose(lines, 23 * 60, 23 * 60 + 30) and "21:00" in diagnose(lines, 23 * 60, 23 * 60 + 30),
+       "it says when the window misses them, and when they run")
+    odd = ['21:00:00 [GUIDE] LOCKED err 1.5 px  axis err az 0.8 alt -1.2 (other format)']
+    ok("format" in diagnose(odd), "it shows a line it cannot read")
+    cen = [_line(21 * 3600 + 2 * i, "CENTERING", 3, 3, 1, 1) for i in range(20)]
+    ok("CENTERING 20" in diagnose(cen), "it names the stages when none is LOCKED")
     print("ALL CHECKS PASSED" if fails == 0 else "%d CHECK(S) FAILED" % fails)
     return 1 if fails else 0
 
