@@ -805,13 +805,26 @@ private:
     // status line, and a move past the travel guard is asked for twice.
     raduk::core::FarMoveConfirm m_farFocusMove;
     std::function<bool()> m_trustPrompt;   // phase 157.0e
-    void FocusMoveSaid(bool moved) {
-        if (moved || !m_focuser) return;
+    void FocusMoveSaid(bool moved, bool relative = false) {
+        if (!m_focuser) return;
+        if (moved) {
+            // Phase 169.1: a move sent while the focuser travelled stops
+            // that move and replaces it. Say so, rather than leave a press
+            // that seemed to do something else.
+            const int was = m_focuser->LastReplacedTarget();
+            if (was >= 0) {
+                wchar_t b[128];
+                swprintf(b, 128, relative ? L"Focuser: added to the move in flight (it was going to %d)"
+                                          : L"Focuser: replaced the move in flight to %d", was);
+                SetAutofocusStatus(b);
+            }
+            return;
+        }
         SetAutofocusStatus((L"Focuser did not move: " +
                             raduk::core::ToWide(m_focuser->LastRefusal())).c_str());
     }
     void FocusStep(int steps) {
-        if (m_focuser) FocusMoveSaid(m_focuser->MoveRelative(steps));
+        if (m_focuser) FocusMoveSaid(m_focuser->MoveRelative(steps), true);
     }
     raduk::core::IMount*       m_mount   = nullptr;
 

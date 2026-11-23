@@ -142,6 +142,9 @@ public:
     // After an unplug: close, find the same focuser (by serial), open it,
     // and judge its number as on any open. Never moves anything.
     virtual bool Reconnect() { return false; }
+    // Phase 169.1: when the last move command stopped a move in flight and
+    // replaced it, that move's target; -1 when it replaced none.
+    virtual int LastReplacedTarget() const { return -1; }
 };
 
 } // namespace raduk::core
