@@ -2,6 +2,16 @@
 
 Raised by the owner at the scope, 2026-11-21: "Why is AE not doing this automatically?", about recording Saturn at 25 ms and gain 230 when shorter exposures would give more frames. Status: `PARTIAL`: 170.0 `WRITTEN` (3.3.66); 170.1 `PLANNED`.
 
+## Correction (2026-11-23, 3.3.69): the band, not the path
+The analysis below and 170.0's example missed the profile's exposure band (Phase 140.2).
+- **How the band changes the ladder.** `main.cpp`'s `setAERails` gives AE `TargetProfile::AERail()`, which for a profile with a band narrows the exposure rail to it. It puts the exposure knee at the ceiling and the gain knee at the HCG floor.
+- **Saturn's starting band is 8 to 25 ms.** On that ladder, AE uses exposure all the way to 25 ms before it adds gain. So 25 ms at gain 230 was **on** Saturn's path, and 170.0's rebalance leaves it there (`ae_rebalance` 4b).
+- **The 20 ms at gain 249 example** holds only on the default ladder, with no band.
+- **What answers the owner's question.** "Why not shorter exposures for more frames?" is a band question:
+  - **The ceiling is unmeasured.** Saturn's 25 ms is a starting value from amateur practice for an 8-inch at f/10, never measured here.
+  - **The trade-off is real.** A lower ceiling gives more frames and more frozen seeing, but at a higher gain and more noise per frame. 140.2 chose exposure-first because only exposure collects light.
+- **170.1 is item 55.** The mechanism already exists (the knee follows the band's ceiling); the exposure ladder measures where detail peaks per planet and sets `[exposure_band] ceiling_ms`. Until then the owner can lower `ceiling_ms` in `saturn.ini` by hand.
+
 ## Why it doesn't
 - **The path.** AE walks one path through exposure and gain (`LightLadder.h`): gain to the HCG floor (182), exposure to the knee (20 ms), gain to its knee (350), then exposure, then gain. **But it only moves when the brightness is wrong.**
 - **What happened tonight.** A setting off that path, from a profile or a hand change, stays put once the highlight sits in AE's band. 25 ms at gain 230 is off the path; the path would be about 20 ms at gain 250.
@@ -14,7 +24,7 @@ Raised by the owner at the scope, 2026-11-21: "Why is AE not doing this automati
      - `OnPath` (the path point with that light);
      - `OffPathStops`;
      - `RebalanceStep`: one step at constant light, at most 1 stop of exposure, with gain the other way by the same amount. It does nothing within 0.15 stop of the path, or when the light is beyond the path's ends.
-   - **The night's setting.** 25 ms at gain 230 is 0.32 stop off the path and goes to 20 ms at gain 249 in one step.
+   - **The night's setting, on the default ladder.** 25 ms at gain 230 is 0.32 stop off the default path and goes to 20 ms at gain 249 in one step. With Saturn's band it is on the path and stays (see the correction above).
    - **In the assistant.** `AutoExposureAssistant::Tick` uses it when the highlight is in band and nothing holds AE; recordings and focus sweeps already hold it. It logs `AE: = rebalance, same light: ...`.
    - **Settled.** A rebalancing tick is not settled, so autofocus waits for the settings to stop changing.
    - **The switch.** `Config::rebalanceMaxStops` (1.0; 0 turns it off).
