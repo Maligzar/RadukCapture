@@ -232,11 +232,13 @@ int main() {
         w.Feed(60.0f, 10.0f, 0.0f, 200, 8.0);
         w.Tick();
         Check(!w.Settled(), "not settled while it is correcting");
-        w.Feed(200.0f, 10.0f, 0.0f, 200, 8.0);
+        // On target at a setting on the light path (8 ms at the HCG floor):
+        // phase 170.0 would rebalance one off it, which is a change.
+        w.Feed(200.0f, 10.0f, 0.0f, 182, 8.0);
         w.Tick();
         Check(!w.Settled(), "not settled while it waits for frames");
         for (int i = 0; i < 10 && !w.Settled(); i++) {
-            w.Feed(200.0f, 10.0f, 0.0f, 200, 8.0);
+            w.Feed(200.0f, 10.0f, 0.0f, 182, 8.0);
             w.Tick();
         }
         Check(w.Settled(), "settled on target");
