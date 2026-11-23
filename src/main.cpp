@@ -9224,6 +9224,7 @@ static int RunApp(bool useEmulator) {
                 ff.refPct = focusRef.Reference();
                 preview.SetFocusFigure(ff);
                 sharpWindow.SetFocusFigure(ff);
+                histWindow.SetFocusState(focusRef.State());   // phase 172 finding 3
             }
             freshAnalysis = true;
         }

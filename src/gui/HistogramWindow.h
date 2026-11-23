@@ -107,6 +107,9 @@ public:
         m_valid    = a.valid;
         if (IsVisible()) InvalidateRect(m_hwnd, nullptr, FALSE);
     }
+    // Phase 172 finding 3: the focus readout's verdict, so the SEEING line
+    // can say when the disc is out of focus rather than read 9.6 in green.
+    void SetFocusState(raduk::core::FocusState f) { m_focus = f; }
 
     void ToggleFullscreen() {
         if (!m_hwnd) return;
@@ -245,7 +248,7 @@ private:
         const float labW = fs * 1.3f;
         const float pctW = fs * 4.2f;
         histogram::Draw(m_rt, m_font, br, m_analysis, m_valid,
-                        0.0f, top, w, h, rowH, labW, pctW);
+                        0.0f, top, w, h, rowH, labW, pctW, m_focus);
 
         m_chrome.Draw(m_rt, m_dwrite, m_w);
         m_rt->EndDraw();
@@ -321,6 +324,7 @@ private:
     WINDOWPLACEMENT         m_savedPlacement = {};
 
     raduk::core::AnalysisResult m_analysis;
+    raduk::core::FocusState m_focus = raduk::core::FocusState::NoReference;
     bool                        m_valid = false;
 };
 

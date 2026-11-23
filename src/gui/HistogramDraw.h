@@ -34,6 +34,7 @@
 #include <cstdint>
 #include <cwchar>
 #include "../core/FrameAnalyzer.h"
+#include "core/SeeingDisplay.h"   // phase 172 finding 3
 
 namespace raduk::gui::histogram {
 
@@ -60,7 +61,8 @@ struct Brushes {
 inline void Draw(ID2D1RenderTarget* rt, IDWriteTextFormat* font,
                  const Brushes& br, const raduk::core::AnalysisResult& a,
                  bool valid, float x, float y, float w, float h,
-                 float rowH, float labW, float pctW) {
+                 float rowH, float labW, float pctW,
+                 raduk::core::FocusState focus = raduk::core::FocusState::NoReference) {
     if (!rt || !font) return;
 
     const float PAD  = 6.0f;
@@ -233,13 +235,16 @@ inline void Draw(ID2D1RenderTarget* rt, IDWriteTextFormat* font,
 
     // Seeing score. Not shown anywhere else -- the preview's bottom-left
     // graph reports sharpness, which is a different question.
-    wchar_t line[48];
-    if (valid) swprintf(line, 48, L"SEEING  %.1f/10", a.seeingScore);
-    else       swprintf(line, 48, L"SEEING  --");
+    // Phase 172 finding 3: a relative score, so it reads near 10 through a
+    // blurred, steady disc. While the focus readout says SOFT or OUT the
+    // line says so and is never green (core/SeeingDisplay.h).
+    const raduk::core::SeeingText st = raduk::core::SeeingDisplay(valid, a.seeingScore, focus);
+    wchar_t line[64];
+    swprintf(line, 64, L"%ls", st.text.c_str());
     ID2D1SolidColorBrush* sBrush =
-        (!valid)                ? br.dim :
-        (a.seeingScore >= 7.0f) ? br.green :
-        (a.seeingScore >= 4.0f) ? br.amber : br.red;
+        (st.tone == raduk::core::SeeingTone::Good)    ? br.green :
+        (st.tone == raduk::core::SeeingTone::Caution) ? br.amber :
+        (st.tone == raduk::core::SeeingTone::Bad)     ? br.red   : br.dim;
     if (!sBrush) sBrush = br.dim;
     // Bounded to its own row rather than running to the bottom of the
     // panel. The font centres text vertically in whatever rect it is
