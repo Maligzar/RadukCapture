@@ -37,8 +37,10 @@ int main() {
         CHECK(f.IsMoving());
         const int mid = Pos(f);
         CHECK(mid != start && mid < start + 8000);
+        CHECK(f.LastReplacedTarget() == -1);
         CHECK(f.MoveToDirect(start - 3000));          // the press that used to be dropped
         CHECK(f.ReplacedMoves() == 1);
+        CHECK(f.LastReplacedTarget() == start + 8000);   // what the panel says it replaced
         CHECK(WaitStopped(f));
         std::printf("  absolute: %d -> (moving, at %d) -> ended %d, wanted %d\n", start, mid, Pos(f), start - 3000);
         CHECK(Pos(f) == start - 3000);
@@ -87,6 +89,7 @@ int main() {
         CHECK(f.MoveToDirect(start));
         CHECK(WaitStopped(f));
         CHECK(f.ReplacedMoves() == 0 && Pos(f) == start);
+        CHECK(f.LastReplacedTarget() == -1);          // an idle move replaced nothing
         f.Close();
     }
 

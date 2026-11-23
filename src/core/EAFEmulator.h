@@ -239,6 +239,7 @@ public:
     void SetRefusesWhileMoving(bool on) { m_refusesWhileMoving.store(on); }
     // How many moves have replaced one in flight.
     int  ReplacedMoves() const { return m_replaced.load(); }
+    int  LastReplacedTarget() const override { return m_lastReplaced.load(); }
     // The furthest the motor has been from where it was when this was
     // last reset: what a test asserts a fault could not exceed.
     void ResetExcursion()        { m_excursionFrom.store(m_position.load()); m_excursion.store(0); }
@@ -261,6 +262,7 @@ private:
             return false;
         }
         // Phase 169.1: as EAFFocuser.cpp, a new move replaces the one in flight.
+        m_lastReplaced.store(-1);
         if (!ReplaceMoveInFlight(position)) return false;
         int from = 0;
         const bool known = TryGetPosition(from);
@@ -302,6 +304,7 @@ private:
         }
         m_ledger.Idle();
         ++m_replaced;
+        m_lastReplaced.store(was);
         raduk::core::CoreLog("[EAFEmulator] move to %d replaces the move in flight to %d: stopped at %d\n",
                              position, was, m_position.load());
         return true;
@@ -498,6 +501,7 @@ private:
     std::atomic<bool>   m_moving{false};
     std::atomic<bool>   m_refusesWhileMoving{false};
     std::atomic<int>    m_replaced{0};
+    std::atomic<int>    m_lastReplaced{-1};
     bool                m_reversed = false;
     int                 m_backlash = 0;
     mutable ApproachSequencer m_approach;

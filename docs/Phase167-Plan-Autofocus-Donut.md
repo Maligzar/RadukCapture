@@ -83,7 +83,13 @@ The owner at the scope, 2026-11-22 at 23:10, with the guard of 3.3.44 built: aut
 - **The same-sky A/B could not tell start from fit.** Both read 4.6, so it kept the fit: "The sky changed, not the focus".
 - **The focus reference was then armed from the faded frames.** The readout called the focused planet "OUT 28% of AF".
 
-**Built** (`FocusDirection.h`, gated by `af_sweep_judge`, which replays the night's own numbers):
+**The rule as it stands (3.3.63).** The text below describes 3.3.48's first build, kept for the history. The rule has changed twice since, both times because master CI found a case it got wrong.
+- **3.3.55.** "Passes disagreed over 1.5x" became "**neither pass found a peak**" (`PassHasPeak`: the best point inside the sweep and at least 1.15x both ends). `autofocus_saturn` case 3 fades through the sweep with passes 4.45x apart, yet each pass peaks near focus, and its fit is right.
+- **3.3.63.** It also needs the passes to **disagree by position** (`PassesAgree`: each swings 1.3x or more and their correlation is 0.7 or more). Case 9 has focus 500 steps inside the end of the sweep, so neither pass can peak, but both swing 12x to 16x together.
+
+So today the start stands only when it faded to under half **and** neither pass peaked **and** the passes disagree. The night of 2026-11-22 meets all three: its return pass was flat at 1.07x. `af_sweep_judge` holds the night's numbers, case 3's and case 9's.
+
+**Built first** (`FocusDirection.h`, gated by `af_sweep_judge`, which replays the night's own numbers):
 - **`SweepSpoiledByFade`, acted on in the same-sky A/B.** The start stands when it re-measures at under half its earlier score **and** the sweep's outward and return passes disagreed by a median of over 1.5x. The night had both: 4.6 against 14.6, and passes 3.11x apart. Either fact alone is not enough:
   - **A fade with a consistent sweep:** `autofocus_saturn`'s fading cases (the 2026-11-08 kind) re-measure at 46-49% with passes 1.21x and 1.23x apart, and their fit is right.
   - **Disagreement without a fade:** a large backlash makes the passes differ 2.0x (`af_overshoot`).

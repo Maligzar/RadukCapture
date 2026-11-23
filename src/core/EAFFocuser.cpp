@@ -204,6 +204,7 @@ bool EAFFocuser::Command(int position, bool oneSided, bool pastGuard, const unsi
     // (EAF_ERROR_MOVING, seen at the scope 2026-11-21: "EAFMove(154144)
     // failed: 5"), and the press was dropped without a word. The newest
     // command is the one meant: stop the move in flight and replace it.
+    m_lastReplaced.store(-1);
     if (!ReplaceMoveInFlight(position)) return false;
     int from = 0;
     const bool known = TryGetPosition(from);
@@ -252,6 +253,7 @@ bool EAFFocuser::ReplaceMoveInFlight(int position) {
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
     m_ledger.Idle();
+    m_lastReplaced.store(was);
     int at = 0;
     const bool known = TryGetPosition(at);
     if (was >= 0)
