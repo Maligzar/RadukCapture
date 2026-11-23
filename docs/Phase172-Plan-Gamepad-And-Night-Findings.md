@@ -60,6 +60,26 @@ Each was read from the night's log and screenshots. Where noted, it was checked 
 
     **Planned:** a sync changes neither the motor axes, nor their signs, nor the camera's rotation, so ALIGN should keep the calibration's geometry and re-measure only the base rates (about 3 s, not 36). Whether that holds on the NexStar is to be checked by comparing two calibrations either side of a sync. The abandonment is to be read from the night's `[GUIDE]` lines between 22:53:33 and 22:53:49. The candidates are a frame change mid-centring, or the drift not yet settled after the sync.
 
+    **The abandonment is finding 12.** The integral windup overshot, and that is fixed in 3.3.47.
+
+    **Written (3.3.64): a lock keeps the last calibration's response.** On this alt-az rig the camera rides the tube, so the image moves the same way for an axis wherever the tube points. Only the azimuth magnitude shrinks with cos(altitude), and `RescaleForAltitude` already applies that. A sync or a GoTo changes the tracking rates, never that geometry.
+
+    After the rates (3 s) and the direction check (1 s), `_RunCalibration` asks `CanReuseGeometry` (`core/GuideSolve.h`). It keeps the response when:
+    - a calibration exists and has an altitude;
+    - the frame is the same size (a different size may be a different binning);
+    - both axes turned the same way for "direction 0" as they did then;
+    - it is under 4 hours old.
+
+    It then measures the drift once (4 s settle and 3 s window) and takes it out of the rates through the kept response, in about 11 s instead of 36. The log says `[CAL] quick: ...`, or `[CAL] full calibration: <reason>`.
+
+    **What happens when the kept response is wrong.** Any failure clears the stored calibration, so the next press calibrates in full. The guider's runaway check still stands behind it: a wrong response aborts guiding and clears it too.
+
+    **The switch.** `rig.ini` `QuickRecalibrate=0` brings back a full calibration every time.
+
+    **Tests.** Gated by `geometry_reuse` (the rule) and `tracking_emulator`. The emulator's second lock and its lock after a GoTo must now be quick, centred and LOCKED; a new step 5b turns the switch off and locks in full.
+
+    **Owes:** the comparison of two full calibrations either side of a sync on the NexStar (set `QuickRecalibrate=0` for one night), which confirms the geometry claim on the real mount.
+
 12. **PLANET LOCK overshot and gave up after a long centring (integral windup).** From the owner's log, 2026-11-22:
     - **22:53:34 to :42.** From 480 px off on the full frame, both corrections sat at the never-reverse limit (azimuth: a correction of -16.47 on a base of 17.47 "/s; altitude: +6.32 on -7.32), while the integral summed the large error to its 15 "/s clamp.
     - **22:53:44, at 2.4" from centre.** The corrections were still near full: az -14.21; alt 0.5 x -2.6 + 15 clipped to +6.32.

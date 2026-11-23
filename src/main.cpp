@@ -5613,6 +5613,10 @@ static int RunApp(bool useEmulator) {
     // inside the tracker; failure drops back to Searching.
     // Phase 156.2a: the sky run reads each calibration's result, numbered.
     int skyCalSeq = 0; bool skyCalOk = false; std::string skyCalMsg;
+    // Phase 172 finding 11: a lock after ALIGN keeps the response and
+    // re-measures only the rates (rig.ini QuickRecalibrate, 1; 0 = full).
+    tracker.SetQuickRecalibrate(GetPrivateProfileIntA("Rig", "QuickRecalibrate", 1,
+                                                      raduk::core::RigConfig::PublicIniPath().c_str()) != 0);
     tracker.SetCalibrationCallback([&](bool ok, const std::string& msg) {
         ++skyCalSeq; skyCalOk = ok; skyCalMsg = msg;
         if (ok) {

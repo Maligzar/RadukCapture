@@ -107,6 +107,10 @@ struct GuideCalibration {
     // azimuth response by cos(alt_now)/cos(alt_cal) on alt-az mounts.
     float altDeg = -1.0f;
     std::chrono::steady_clock::time_point when{};
+    // Phase 172 finding 11: what a later lock checks before keeping this
+    // response (GuideSolve.h CanReuseGeometry). 0 = not known.
+    unsigned frameW = 0, frameH = 0;
+    float axisSignAz = 0.0f, axisSignAlt = 0.0f;
 };
 
 class CentroidTracker {
@@ -227,6 +231,11 @@ public:
     // via the ROI button, which logs for itself.
     void SetAutoLockedCallback(std::function<void()> cb) { m_onAutoLocked = cb; }
 
+    // Phase 172 finding 11: a lock may keep the last calibration's response
+    // and re-measure only the rates (GuideSolve.h CanReuseGeometry). Off =
+    // a full calibration every time (rig.ini QuickRecalibrate=0).
+    void SetQuickRecalibrate(bool on) { m_quickRecal.store(on); }
+    bool QuickRecalibrate() const     { return m_quickRecal.load(); }
     void SetCalibrationCallback(std::function<void(bool, const std::string&)> cb) {
         m_onCalibration = std::move(cb);
     }
@@ -446,6 +455,7 @@ private:
     std::function<void()>        m_onAutoLocked;
     std::atomic<bool>            m_autoAdvance{false};
     std::atomic<bool>            m_calPending{false};
+    std::atomic<bool>            m_quickRecal{true};   // finding 11
     std::atomic<bool>            m_calSuccess{false};
     std::atomic<float>           m_driftRA{0.0f};
     std::atomic<float>           m_driftDec{0.0f};

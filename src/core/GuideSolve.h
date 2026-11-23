@@ -75,6 +75,47 @@ inline GuideResponse RescaleForAltitude(GuideResponse r,
     return r;
 }
 
+// ── Phase 172 finding 11: a lock after ALIGN in seconds, not 36 ──
+//
+// 2026-11-22 22:52: after ★ ALIGN the lock recalibrated from scratch, 36 s
+// of drift windows and offset moves, though nothing about the response had
+// changed. On an alt-az mount the camera rides the tube, so the image moves
+// the same way for an axis wherever it points; only the azimuth response
+// shrinks with cos(altitude), which RescaleForAltitude already applies. A
+// sync or a GoTo changes the tracking RATES, never that geometry.
+//
+// So a lock may keep the last calibration's response and re-measure only
+// the rates and the axis directions, when:
+//   - there is a calibration and its altitude is known;
+//   - the frame is the same size (a different size can be a different
+//     binning, so a different pixel scale);
+//   - each axis turned the same way for "direction 0" as it did then
+//     (a different sign means the mount, or its wiring, is not the same);
+//   - it is under maxAgeSec old (someone may have rotated the camera).
+// Anything else calibrates in full, and the guider's runaway check still
+// stands behind a kept one: a wrong response aborts and clears it.
+struct GeometryReuse { bool ok = false; const char* why = ""; };
+
+inline GeometryReuse CanReuseGeometry(bool calValid, float calAltDeg,
+                                      unsigned calW, unsigned calH,
+                                      float calSignAz, float calSignAlt,
+                                      unsigned frameW, unsigned frameH,
+                                      float signAz, float signAlt,
+                                      double ageSec, double maxAgeSec = 4.0 * 3600.0) {
+    GeometryReuse r;
+    if (!calValid)                       { r.why = "no calibration to keep"; return r; }
+    if (calAltDeg < 0.0f)                { r.why = "the calibration has no altitude"; return r; }
+    if (calW == 0 || calH == 0)          { r.why = "the calibration's frame size is not known"; return r; }
+    if (calW != frameW || calH != frameH){ r.why = "the frame size changed since the calibration"; return r; }
+    if (calSignAz == 0.0f || calSignAlt == 0.0f) { r.why = "the calibration's axis directions are not known"; return r; }
+    if ((calSignAz > 0.0f) != (signAz > 0.0f) || (calSignAlt > 0.0f) != (signAlt > 0.0f))
+                                         { r.why = "an axis turned the other way this time"; return r; }
+    if (!(ageSec >= 0.0) || ageSec > maxAgeSec) { r.why = "the calibration is too old"; return r; }
+    r.ok = true;
+    r.why = "same frame, same axis directions";
+    return r;
+}
+
 // ── Phase 47: click a pixel, put it in the middle ───────────
 //
 // Centring a target by jogging is a game of overshoot in the dark: the
