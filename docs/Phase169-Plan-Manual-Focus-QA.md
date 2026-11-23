@@ -1,6 +1,6 @@
 # Phase 169: manual focus, one behaviour from every control (QA and rebuild)
 
-Raised by the owner at the scope, 2026-11-21: "The focuser manual commands need a QA; they do not seem to behave the same way. Maybe the features have passed the functionality and we need to rebuild the manual focus." Tech debt, after the open branches merge. Status: `PARTIAL`: 169.1's dropped-move fix `WRITTEN` (3.3.61) and inward keys `WRITTEN` (3.3.62); the rest `PLANNED`.
+Raised by the owner at the scope, 2026-11-21: "The focuser manual commands need a QA; they do not seem to behave the same way. Maybe the features have passed the functionality and we need to rebuild the manual focus." Tech debt, after the open branches merge. Status: `PARTIAL`: 169.1's dropped-move fix `WRITTEN` (3.3.61) and inward keys `WRITTEN` (3.3.62); the panel's notice `WRITTEN` (3.3.67); the rest `PLANNED`.
 
 ## Why they differ (found by reading the code, 2026-11-22)
 Each manual control reaches the focuser by its own path, and the paths have collected different rules over phases 85, 139, 157 and 161:
@@ -28,7 +28,7 @@ So a relative step and an absolute move to the same place can end at different m
   - **Relative steps were hit too.** They already computed their target from the move in flight, but then sent it while moving, so a second `F` press mid-move hit the same error. They now replace the move as well, and two presses land at the sum of both steps.
   - **The emulator.** It has the same rule, plus `SetRefusesWhileMoving`, which reproduces the real device's error 5.
   - **Tests.** Gated by `focus_replace` (absolute, relative, one-sided with backlash, idle).
-  - **Still owed.** The panel saying which happened: today it is in the log only.
+  - **The panel says so (3.3.67).** `IFocuser::LastReplacedTarget()` gives the target of the move a command just replaced, or -1. The panel's GO TO and step buttons then show `Focuser: replaced the move in flight to N`, or for a step `added to the move in flight (it was going to N)`. Keyboard steps stay in the log, since a notice per key press would be noise. `focus_replace` checks the value.
 
 ## Stages
 1. **169.0, the QA.** Each manual control is driven on the emulator focuser, which has slack and a guard, and its logged moves are recorded. Measure the end position, the direction of the final approach, the step size, and the refusal behaviour. Do the same on the real EAF indoors. The result is a table of what each actually does, against what the Help says.
