@@ -59,4 +59,45 @@ inline float GuideAxisStep(float err, float base, float dt, const GuideLawParams
     return reverseClamp(clampf(p.kp * err + st.integ, p.maxCorr));
 }
 
+// ── Phase 172 finding 4: the base rate follows a long lock ──────────
+//
+// 2026-11-22 19:47: the guider was adding +8 to +9 "/s on azimuth to a
+// 15.64 "/s base measured 80 minutes earlier. Alt-az rates change as the
+// target moves, and the integral was carrying the whole change. It held
+// 1.5", but a jump then started from a large integral, and a longer lock
+// would have hit the integral's 15 "/s clamp, after which the proportional
+// term carries the rest and the planet sits off centre by the shortfall
+// over kp (tests/rate_fold.cpp: 17", about 80 px, two hours in).
+//
+// At steady state the integral IS the rate error, so when the lock has
+// been calm for a while the integral moves into the base rate: base +=
+// integ, integ = 0. The motor command does not change by a step (the
+// correction loses exactly what the base gains); the integral starts
+// again with its whole headroom, and the base stays the true rate.
+//
+// Not while centring, not while the error is large (the integral then
+// holds a transient, not a rate), and never across zero: a base that
+// would change sign, or fall inside the never-reverse band, is left.
+struct RateFoldState { float calmSec = 0.0f; };
+
+struct RateFoldParams {
+    float calmAs  = 2.0f;    // error under this counts as calm
+    float holdSec = 60.0f;   // calm this long before a fold
+    float minInteg = 0.5f;   // a smaller integral is noise, not a rate
+};
+
+inline bool FoldIntegralIntoBase(float errAs, bool locked, float dt, float& base, float& integ,
+                                 RateFoldState& st, const RateFoldParams& p = {}) {
+    if (!locked || !(errAs <= p.calmAs)) { st.calmSec = 0.0f; return false; }
+    st.calmSec += dt;
+    if (st.calmSec < p.holdSec) return false;
+    if (integ < p.minInteg && integ > -p.minInteg) return false;
+    const float nb = base + integ;
+    if ((nb > 0.0f) != (base > 0.0f) || (nb < 1.0f && nb > -1.0f)) return false;
+    base = nb;
+    integ = 0.0f;
+    st.calmSec = 0.0f;
+    return true;
+}
+
 } // namespace raduk::core

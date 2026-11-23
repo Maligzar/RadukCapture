@@ -63,6 +63,7 @@
 #include <string>
 #include <deque>
 #include <algorithm>
+#include "GuideLaw.h"   // RateFoldState (phase 172 finding 4)
 
 namespace raduk::core {
 
@@ -467,6 +468,7 @@ private:
     bool   m_ratesValid = false;
     float  m_axisSign[2]    = { 1.0f, 1.0f };   // encoder sign of command direction 0
     float  m_baseRateAs[2]  = { 0.0f, 0.0f };   // measured tracking rates, encoder "/s
+    RateFoldState m_rateFold[2];                 // finding 4 (GuideLaw.h), under m_mutex
     float  m_integAs[2]     = { 0.0f, 0.0f };   // integral correction, "/s
     // True while this app has taken the axes from the hand control.
     std::atomic<bool> m_appDriving{false};
