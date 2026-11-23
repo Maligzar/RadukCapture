@@ -145,6 +145,7 @@ $Tests = @(
     @{ Name = "geometry_reuse"; Sources = @() }
     @{ Name = "rate_fold"; Sources = @() }
     @{ Name = "ae_rebalance"; Sources = @() }
+    @{ Name = "seeing_display"; Sources = @() }
     @{ Name = "autofocus_saturn"; Sources = @() }
     @{ Name = "focus_metric";     Sources = @() }
     @{ Name = "focus_metric_compare"; Sources = @() }

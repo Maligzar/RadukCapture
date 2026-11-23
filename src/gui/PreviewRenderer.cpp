@@ -1302,8 +1302,11 @@ void PreviewRenderer::DrawHistogramPanel(const raduk::core::AnalysisResult& a,
     br.red   = m_redBrush;
     br.green = m_greenBrush;
 
+    // Phase 172 finding 3: the focus verdict, so SEEING says when focus is off.
+    const int fs = m_focusFigure.show ? m_focusFigure.state : 0;
     histogram::Draw(m_renderTarget, m_hudFont, br, a, valid,
-                    x, y, w, h, ROWH, LABW, PCTW);
+                    x, y, w, h, ROWH, LABW, PCTW,
+                    (fs >= 0 && fs <= 4) ? (raduk::core::FocusState)fs : raduk::core::FocusState::NoReference);
 }
 
 void PreviewRenderer::DrawTempPanel(float x, float y, float w, float h) {
