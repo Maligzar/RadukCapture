@@ -45,15 +45,43 @@
 #include <string>
 #include <vector>
 
+#include "LogArchive.h"
+
 #pragma comment(lib, "dbghelp.lib")
 
 namespace raduk::core::crash {
 
 inline constexpr DWORD kCxxException = 0xE06D7363;
 
+// 2026-11-23: also copied into `historyDir`, named for when that run ended
+// (its last write), keeping the newest logarchive::kHistoryKeep runs. A
+// night now survives more than one restart. Empty historyDir: .prev only.
+inline void ArchiveLog(const std::string& path, const std::string& historyDir) {
+    if (historyDir.empty()) return;
+    WIN32_FILE_ATTRIBUTE_DATA fa{};
+    if (!GetFileAttributesExA(path.c_str(), GetFileExInfoStandard, &fa)) return;
+    FILETIME local{};
+    SYSTEMTIME st{};
+    if (!FileTimeToLocalFileTime(&fa.ftLastWriteTime, &local) || !FileTimeToSystemTime(&local, &st)) return;
+    CreateDirectoryA(historyDir.c_str(), nullptr);   // fine if it exists
+    const std::string name = logarchive::ArchiveName(st.wYear, st.wMonth, st.wDay,
+                                                     st.wHour, st.wMinute, st.wSecond);
+    CopyFileA(path.c_str(), (historyDir + "\\" + name).c_str(), FALSE);
+    std::vector<std::string> names;
+    WIN32_FIND_DATAA fd{};
+    HANDLE h = FindFirstFileA((historyDir + "\\" + logarchive::kPrefix + "*.txt").c_str(), &fd);
+    if (h != INVALID_HANDLE_VALUE) {
+        do { names.push_back(fd.cFileName); } while (FindNextFileA(h, &fd));
+        FindClose(h);
+    }
+    for (const auto& n : logarchive::ToDelete(names))
+        DeleteFileA((historyDir + "\\" + n).c_str());
+}
+
 // The previous log, kept beside it. Call before the log is opened.
-inline void RotateLog(const std::string& path) {
+inline void RotateLog(const std::string& path, const std::string& historyDir = "") {
     if (GetFileAttributesA(path.c_str()) == INVALID_FILE_ATTRIBUTES) return;
+    ArchiveLog(path, historyDir);
     std::string prev = path;
     const size_t dot = prev.find_last_of('.');
     const size_t slash = prev.find_last_of("\\/");
