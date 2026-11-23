@@ -106,6 +106,7 @@ jobs:
           python tools/sky_handoff.py --self-test
           python tools/af_log_to_history.py --self-test
           python tools/focus_mcp.py --self-test
+          python tools/guide_report.py --self-test
 
       # Phase 166.0: the app first, Dash second. Every remote command has a
       # control in the app, or names the open stage that owes it.
