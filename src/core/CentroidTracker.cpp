@@ -556,6 +556,7 @@ void CentroidTracker::_RunCalibration(IMount* mount) {
         m_axisSign[1] = movedAlt >= 0.0 ? 1.0f : -1.0f;
         m_baseRateAs[0] = rAz; m_baseRateAs[1] = rAlt;
         m_integAs[0] = m_integAs[1] = 0.0f;
+        m_rateFold[0] = m_rateFold[1] = RateFoldState{};
         m_ratesValid = true;
     }
     _DriveAxes(mount, rAz, rAlt);
@@ -996,6 +997,16 @@ void CentroidTracker::Run() {
             corr[0] = GuideAxisStep(aAz,  base[0], dtc, gp, sa);
             corr[1] = GuideAxisStep(aAlt, base[1], dtc, gp, sb);
             m_integAs[0] = sa.integ; m_integAs[1] = sb.integ;
+            // Phase 172 finding 4: a calm lock moves its integral into the
+            // base rate, so the base follows the target across the sky and
+            // the integral keeps its headroom. The command is unchanged.
+            const bool locked = (stage == AcquisitionStage::Locked);
+            for (int ax = 0; ax < 2; ++ax) {
+                const float was = m_baseRateAs[ax], moved = m_integAs[ax];
+                if (FoldIntegralIntoBase(errAs, locked, dtc, m_baseRateAs[ax], m_integAs[ax], m_rateFold[ax]))
+                    CoreLog("[GUIDE] %s base rate follows the lock: %.2f -> %.2f \"/s (the integral's %+.2f)\n",
+                            ax == 0 ? "az" : "alt", was, m_baseRateAs[ax], moved);
+            }
         }
         if (!m_threadRunning.load() || m_suspended.load()) continue;
         _DriveAxes(s.mount, base[0] + corr[0], base[1] + corr[1]);
