@@ -34,6 +34,11 @@ import math
 import re
 import sys
 
+# CentroidTracker::GUIDE_DEADBAND_AS: under this total error the guider sends
+# no proportional correction (only the integral), so lines inside it say
+# nothing about how hard the loop leans.
+DEADBAND_AS = 0.6
+
 RE = re.compile(
     r'^(\d\d):(\d\d):(\d\d)(?:\.(\d+))?\s+\[GUIDE\]\s+(\w+)\s+err\s+([-\d.]+)"\s+\(([-\d.]+),\s*([-\d.]+)\s*px\)\s+'
     r'axis err az\s+([-\d.]+)\s+alt\s+([-\d.]+)"\s+rates az\s+([-\d.]+)([+-][\d.]+)\s+alt\s+([-\d.]+)([+-][\d.]+)')
@@ -123,16 +128,26 @@ def axis_report(st, key, corr_key):
     rms = math.sqrt(sum(e * e for e in err) / len(err))
     ac = {lag: autocorr(err, lag) for lag in (1, 2, 3)}
     per = swing_period(err, dt)
-    # How hard the loop leans: the slope of correction on error.
-    me, mc = sum(err) / len(err), sum(corr) / len(corr)
-    see = sum((e - me) ** 2 for e in err)
-    gain = sum((e - me) * (c - mc) for e, c in zip(err, corr)) / see if see > 1e-12 else None
+    # How hard the loop leans: the slope of correction on error, from the
+    # lines outside the deadband only (inside it the proportional term is
+    # off, which would read as a weak loop).
+    me = sum(err) / len(err)
+    inside = sum(1 for r in st if r["err"] <= DEADBAND_AS)
+    act = [(r[key], r[corr_key]) for r in st if r["err"] > DEADBAND_AS]
+    gain = None
+    if len(act) >= 4:
+        ae = sum(e for e, _ in act) / len(act)
+        ac_ = sum(c for _, c in act) / len(act)
+        see = sum((e - ae) ** 2 for e, _ in act)
+        if see > 1e-12:
+            gain = sum((e - ae) * (c - ac_) for e, c in act) / see
     # Does the error's swing grow or fade across the stretch?
     half = len(err) // 2
     a1 = math.sqrt(sum((e - me) ** 2 for e in err[:half]) / max(1, half))
     a2 = math.sqrt(sum((e - me) ** 2 for e in err[half:]) / max(1, len(err) - half))
     return {"n": len(err), "dt": dt, "rms": rms, "worst": max(abs(e) for e in err),
-            "ac": ac, "period": per, "gain": gain, "trend": (a2 / a1) if a1 > 1e-9 else None}
+            "ac": ac, "period": per, "gain": gain, "trend": (a2 / a1) if a1 > 1e-9 else None,
+            "deadband_share": inside / len(st), "active": len(act)}
 
 
 def verdict(r):
@@ -150,6 +165,10 @@ def verdict(r):
     if ac1 is not None and abs(ac1) < 0.3:
         return "looks like SEEING: close to white at %.0f s, no steady swing" % r["dt"]
     if ac1 is not None and ac1 > 0.6:
+        if r.get("deadband_share", 0.0) >= 0.4:
+            return ("slow wander inside the guider's %.1f\" deadband (%.0f%% of lines), where only the integral "
+                    "acts: drift until the error crosses it, then a push back - working as designed"
+                    % (DEADBAND_AS, 100.0 * r["deadband_share"]))
         return "slow wander (strong positive autocorrelation): a rate or drift, not seeing or overshoot"
     return "mixed: neither mark is clear"
 
@@ -171,8 +190,10 @@ def report(rows):
             out.append("  %-3s err RMS %.2f\" worst %.1f\"  autocorr %s  swing %s  loop gain %s  trend %s" % (
                 name, r["rms"], r["worst"], ac,
                 "%.0f s" % r["period"] if r["period"] else "-",
-                "%.2f /s" % r["gain"] if r["gain"] is not None else "-",
+                ("%.2f /s" % r["gain"]) if r["gain"] is not None else "- (too few lines outside the deadband)",
                 "x%.2f" % r["trend"] if r["trend"] is not None else "-"))
+            out.append("      %.0f%% of lines inside the %.1f\" deadband; the loop gain is from the other %d"
+                       % (100.0 * r["deadband_share"], DEADBAND_AS, r["active"]))
             out.append("      %s" % verdict(r))
     out.append("(a reading of the marks in the [GUIDE] lines, not a proof: the seeing itself is not logged)")
     return "\n".join(out)
@@ -288,6 +309,24 @@ def self_test():
     ok(len(parse(late, 23 * 60 + 50, 0 * 60 + 10)) == 20, "a window across midnight keeps both sides")
     ok(stretches(parse(late))[0][-1]["t"] > stretches(parse(late))[0][0]["t"], "time keeps rising past midnight")
     ok("no LOCKED stretch" in report(parse(["nothing"])), "an empty log says so")
+    # 2026-11-23 21:44 (the owner's run): altitude wandered slowly round
+    # 0.5", mostly inside the 0.6" deadband, and the lean read 0.10 instead
+    # of the loop's 0.3 because the proportional term was off for those lines.
+    wl = []
+    tt = 21 * 3600 + 44 * 60.0
+    alt_v = 0.0
+    for i in range(40):
+        alt_v = 0.85 * alt_v + rng.gauss(0, 0.25) + (0.08 if i < 20 else -0.05)
+        tot = math.hypot(0.1, alt_v)
+        p_on = tot > DEADBAND_AS
+        c_alt = (0.3 * alt_v if p_on else 0.0) + 0.02
+        wl.append('%02d:%02d:%06.3f [GUIDE] LOCKED err %.1f" (0, %.0f px)  axis err az 0.1 alt %.2f"  '
+                  'rates az 15.64+0.03 alt -7.32%+.3f "/s' % (int(tt // 3600), int(tt % 3600 // 60), tt % 60,
+                                                              tot, alt_v * 5, alt_v, c_alt))
+        tt += 2.0
+    wr = axis_report(stretches(parse(wl))[0], "alt", "corr_alt")
+    ok(wr["deadband_share"] > 0.3, "the deadband share is reported")
+    ok(wr["gain"] is None or abs(wr["gain"] - 0.3) < 0.08, "the lean is the loop's 0.3, not diluted by the deadband")
     ok("no [GUIDE] lines at all" in diagnose(["nothing"]), "it says when there are no guide lines")
     ok("outside the window" in diagnose(lines, 23 * 60, 23 * 60 + 30) and "21:00" in diagnose(lines, 23 * 60, 23 * 60 + 30),
        "it says when the window misses them, and when they run")
