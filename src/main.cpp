@@ -180,7 +180,10 @@ static double ScenarioNow() {
 static void LogInit() {
     // 2026-11-09: keep the last run's log as raduk_log.prev.txt, so a
     // crash is still on disk after the next launch.
-    raduk::core::crash::RotateLog(raduk::core::Paths::LogFile());
+    // 2026-11-23: and every run's log in <logs>\history, by date (the
+    // newest 30), so a night survives more than one restart.
+    raduk::core::crash::RotateLog(raduk::core::Paths::LogFile(),
+                                  raduk::core::Paths::Logs() + "\\history");
     g_log = fopen(raduk::core::Paths::LogFile().c_str(), "w");
     if (!g_log) { raduk::core::crash::RotateLog("raduk_log.txt"); g_log = fopen("raduk_log.txt", "w"); }
     AllocConsole();

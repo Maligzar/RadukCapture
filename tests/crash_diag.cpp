@@ -96,6 +96,52 @@ int main() {
         DeleteFileA(prev.c_str());
     }
 
+    printf("\n5. Every run's log kept by date, the newest 30 (2026-11-23)\n");
+    {
+        const std::string dir = "crash_diag_history";
+        CreateDirectoryA(dir.c_str(), nullptr);
+        // 31 old archives already there, and a stranger the pruning must leave.
+        for (int i = 0; i < 31; ++i) {
+            char n[64];
+            snprintf(n, sizeof(n), "%s\\raduk_log_202601%02d-120000.txt", dir.c_str(), i + 1);
+            std::ofstream(n) << "old";
+        }
+        { std::ofstream(dir + "\\notes.txt") << "mine"; }
+        const std::string log = "crash_diag_hist.txt", prev = "crash_diag_hist.prev.txt";
+        { std::ofstream(log) << "tonight"; }
+        RotateLog(log, dir);
+        int ours = 0; bool tonight = false, oldest = false;
+        WIN32_FIND_DATAA fd{};
+        HANDLE h = FindFirstFileA((dir + "\\raduk_log_*.txt").c_str(), &fd);
+        if (h != INVALID_HANDLE_VALUE) {
+            do {
+                ++ours;
+                if (std::string(fd.cFileName) == "raduk_log_20260101-120000.txt") oldest = true;
+                std::ifstream f(dir + "\\" + fd.cFileName);
+                std::string c((std::istreambuf_iterator<char>(f)), {});
+                if (c == "tonight") tonight = true;
+            } while (FindNextFileA(h, &fd));
+            FindClose(h);
+        }
+        Check(tonight, "the outgoing log is copied into the history");
+        Check(ours == 30, "the newest 30 are kept", std::to_string(ours));
+        Check(!oldest, "the oldest went first");
+        Check(GetFileAttributesA((dir + "\\notes.txt").c_str()) != INVALID_FILE_ATTRIBUTES,
+              "a file that is not an archive is left alone");
+        std::ifstream p(prev);
+        std::string s((std::istreambuf_iterator<char>(p)), {});
+        p.close();
+        Check(s == "tonight", "and .prev.txt still holds the last run");
+        DeleteFileA(prev.c_str());
+        h = FindFirstFileA((dir + "\\*").c_str(), &fd);
+        if (h != INVALID_HANDLE_VALUE) {
+            do { if (fd.cFileName[0] != '.') DeleteFileA((dir + "\\" + fd.cFileName).c_str()); }
+            while (FindNextFileA(h, &fd));
+            FindClose(h);
+        }
+        RemoveDirectoryA(dir.c_str());
+    }
+
     printf("\n%s\n", g_fail ? "SOME CHECKS FAILED" : "ALL CHECKS PASSED");
     return g_fail ? 1 : 0;
 }
