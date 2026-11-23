@@ -49,6 +49,23 @@ int main() {
     CHECK(!RebalanceStep(l, {80.0, 570}).move);
     CHECK(!RebalanceStep(l, {0.0, 200}).move);
 
+    // 4b. With a profile's exposure band (140.2) the ladder is the band:
+    //     Saturn's starting band is 8-25 ms with the knee at the ceiling
+    //     and the gain knee at the HCG floor, so exposure takes all the
+    //     light up to 25 ms before gain moves. On THAT ladder the night's
+    //     25 ms at gain 230 is on the path and stays: what held it there
+    //     was the band's starting ceiling, not an off-path setting.
+    {
+        LightLadder band;
+        band.expMinMs = 8.0; band.expKneeMs = 25.0; band.expMaxMs = 25.0;
+        band.gainFloor = 182; band.gainKnee = 182; band.gainMax = 570;
+        CHECK(!RebalanceStep(band, night).move);
+        CHECK(std::fabs(OffPathStops(band, night)) < 0.01);
+        // A short exposure at high gain is still walked back to the ceiling.
+        const Rebalance rb = RebalanceStep(band, {10.0, 300});
+        CHECK(rb.move && rb.to.expMs > 10.0 && rb.to.gain < 300);
+    }
+
     // 5. The assistant: in band and off the path, it suggests the step,
     //    says so, and is not settled (autofocus waits for it to finish).
     {
