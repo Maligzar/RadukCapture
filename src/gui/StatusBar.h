@@ -16,6 +16,7 @@
 #include <cstdio>
 #include "../core/DeviceFactory.h"
 #include "../core/TempText.h"
+#include "../core/ClockText.h"
 
 namespace raduk::gui {
 
@@ -185,8 +186,11 @@ public:
         // fits gets what room is left and loses its tail, which for the
         // mount field is well past the end of the text anyway.
         const float profW = 100.0f * STATUS_W_SCALE;
-        m_rightLimit = m_profileName.empty() ? w - 8.0f
-                                             : w - profW - 16.0f;
+        // 2026-11-24, the owner: the time on the main app. Local with
+        // seconds, and UTC, just left of the profile.
+        const float clockW = 158.0f * STATUS_W_SCALE;
+        const float clockX = (m_profileName.empty() ? w - 8.0f : w - profW - 16.0f) - clockW;
+        m_rightLimit = clockX - 8.0f;
 
         // ── Live indicator ─────────────────────────────────────
         auto dot = m_emulator
@@ -259,6 +263,14 @@ public:
             x += 294.0f * STATUS_W_SCALE;
 
             DrawSep(x, y, h); x += 9.0f * STATUS_W_SCALE;
+        }
+
+        // ── Clock (2026-11-24) ─────────────────────────────────
+        {
+            const float keep = m_rightLimit;
+            m_rightLimit = clockX + clockW;
+            DrawText(raduk::core::ClockLine().c_str(), clockX, y, clockW, h, m_textBrush);
+            m_rightLimit = keep;
         }
 
         // ── Profile (right-aligned) ────────────────────────────
