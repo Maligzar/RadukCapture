@@ -148,6 +148,7 @@ $Tests = @(
     @{ Name = "ae_rebalance"; Sources = @() }
     @{ Name = "seeing_display"; Sources = @() }
     @{ Name = "log_archive"; Sources = @() }
+    @{ Name = "goto_miss"; Sources = @() }
     @{ Name = "autofocus_saturn"; Sources = @() }
     @{ Name = "focus_metric";     Sources = @() }
     @{ Name = "focus_metric_compare"; Sources = @() }
@@ -189,6 +190,7 @@ $Tests = @(
     @{ Name = "tone_synth";      Sources = @() }
     @{ Name = "dark_scrollbars"; Sources = @() }
     @{ Name = "crash_diag";      Sources = @() }
+    @{ Name = "report_dialog";   Sources = @() }
     @{ Name = "fits_to_ser";     Sources = @() }
     @{ Name = "fits_batch";      Sources = @() }
     @{ Name = "ser_reader";      Sources = @("src\core\SERWriter.cpp", "src\core\FITSWriter.cpp"); Asan = $true }

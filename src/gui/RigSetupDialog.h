@@ -135,8 +135,11 @@ inline void ShowRigSetupDialog(HWND owner, HWND panel,
                 HGDIOBJ o = SelectObject(dc, p);
                 MoveToEx(dc, cx, cy, nullptr); LineTo(dc, x, y);
                 SelectObject(dc, o); DeleteObject(p);
+                // 2026-11-24: drawn at the line's end, "you" sat on top of
+                // the compass letter. Halfway along the line, above it.
+                int lx, ly; pt(st.observer, R * 0.55, lx, ly);
                 SetTextColor(dc, Theme::NV(Theme::Rgb::TEXT));
-                TextOutW(dc, x - 14, y - 6, L"you", 3);
+                TextOutW(dc, lx - 12, ly - 18, L"you", 3);
             }
 
             // Live mount azimuth, when there is one.
@@ -149,8 +152,18 @@ inline void ShowRigSetupDialog(HWND owner, HWND panel,
                 HGDIOBJ o = SelectObject(dc, p);
                 MoveToEx(dc, cx, cy, nullptr); LineTo(dc, x, y);
                 SelectObject(dc, o); DeleteObject(p);
+                // 2026-11-24, the owner: "scope is directly east of me so I
+                // need to move the view". This line was labelled "scope",
+                // which reads as where the scope stands; it is where the
+                // tube points. The scope is the dot in the middle.
+                int lx, ly; pt(az, R * 0.62, lx, ly);
+                wchar_t pl[32];
+                // 2026-11-24, the owner again: "look where the scope is
+                // pointed. at the horizon." A ground plan shows the bearing
+                // only; the line is full length at any altitude. Say so on it.
+                swprintf(pl, 32, L"facing %.0f\u00B0 (any height)", az);
                 SetTextColor(dc, Theme::NV(Theme::Rgb::GREEN));
-                TextOutW(dc, x + 2, y - 6, L"scope", 5);
+                TextOutW(dc, lx + 4, ly + 4, pl, (int)wcslen(pl));
             }
 
             // The mount itself.
@@ -158,6 +171,8 @@ inline void ShowRigSetupDialog(HWND owner, HWND panel,
             HGDIOBJ om = SelectObject(dc, mb);
             Ellipse(dc, cx - 5, cy - 5, cx + 5, cy + 5);
             SelectObject(dc, om); DeleteObject(mb);
+            SetTextColor(dc, Theme::NV(Theme::Rgb::TEXT_DIM));
+            TextOutW(dc, cx + 8, cy + 4, L"scope", 5);
 
             EndPaint(h, &ps);
             return 0;
@@ -166,7 +181,7 @@ inline void ShowRigSetupDialog(HWND owner, HWND panel,
         registered = true;
     }
 
-    const int DW = 680, DH = 470;
+    const int DW = 680, DH = 500;
     RECT wr = {};
     if (owner) GetWindowRect(owner, &wr);
     int dx = wr.left + ((wr.right - wr.left) - DW) / 2;
@@ -203,10 +218,13 @@ inline void ShowRigSetupDialog(HWND owner, HWND panel,
         fy += h + 2;
     };
 
-    label(L"Check the drawing against what is actually in front", 16);
-    label(L"of you. A bearing typed into a file is unfalsifiable;", 16);
-    label(L"one drawn beside the scope is not.", 16);
-    fy += 10;
+    // 2026-11-24: the three fixed 16 px lines clipped their tops at the
+    // scope's DPI, and the drawing needed a key. One wrapping label, sized
+    // for four lines, that says what each mark is.
+    label(L"Ground plan seen from above, north up, east to the right. The dot "
+          L"is the scope. White: the direction to you. Green: the direction the "
+          L"tube faces now, whatever its height (the sky map shows height).", 84);
+    fy += 6;
 
     wchar_t b[32];
     label(L"Observer bearing - mount to you (deg true):");
