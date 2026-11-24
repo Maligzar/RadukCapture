@@ -188,6 +188,7 @@ $Tests = @(
     @{ Name = "tone_synth";      Sources = @() }
     @{ Name = "dark_scrollbars"; Sources = @() }
     @{ Name = "crash_diag";      Sources = @() }
+    @{ Name = "report_dialog";   Sources = @() }
     @{ Name = "fits_to_ser";     Sources = @() }
     @{ Name = "fits_batch";      Sources = @() }
     @{ Name = "ser_reader";      Sources = @("src\core\SERWriter.cpp", "src\core\FITSWriter.cpp"); Asan = $true }
