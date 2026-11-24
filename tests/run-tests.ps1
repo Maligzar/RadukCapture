@@ -58,6 +58,7 @@ $Tests = @(
     @{ Name = "af_controller";     Sources = @() }
     @{ Name = "rec_controller";    Sources = @() }
     @{ Name = "autorun_controller"; Sources = @() }
+    @{ Name = "temp_text";       Sources = @() }
     @{ Name = "emu_fault";         Sources = @() }
     @{ Name = "slew_watch";        Sources = @() }
     @{ Name = "device_identity";   Sources = @() }

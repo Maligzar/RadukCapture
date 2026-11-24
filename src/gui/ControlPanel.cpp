@@ -9,6 +9,7 @@
 #include "ToolbarLayout.h"
 #include "ControlPanel.h"
 #include "core/TrackingConfirm.h"
+#include "core/TempText.h"
 #include "../core/ExposureScale.h"
 #include "../core/CameraEntry.h"
 #include "Theme.h"
@@ -1493,8 +1494,7 @@ void ControlPanel::UpdateReadouts() {
         // value actually be typed.
         if (m_editFocusGoto && GetFocus() != m_editFocusGoto)
             SetWindowTextW(m_editFocusGoto, buf);
-        swprintf(buf, 64, L"%.1f C", m_focuser->GetTemperature());
-        SetWindowTextW(m_lblFocusTemp, buf);
+        SetWindowTextW(m_lblFocusTemp, raduk::core::TempCF(m_focuser->GetTemperature()).c_str());   // 2026-11-24: C and F
     }
     // Mount — NexStar returns from cache (instant)
     if (m_mount) {
@@ -2615,7 +2615,7 @@ void ControlPanel::RebuildControls(int clientW, bool fromResize) {
         y += BH + 1;
     }
     TagControl(MakeLabel(L"TEMP:", x, y, 46, SH), Section::EAF);
-    m_lblFocusTemp = MakeValueLabel(L"--\u00B0C", x+48, y, 70, SH, ID_LBL_FOCUS_TEMP);
+    m_lblFocusTemp = MakeValueLabel(L"--", x+48, y, 150, SH, ID_LBL_FOCUS_TEMP);   // "17.0°C / 62.6°F"
     m_btnFocusGoto = MakeButton(L"GO TO", x+w-96, y-2, 96, BH, ID_BTN_FOCUS_GOTO);
     y += BH + 2;
 

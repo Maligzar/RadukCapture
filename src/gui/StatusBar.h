@@ -15,6 +15,7 @@
 #include <string>
 #include <cstdio>
 #include "../core/DeviceFactory.h"
+#include "../core/TempText.h"
 
 namespace raduk::gui {
 
@@ -232,17 +233,18 @@ public:
         x += 100.0f * STATUS_W_SCALE;
 
         // ── Sensor temp ────────────────────────────────────────
-        swprintf(buf, 32, L"%.1f\xB0""C", m_sensorTemp);
-        DrawText(buf, x, y, 55.0f * STATUS_W_SCALE, h, m_dimBrush);
-        x += 59.0f  * STATUS_W_SCALE;
+        // 2026-11-24: Celsius and Fahrenheit.
+        swprintf(buf, 32, L"%ls", raduk::core::TempCFShort(m_sensorTemp).c_str());
+        DrawText(buf, x, y, 104.0f * STATUS_W_SCALE, h, m_dimBrush);
+        x += 108.0f * STATUS_W_SCALE;
 
         DrawSep(x, y, h); x += 9.0f * STATUS_W_SCALE;
 
         // ── EAF ────────────────────────────────────────────────
         if (m_eafPos >= 0) {
             ID2D1SolidColorBrush* eafBrush = m_eafMoving ? m_amberBrush : m_textBrush;
-            swprintf(buf, 64, L"EAF: %d  %.1f\xB0""C%s",
-                m_eafPos, m_eafTemp, m_eafMoving ? L" [MOVING]" : L"");
+            swprintf(buf, 64, L"EAF: %d  %ls%s",
+                m_eafPos, raduk::core::TempCFShort(m_eafTemp).c_str(), m_eafMoving ? L" [MOVING]" : L"");
             DrawText(buf, x, y, 146.0f * STATUS_W_SCALE, h, eafBrush);
             x += 150.0f * STATUS_W_SCALE;
 
