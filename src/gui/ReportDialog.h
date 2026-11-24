@@ -78,11 +78,17 @@ public:
             SendMessageW(h, WM_SETFONT, (WPARAM)f, TRUE);
             return h;
         };
+        // 2026-11-24: the cause of "could not be shown". The text box had
+        // control id 2, which is IDCANCEL (and the label id 1, IDOK). Show()
+        // gives the box the focus; the box tells its parent with
+        // WM_COMMAND(id 2, EN_SETFOCUS), and WM_COMMAND read that as
+        // CANCEL and hid the window in the same instant. Typing would have
+        // done the same (EN_CHANGE). Own ids, clear of IDOK and IDCANCEL.
         m_label = mk(L"STATIC", L"What happened? Say what you did, what you saw, and what you expected. "
                                 L"The log, the settings and the app's state are added for you; your site "
-                                L"and passwords are left out.", SS_LEFT, 1);
-        m_edit  = mk(L"EDIT", L"", WS_BORDER | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN | WS_TABSTOP, 2);
-        m_shots = mk(L"BUTTON", L"Include screenshots of the app's windows", BS_AUTOCHECKBOX | WS_TABSTOP, 3);
+                                L"and passwords are left out.", SS_LEFT, kIdLabel);
+        m_edit  = mk(L"EDIT", L"", WS_BORDER | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN | WS_TABSTOP, kIdEdit);
+        m_shots = mk(L"BUTTON", L"Include screenshots of the app's windows", BS_AUTOCHECKBOX | WS_TABSTOP, kIdShots);
         SendMessageW(m_shots, BM_SETCHECK, BST_CHECKED, 0);
         m_send   = mk(L"BUTTON", L"SEND", BS_DEFPUSHBUTTON | WS_TABSTOP, IDOK);
         m_cancel = mk(L"BUTTON", L"CANCEL", BS_PUSHBUTTON | WS_TABSTOP, IDCANCEL);
@@ -199,8 +205,11 @@ private:
                 return (LRESULT)Theme::Brush(Theme::Rgb::DEEP);
             }
             case WM_COMMAND:
-                if (LOWORD(wp) == IDOK)     { self->Send(); return 0; }
-                if (LOWORD(wp) == IDCANCEL) { self->Hide(); return 0; }
+                // Only a click on SEND or CANCEL. A notification from any
+                // other control (a focus change, a text change) is not a
+                // command to close (2026-11-24, above).
+                if (HIWORD(wp) == BN_CLICKED && LOWORD(wp) == IDOK)     { self->Send(); return 0; }
+                if (HIWORD(wp) == BN_CLICKED && LOWORD(wp) == IDCANCEL) { self->Hide(); return 0; }
                 break;
             case WM_CLOSE:
                 self->Hide();
@@ -209,6 +218,11 @@ private:
         return DefWindowProcW(hwnd, msg, wp, lp);
     }
 
+public:
+    // Control ids: never 1 (IDOK) or 2 (IDCANCEL), which belong to the buttons.
+    static constexpr int kIdLabel = 101, kIdEdit = 102, kIdShots = 103;
+    HWND EditHandle() const { return m_edit; }   // for tests/report_dialog.cpp
+private:
     HWND m_hwnd = nullptr, m_parent = nullptr;
     unsigned long m_lastError = 0;
     bool m_plain = false;
