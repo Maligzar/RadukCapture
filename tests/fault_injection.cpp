@@ -142,7 +142,10 @@ struct Pipeline {
     // The render loop's part, for `seconds` or until the run ends.
     void Loop(double seconds) {
         const auto t0 = std::chrono::steady_clock::now();
-        while (Since(t0) < seconds && core.capturer.IsRecording()) {
+        while (Since(t0) < seconds && (core.capturer.IsRecording() || core.capturer.Flushing())) {
+            // 2026-11-24 (3.3.80): a stop returns at once and the main loop
+            // finishes it once the write buffer has drained; this is that loop.
+            core.capturer.ServiceStop();
             if (FrameSlot* f = core.ring.GetLatestFrame()) core.ring.ReleaseRead(f);
             const double fps = core.capture.Stats().fps.load();
             core.recCtl.Service(false, 0.0f, RecordingFrameView{},
@@ -161,8 +164,10 @@ struct Pipeline {
         std::error_code ec; fs::remove_all(dir, ec);
     }
     void WaitComplete() {
-        for (int i = 0; i < 600 && !complete.load(); ++i)
+        for (int i = 0; i < 600 && !complete.load(); ++i) {
+            core.capturer.ServiceStop();   // the main loop's part (3.3.80)
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
     }
     bool Toasted(ToastLevel l, const char* text) {
         std::lock_guard<std::mutex> lk(mu);
