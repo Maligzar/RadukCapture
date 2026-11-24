@@ -15,6 +15,7 @@
 #include "core/ADCAssistant.h"
 #include "core/RigConfig.h"
 #include "core/RgbAlign.h"      // phase 168
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <cmath>
@@ -1979,6 +1980,12 @@ D2D1_RECT_F PreviewRenderer::CalculateZoomedRect(int frameW, int frameH,
         case ZoomMode::Two:  destW=(float)frameW*2.0f; destH=(float)frameH*2.0f; break;
         case ZoomMode::Four: destW=(float)frameW*4.0f; destH=(float)frameH*4.0f; break;
         default: {
+            if (m_viewHoldW > 0 && m_viewHoldH > 0) {
+                // 2026-11-24: FIT as it was for the frame before the widen.
+                const float sc = (std::min)(availW / (float)m_viewHoldW, availH / (float)m_viewHoldH);
+                destW = (float)frameW * sc; destH = (float)frameH * sc;
+                break;
+            }
             float fa=(float)frameW/(float)frameH, ra=availW/availH;
             if (fa>ra) { destW=availW; destH=availW/fa; }
             else       { destH=availH; destW=availH*fa; }

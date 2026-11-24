@@ -2585,3 +2585,13 @@ this round:
   `sleep_for` rounding to the Windows timer tick, not render cost.
   With the cap lifted, a real recording sustained 293 MB/s with no
   drops. Only the real camera over real USB is still untested.
+
+## Tech debt
+
+- **Uranus has no ALIGN option** (the owner, 2026-11-24; noted, not yet
+  coded). The ALIGN list that feeds the pointing map offers bright stars
+  and some planets but not Uranus, so a night spent on Uranus cannot add
+  points to the map or improve its accuracy. Wanted: any solar-system
+  target the app can compute (Uranus, Neptune, and the rest) offered for
+  ALIGN like the planets already there, with its position computed for
+  the moment of the align.
