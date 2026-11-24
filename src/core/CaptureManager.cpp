@@ -22,6 +22,11 @@ bool CaptureManager::StartRecording(int width, int height, int bitDepth) {
         Say("Already recording");
         return false;
     }
+    // 2026-11-24: the last recording is still going from RAM to disk.
+    if (m_stopPending.load()) {
+        Say("Still writing the last recording from RAM: wait for FLUSHING to end");
+        return false;
+    }
 
     // Ensure output directory exists
     CreateDirectoryA(m_config.outputDir.c_str(), nullptr);
@@ -165,6 +170,11 @@ bool CaptureManager::StartRecording(int width, int height, int bitDepth) {
 }
 
 void CaptureManager::StopRecording(bool normal) {
+    RequestStop(normal);
+    WaitForFlush();
+}
+
+void CaptureManager::RequestStop(bool normal) {
     if (!m_status.recording.load()) return;
 
     m_status.recording.store(false);
@@ -191,26 +201,56 @@ void CaptureManager::StopRecording(bool normal) {
 
     // Signal writer thread to finish draining and exit
     m_writerRunning.store(false);
+    const uint64_t pending0 = m_writeBuffer.Pending();
+    if (m_writerThread.joinable() && !m_writerDone.load() && pending0 > 0) {
+        // 2026-11-24: frames still in RAM. The window thread does not wait
+        // for them: ServiceStop() finishes once the writer has drained.
+        char b[200];
+        snprintf(b, sizeof(b), "Flushing the recording: %llu frames still to write from RAM; "
+                 "the app stays live meanwhile", (unsigned long long)pending0);
+        Say(b);
+        m_stopNormal = normal;
+        m_flushStartPending.store(pending0);
+        m_flushT0 = std::chrono::steady_clock::now();
+        m_stopPending.store(true);
+        return;
+    }
+    // Nothing waiting: the writer ends within a frame's write.
+    const auto t0 = std::chrono::steady_clock::now();
+    while (m_writerThread.joinable() && !m_writerDone.load())
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    FinishStop(normal, pending0, std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count());
+}
+
+double CaptureManager::FlushElapsedSec() const {
+    if (!m_stopPending.load()) return 0.0;
+    return std::chrono::duration<double>(std::chrono::steady_clock::now() - m_flushT0).count();
+}
+
+bool CaptureManager::ServiceStop() {
+    if (!m_stopPending.load()) return false;
+    if (m_drainHook) m_drainHook(m_writeBuffer.Pending());
+    if (!m_writerDone.load()) return false;
+    const double secs = FlushElapsedSec();
+    m_stopPending.store(false);
+    FinishStop(m_stopNormal, m_flushStartPending.load(), secs);
+    m_flushStartPending.store(0);
+    return true;
+}
+
+void CaptureManager::WaitForFlush() {
+    while (m_stopPending.load()) {
+        if (!ServiceStop()) std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    }
+}
+
+void CaptureManager::FinishStop(bool normal, uint64_t pending0, double drainSecs) {
     if (m_writerThread.joinable()) {
-        // 2026-11-22: wait live, not frozen (see SetDrainWaitHook).
-        const auto t0 = std::chrono::steady_clock::now();
-        const uint64_t pending0 = m_writeBuffer.Pending();
-        if (pending0 > 0) {
-            char b[160];
-            snprintf(b, sizeof(b), "Finishing the recording: %llu frames still to write",
-                     (unsigned long long)pending0);
-            Say(b);
-        }
-        while (!m_writerDone.load()) {
-            if (m_drainHook) m_drainHook(m_writeBuffer.Pending());
-            std::this_thread::sleep_for(std::chrono::milliseconds(200));
-        }
         m_writerThread.join();
-        const double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-        if (pending0 > 0 || secs > 1.0) {
+        if (pending0 > 0 || drainSecs > 1.0) {
             char b[160];
             snprintf(b, sizeof(b), "Finished writing: %llu frames were waiting, took %.1f s",
-                     (unsigned long long)pending0, secs);
+                     (unsigned long long)pending0, drainSecs);
             Say(b);
         }
         if (m_drainHook) m_drainHook(0);

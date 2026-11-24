@@ -189,6 +189,7 @@ static void GroupRecord() {
     const auto t0 = std::chrono::steady_clock::now();
     while (!complete.load() && std::chrono::steady_clock::now() - t0 < std::chrono::seconds(60)) {
         Pump(core, last);   // the loop keeps running beside a recording
+        core.capturer.ServiceStop();   // 3.3.80: the main loop finishes a stop once RAM has drained
         // The render loop's part: the controller publishes the gate and
         // stops the run at the limit the capture thread raised.
         if (core.capturer.IsRecording()) {

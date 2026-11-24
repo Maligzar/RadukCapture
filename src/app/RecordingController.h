@@ -122,7 +122,7 @@ public:
     // The one way a recording stops.
     void End(bool normal, const char* why) {
         if (!m_cap.IsRecording()) return;
-        m_cap.StopRecording(normal);
+        m_cap.RequestStop(normal);   // 2026-11-24: never waits for the drain
         Usb(false);
         const std::string st = UsbStatus();
         Session("USB polling restored \xE2\x80\x94 " + st);
