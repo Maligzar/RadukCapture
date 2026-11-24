@@ -2559,7 +2559,7 @@ function rcHandleData(data) {
     rcSetVal('rcGamma',  data.gamma ?? '--');
     rcSetVal('rcWB',     (data.wb_red != null && data.wb_blue != null) ? `R:${data.wb_red} B:${data.wb_blue}` : '--');
     rcSetVal('rcUSB',    data.usb_bw != null ? data.usb_bw+'%' : '--');
-    rcSetVal('rcTemp',   data.sensor_temp != null ? data.sensor_temp.toFixed(1)+'°C' : '--');
+    rcSetVal('rcTemp',   rcTempCF(data.sensor_temp));   // 2026-11-24: C and F
     // Phase 157.0c: WIDE while an auto-acquire has widened the frame to
     // find and calibrate; it goes back to the profile's frame on its own.
     {
@@ -2573,7 +2573,7 @@ function rcHandleData(data) {
     rcSetVal('rcHudGain', data.gain ?? '--');
     // EAF
     rcSetVal('rcEAFPos',  data.eaf_position != null ? data.eaf_position.toLocaleString() : '--');
-    rcSetVal('rcEAFTemp', data.eaf_temp != null ? data.eaf_temp.toFixed(1)+'°C' : '--');
+    rcSetVal('rcEAFTemp', rcTempCF(data.eaf_temp));
     const eafEl = document.getElementById('rcEAFStatus');
     if (eafEl) { eafEl.textContent = data.eaf_moving ? 'MOVING' : 'IDLE'; eafEl.className = 'rv ' + (data.eaf_moving ? 'rv-amber' : 'rv-dim'); }
     // Mount
@@ -2666,6 +2666,10 @@ function rcHandleData(data) {
   }
 }
 
+// 2026-11-24: a temperature in both units, "17.0°C / 62.6°F".
+// 2026-11-24: the weather arrives in Fahrenheit; shown in both units, "62°F / 17°C".
+function wxFC(f) { return f == null || !isFinite(f) ? '—' : Math.round(f) + '°F / ' + Math.round((f - 32) * 5 / 9) + '°C'; }
+function rcTempCF(c) { return c == null || !isFinite(c) ? '--' : c.toFixed(1) + '°C / ' + (c * 9 / 5 + 32).toFixed(1) + '°F'; }
 function rcSetVal(id, val, color) {
   const el = document.getElementById(id);
   if (el) { el.textContent = val; if (color) el.style.color = color; }
@@ -3625,7 +3629,7 @@ function renderConditions(r){
   wxSetText('val-cloud', cloud, x => Math.round(x) + '%');
   wxSetText('val-hum', hum, x => Math.round(x) + '%');
   wxSetText('val-wind', wind, x => Math.round(x) + ' mph');
-  wxSetText('val-temp', temp, x => Math.round(x) + '°F');
+  wxSetText('val-temp', temp, x => wxFC(x));   // 2026-11-24: F and C
   wxSetText('val-dew', dew, x => Math.round(x) + '°F');
   wxSetText('wc-pressure', n('pressureInHg'), x => x.toFixed(2));
   wxSetText('wc-vis', n('visMi'), x => x >= 9.95 ? '10+ mi' : Math.round(x) + ' mi');
@@ -4708,7 +4712,7 @@ function renderForecastStrip() {
         <div class="fday-row"><span class="fday-key">WIND</span><span class="fday-val">${d.avgWind} mph</span></div>
         <div class="fday-row"><span class="fday-key">GUSTS</span><span class="fday-val" style="color:${d.avgGust&&d.avgGust>22?'var(--d-red)':d.avgGust&&d.avgGust>14?'var(--d-amber)':'var(--d-green)'}">${d.avgGust?d.avgGust+' mph':'—'}</span></div>
         <div class="fday-row"><span class="fday-key">WSS</span><span class="fday-val" style="color:${d.windStability.score>=85?'var(--d-green)':d.windStability.score>=65?'var(--d-accent)':d.windStability.score>=40?'var(--d-amber)':'var(--d-red)'}">${d.windStability.score}</span></div>
-        <div class="fday-row"><span class="fday-key">HI/LO</span><span class="fday-val">${d.tempMax!==null?d.tempMax+'°':'—'}/${d.tempMin!==null?d.tempMin+'°':'—'}</span></div>
+        <div class="fday-row"><span class="fday-key">HI/LO</span><span class="fday-val">${d.tempMax!==null?wxFC(d.tempMax):'—'} / ${d.tempMin!==null?wxFC(d.tempMin):'—'}</span></div>
         <div class="fday-row"><span class="fday-key">PRECIP</span><span class="fday-val">${d.precipSum>0?d.precipSum.toFixed(2)+'"':'none'}</span></div>
       </div>
       <div class="fday-moon">${moonEmoji(d.moon.phase)}</div>
@@ -5441,7 +5445,7 @@ function renderHistoryTable() {
         <td>${fmt(e.cloud,'%')}</td>
         <td>${fmt(e.humidity,'%')}</td>
         <td>${fmt(e.wind,' mph')}</td>
-        <td>${e.temp != null ? Math.round(e.temp)+'°F' : '—'}</td>
+        <td>${e.temp != null ? wxFC(e.temp) : '—'}</td>
         <td>${e.seeing != null ? e.seeing : '—'}</td>
         <td>${fmt(e.moon,'%')}</td>
         <td>${condPill(e.cloud)}</td>
@@ -5759,8 +5763,10 @@ refreshHistoryUI();
           hum: parseInt(humEl.textContent)||22,
           wind: parseInt(windEl.textContent)||8,
           windGust: window.lastWeatherData?.current?.wind_gusts_10m ? Math.round(window.lastWeatherData.current.wind_gusts_10m) : null,
-          temp: window.lastWeatherData?.current?.temperature_2m != null ? Math.round(window.lastWeatherData.current.temperature_2m * 9/5 + 32) : null,
-          dewPoint: window.lastWeatherData?.current?.dew_point_2m != null ? Math.round(window.lastWeatherData.current.dew_point_2m * 9/5 + 32) : null,
+          // 2026-11-24: already Fahrenheit (the forecast is fetched with temperature_unit=fahrenheit);
+          // this converted it a second time, logging a 60 F night as 140.
+          temp: window.lastWeatherData?.current?.temperature_2m != null ? Math.round(window.lastWeatherData.current.temperature_2m) : null,
+          dewPoint: window.lastWeatherData?.current?.dew_point_2m != null ? Math.round(window.lastWeatherData.current.dew_point_2m) : null,
           pressure: window.lastWeatherData?.current?.pressure_msl != null ? Math.round(window.lastWeatherData.current.pressure_msl / 33.863 * 100)/100 : null,
           visibility: window.lastWeatherData?.current?.visibility != null ? (window.lastWeatherData.current.visibility / 1000).toFixed(1) + ' mi' : null,
         };
@@ -5901,7 +5907,7 @@ function renderSkyTable() {
       <td>${e.cloud != null ? e.cloud+'%' : '—'}</td>
       <td>${e.humidity != null ? e.humidity+'%' : '—'}</td>
       <td>${e.wind != null ? e.wind : '—'}</td>
-      <td>${e.temp != null ? e.temp+'°' : '—'}</td>
+      <td>${e.temp != null ? wxFC(e.temp) : '—'}</td>
       <td>${e.moon != null ? e.moon+'%' : '—'}</td>
       <td>${skyCondLabel(e.cloud||0)}</td>
       <td>${e.seeing != null ? e.seeing : '—'}</td>

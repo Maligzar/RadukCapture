@@ -51,6 +51,7 @@
 #include "AudienceLayout.h"
 #include "D2DShadow.h"
 #include "../core/ObjectKnowledgeDB.h"
+#include "../core/ClockText.h"
 #include "../sky/SkyObject.h"
 
 namespace raduk::gui {
@@ -307,6 +308,7 @@ public:
             m_chrome.Attach(m_hwnd, cf);
         }
         if (!InitD2D()) { DestroyWindow(m_hwnd); m_hwnd = nullptr; return false; }
+        SetTimer(m_hwnd, TIMER_CLOCK, 1000, nullptr);   // 2026-11-24: the clock
         ShowWindow(m_hwnd, SW_HIDE);
         return true;
     }
@@ -684,6 +686,12 @@ private:
             const size_t comma = title.find(',');
             if (comma != std::string::npos) title = title.substr(0, comma);
         }
+        // 2026-11-24, the owner: the time on this page. A real reading,
+        // top right, out of the headline's way; it does not fade with
+        // the content because it is not the target's.
+        Text(m_fKind, raduk::core::ClockLine(), pad, pad * 0.3f, colW,
+             Theme::Type::Scaled(m_bodyPx, Theme::Type::S_STRONG) * 1.5f, dim, 1.0f,
+             DWRITE_TEXT_ALIGNMENT_TRAILING);
         Text(m_fTitle, W(title), pad, y, colW, m_fontPx * 3.4f, fg, alpha);
         y += m_fontPx * 3.1f;
 
@@ -1134,6 +1142,7 @@ private:
             // kills it on the frame the fade completes.
             case WM_TIMER:
                 if (wp == TIMER_FADE) { self->Redraw(); return 0; }
+                if (wp == TIMER_CLOCK) { if (IsWindowVisible(hwnd)) self->Redraw(); return 0; }
                 break;
             // Claim only F11, the way the share view and the sky map
             // do. Escape stays global because it is the emergency stop
@@ -1157,6 +1166,7 @@ private:
     // identity while the surface itself stays put.
     static constexpr int FADE_MS    = Theme::Motion::CONTENT;
     static constexpr UINT_PTR TIMER_FADE = 1;
+    static constexpr UINT_PTR TIMER_CLOCK = 2;   // 2026-11-24: once a second
 
     HWND                   m_hwnd   = nullptr;
     WindowChrome m_chrome;

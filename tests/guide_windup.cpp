@@ -16,8 +16,9 @@ struct Run { float overshoot; float finalErr; float settleS; };
 // correction moves it, and grows by `drift` (the tracking rate's own
 // error). The control loop runs every 0.5 s, as the correction thread does.
 static Run Simulate(bool antiWindup, float e0Az, float e0Alt, float baseAz, float baseAlt,
-                    float driftAz, float driftAlt, float seconds = 90.0f) {
-    GuideLawParams p; p.antiWindup = antiWindup;
+                    float driftAz, float driftAlt, float seconds = 90.0f,
+                    float reverseGuardMinBase = GuideLawParams{}.reverseGuardMinBase) {
+    GuideLawParams p; p.antiWindup = antiWindup; p.reverseGuardMinBase = reverseGuardMinBase;
     GuideAxisState sAz, sAlt;
     float eAz = e0Az, eAlt = e0Alt, dt = 0.5f;
     const float sAz0 = eAz > 0 ? 1.0f : -1.0f, sAlt0 = eAlt > 0 ? 1.0f : -1.0f;
@@ -73,6 +74,27 @@ int main() {
         CHECK(s.integ == 0.0f);
         GuideAxisStep(-2.0f, 17.47f, 0.5f, p, s);      // near centre, free
         CHECK(s.integ < 0.0f);
+    }
+
+    // 2026-11-24, 20:32: Saturn about 15 minutes from the meridian. Locked
+    // at 7" off with the alt base at -3.19 "/s; the planet then needed the
+    // alt axis to go the other way (a drift the correction must cancel at
+    // about +10 "/s), and the never-reverse rule held the correction at
+    // +2.19. The error grew 8 "/s and the lock was abandoned at 154 px.
+    {
+        const Run old = Simulate(true, 0.4f, 12.3f, 26.62f, -3.19f, 0.0f, 10.2f, 6.0f, 0.0f);
+        std::printf("  meridian, guard always: final %.1f\"\n", old.finalErr);
+        CHECK(old.finalErr > 40.0f);                 // the night: 46" at 6 s and growing
+        const Run now = Simulate(true, 0.4f, 12.3f, 26.62f, -3.19f, 0.0f, 10.2f, 90.0f);
+        std::printf("  meridian, slow axis may reverse: final %.1f\", settled at %.1f s\n",
+                    now.finalErr, now.settleS);
+        CHECK(now.finalErr < 2.0f && now.settleS >= 0.0f);
+        // A fast axis is still never reversed.
+        GuideLawParams p; GuideAxisState st;
+        CHECK(-7.32f + GuideAxisStep(500.0f, -7.32f, 0.5f, p, st) <= -1.0f + 1e-4f);
+        // A slow one may cross zero.
+        GuideAxisState st2;
+        CHECK(-3.19f + GuideAxisStep(500.0f, -3.19f, 0.5f, p, st2) > 0.0f);
     }
 
     std::printf("guide_windup: %s (%d failures)\n", fails ? "FAIL" : "PASS", fails);

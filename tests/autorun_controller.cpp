@@ -11,6 +11,9 @@
 //    4. Refused at its first check (below the floor), it still says so.
 //    5. A failed sweep is counted; the seeing hold and the Jupiter
 //       deferral are announced once a change.
+//    6. 2026-11-24, the RUNS baseline: no sweep before run 1, every
+//       refocus centred on the baseline, a far or failed result sent back
+//       to it, a run waiting for that move, every run logged against it.
 // ============================================================
 
 #include "app/AutorunController.h"
@@ -176,6 +179,56 @@ int main() {
         Check(r.c.runner.SeeingGaveUp() == 1, "and gives up after its limit, running anyway");
     }
 
+    {
+        Rig r;
+        std::vector<int> centres, moves;
+        int focuserPos = 170923, moveTicks = 0, sweepResult = 181988;
+        bool sweepOk = true, recordedWhileMoving = false;
+        AutorunHooks h = r.c.Hooks();
+        h.focusAround = [&](int c) { centres.push_back(c); r.focusing = true; r.focusTicksLeft = 2; };
+        h.moveFocuser = [&](int p) { moves.push_back(p); focuserPos = p; moveTicks = 3; };
+        h.focuserMoving = [&] { return moveTicks > 0; };
+        h.snapshot = [&](raduk::core::RunsSnapshot& s) {
+            s.focusPos = focuserPos; s.sharpPct = 60.0; s.altDeg = 47.0; s.targetSeen = true;
+            s.targetX = 321; s.targetY = 240; s.exposureMs = 25.0; s.gain = 228;
+        };
+        auto rec = h.startRecording;
+        h.startRecording = [&, rec] { if (moveTicks > 0) recordedWhileMoving = true; return rec(); };
+        r.c.SetHooks(h);
+        raduk::core::RunsBaseline b;
+        b.set = true; b.target = "Saturn";
+        b.at.focusPos = 170923; b.at.sharpPct = 63.6; b.at.altDeg = 43.2; b.at.targetSeen = true;
+        b.at.targetX = 320; b.at.targetY = 240; b.at.exposureMs = 25.0; b.at.gain = 228;
+        r.c.SetBaseline(b, 2000);
+        Check(r.c.Start(Cfg(3, 1), r.now, false, 0.8), "a baseline sequence starts");
+        Check(r.ui.Saw("[RUNS] baseline for Saturn: focus 170923"), "the baseline is logged at the press");
+        // Each sweep ends with a result the moment it stops focusing.
+        for (int i = 0; i < 400 && (r.c.runner.Running() || r.recording); ++i) {
+            const bool wasFocusing = r.focusing;
+            if (moveTicks > 0) --moveTicks;
+            r.Step();
+            if (wasFocusing && !r.focusing) {
+                r.c.NoteFocusResult(sweepOk, sweepResult);
+                sweepOk = !sweepOk; sweepResult = 171100;   // then a failed one, then a good one
+            }
+        }
+        r.Step();
+        Check(r.focusStarts == 0, "no plain sweep: never a sweep from wherever the focuser is",
+              std::to_string(r.focusStarts));
+        Check(!r.ui.Saw("focus before run 1") && r.ui.Saw("no sweep before run 1"), "run 1 starts on the owner's focus");
+        Check(centres.size() == 2 && centres[0] == 170923 && centres[1] == 170923,
+              "each refocus is centred on the baseline", std::to_string(centres.size()));
+        Check(r.ui.Saw("[RUNS] refocus: the sweep ended +11065 steps from the baseline"), "a far result is judged");
+        Check(r.ui.Saw("[RUNS] refocus: the sweep failed: back to the baseline"), "a failed sweep is judged");
+        Check(moves.size() == 2 && moves[0] == 170923 && moves[1] == 170923, "both go back to the baseline",
+              std::to_string(moves.size()));
+        Check(!recordedWhileMoving, "a run waits for the focuser to get back");
+        Check(r.ui.Saw("[RUNS] run 1 against the baseline: focus +0 steps") &&
+              r.ui.Saw("[RUNS] run 3 against the baseline") && r.ui.Saw("altitude +3.8 deg") &&
+              r.ui.Saw("target 1 px from its spot"), "every run is logged against the baseline");
+        Check(r.c.Results().size() == 3, "all three runs done", std::to_string(r.c.Results().size()));
+        Check(!r.c.Baseline().set, "the baseline ends with its sequence");
+    }
     if (g_fail) { printf("autorun_controller: %d FAILED\n", g_fail); return 1; }
     printf("autorun_controller: all passed\n");
     return 0;

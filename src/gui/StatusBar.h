@@ -15,6 +15,8 @@
 #include <string>
 #include <cstdio>
 #include "../core/DeviceFactory.h"
+#include "../core/TempText.h"
+#include "../core/ClockText.h"
 
 namespace raduk::gui {
 
@@ -184,8 +186,11 @@ public:
         // fits gets what room is left and loses its tail, which for the
         // mount field is well past the end of the text anyway.
         const float profW = 100.0f * STATUS_W_SCALE;
-        m_rightLimit = m_profileName.empty() ? w - 8.0f
-                                             : w - profW - 16.0f;
+        // 2026-11-24, the owner: the time on the main app. Local with
+        // seconds, and UTC, just left of the profile.
+        const float clockW = 158.0f * STATUS_W_SCALE;
+        const float clockX = (m_profileName.empty() ? w - 8.0f : w - profW - 16.0f) - clockW;
+        m_rightLimit = clockX - 8.0f;
 
         // ── Live indicator ─────────────────────────────────────
         auto dot = m_emulator
@@ -232,17 +237,18 @@ public:
         x += 100.0f * STATUS_W_SCALE;
 
         // ── Sensor temp ────────────────────────────────────────
-        swprintf(buf, 32, L"%.1f\xB0""C", m_sensorTemp);
-        DrawText(buf, x, y, 55.0f * STATUS_W_SCALE, h, m_dimBrush);
-        x += 59.0f  * STATUS_W_SCALE;
+        // 2026-11-24: Celsius and Fahrenheit.
+        swprintf(buf, 32, L"%ls", raduk::core::TempCFShort(m_sensorTemp).c_str());
+        DrawText(buf, x, y, 104.0f * STATUS_W_SCALE, h, m_dimBrush);
+        x += 108.0f * STATUS_W_SCALE;
 
         DrawSep(x, y, h); x += 9.0f * STATUS_W_SCALE;
 
         // ── EAF ────────────────────────────────────────────────
         if (m_eafPos >= 0) {
             ID2D1SolidColorBrush* eafBrush = m_eafMoving ? m_amberBrush : m_textBrush;
-            swprintf(buf, 64, L"EAF: %d  %.1f\xB0""C%s",
-                m_eafPos, m_eafTemp, m_eafMoving ? L" [MOVING]" : L"");
+            swprintf(buf, 64, L"EAF: %d  %ls%s",
+                m_eafPos, raduk::core::TempCFShort(m_eafTemp).c_str(), m_eafMoving ? L" [MOVING]" : L"");
             DrawText(buf, x, y, 146.0f * STATUS_W_SCALE, h, eafBrush);
             x += 150.0f * STATUS_W_SCALE;
 
@@ -257,6 +263,14 @@ public:
             x += 294.0f * STATUS_W_SCALE;
 
             DrawSep(x, y, h); x += 9.0f * STATUS_W_SCALE;
+        }
+
+        // ── Clock (2026-11-24) ─────────────────────────────────
+        {
+            const float keep = m_rightLimit;
+            m_rightLimit = clockX + clockW;
+            DrawText(raduk::core::ClockLine().c_str(), clockX, y, clockW, h, m_textBrush);
+            m_rightLimit = keep;
         }
 
         // ── Profile (right-aligned) ────────────────────────────

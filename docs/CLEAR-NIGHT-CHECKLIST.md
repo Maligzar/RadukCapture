@@ -1429,3 +1429,23 @@ the bench already showed, so the night only has to confirm it. The plan is
     `WeatherSource=internal`, and Elminster no longer needs to be awake
     for the scope. Also check the first start with `Offline=1`: the `WX`
     row says offline and nothing is fetched.
+
+65. **RUNS from the owner's baseline** (added 2026-11-24). Centre the
+    target and focus it by hand, then press RUNS with at least three runs
+    and `AutorunRefocusEvery=1`. The log should show `[RUNS] baseline`
+    with the focuser position, no sweep before run 1, each refocus
+    `[AF] centred on the RUNS baseline`, a `[RUNS] refocus:` verdict after
+    it, and a `[RUNS] run N against the baseline` line at every run.
+    Compare the refocus results with the baseline: if good sweeps land
+    well inside `RunsFocusMaxDrift` (2000 steps), it can come down; if a
+    good sweep was sent back, it goes up.
+66. **A lock held through the meridian** (added 2026-11-24). On the
+    night of 2026-11-24 Saturn was dead centre and in focus, locked, and
+    the lock was abandoned 9 s later about 15 minutes before transit: the
+    altitude rate was near zero and the guider would not reverse the axis
+    (3.3.84 lets a slow axis reverse). Lock a planet 20 to 30 minutes
+    before it transits and leave PLANET LOCK running through the crossing.
+    The `[GUIDE]` lines should show the alt command crossing zero and the
+    error staying small, with no "guiding abandoned". If the reversal's
+    backlash shows as a jump of more than a few arcseconds at the
+    crossing, note it: `reverseGuardMinBase` (5 "/s) is a starting figure.
