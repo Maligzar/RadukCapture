@@ -30,6 +30,7 @@
 #include <vector>
 
 #include "../core/AutorunRunner.h"
+#include "../core/RunsBaseline.h"
 #include "../core/SeeingMonitor.h"
 #include "UiSink.h"
 
@@ -50,6 +51,12 @@ struct AutorunHooks {
     std::function<void(bool, int)>          toolbar;         // running, ordinal
     // Where the ranked list goes: <output dir>\autorun_<stamp>.txt.
     std::function<std::string(const std::string& stamp)> rankingPath;
+    // 2026-11-24, the RUNS baseline (core/RunsBaseline.h): the rig's state
+    // now, a sweep centred on a position, and a move back to one.
+    std::function<void(raduk::core::RunsSnapshot&)> snapshot;
+    std::function<void(int centre)>         focusAround;
+    std::function<void(int pos)>            moveFocuser;
+    std::function<bool()>                   focuserMoving;   // a run waits for the move back
 };
 
 class AutorunController {
@@ -60,10 +67,23 @@ public:
     AutorunController(raduk::core::SeeingMonitor& seeing, IUiSink& ui) : m_seeing(seeing), m_ui(&ui) {}
 
     void SetHooks(AutorunHooks h) { m_hooks = std::move(h); }
+    const AutorunHooks& Hooks() const { return m_hooks; }
     void SetUi(IUiSink& u)        { m_ui = &u; }
 
     bool Pressing() const          { return m_pressing; }
     void NoteFocusFailed()         { m_focusFailed.store(true); }
+    // Every sweep's ending (any thread); judged against the baseline in Tick.
+    void NoteFocusResult(bool ok, int pos) {
+        m_focusPos.store(ok ? pos : -1);
+        m_focusResult.store(true);
+    }
+    // 2026-11-24: what the owner set up when they pressed RUNS. Given
+    // before Start; a sequence started without one behaves as before.
+    void SetBaseline(const raduk::core::RunsBaseline& b, int maxDrift) {
+        m_baseline = b; m_maxDrift = maxDrift;
+    }
+    void ClearBaseline()           { m_baseline = {}; }
+    const raduk::core::RunsBaseline& Baseline() const { return m_baseline; }
     void SetLastPath(const std::string& p) { m_lastPath = p; }
     const std::vector<raduk::core::RunResult>& Results() const { return m_results; }
     bool Jupiter() const           { return m_jupiter; }
@@ -81,17 +101,44 @@ public:
         m_wasHoldingAcq = false;
         m_wasDeferring = false;
         m_runNote.clear();
-        return runner.Start(c, nowSec);
+        m_focusResult.store(false);
+        m_awaitResult = false;
+        Runner::Config rc = c;
+        if (m_baseline.set) rc.focusFirst = false;   // focus is what the owner just made it
+        if (!runner.Start(rc, nowSec)) { m_baseline = {}; return false; }
+        if (m_baseline.set) {
+            Line(raduk::core::BaselineLine(m_baseline) + "\n");
+            Line("[RUNS] no sweep before run 1: the owner centred and focused it\n");
+        }
+        return true;
     }
 
     // From the 500 ms readout.
     void Tick(double nowSec, bool recording, bool focusing, uint32_t frames) {
         if (!runner.Running() && !m_shown) return;
         if (m_focusFailed.exchange(false)) runner.NoteFocusFailed();
+        // A refocus under a baseline holds the next run until its result is
+        // judged (and any move back is under way). A sweep that never
+        // reports is given up on after kAwaitResultSec without focusing.
+        if (m_awaitResult) {
+            if (focusing) m_awaitSince = nowSec;
+            else if (nowSec - m_awaitSince > kAwaitResultSec) {
+                m_awaitResult = false;
+                Line("[RUNS] the sweep never reported: going on from where the focuser is\n");
+            }
+        }
+        if (m_focusResult.exchange(false) && runner.Running() && m_baseline.set) {
+            m_awaitResult = false;
+            const int pos = m_focusPos.load();
+            const auto v = raduk::core::JudgeRefocus(m_baseline, pos >= 0, pos, m_maxDrift);
+            Line("[RUNS] refocus: " + v.why + "\n");
+            if (v.backToBaseline && m_hooks.moveFocuser) m_hooks.moveFocuser(m_baseline.at.focusPos);
+        }
 
         Runner::Inputs ai;
         ai.recording = recording;
-        ai.focusing  = focusing;
+        ai.focusing  = focusing || m_awaitResult ||
+                       (m_baseline.set && m_hooks.focuserMoving && m_hooks.focuserMoving());
         ai.frames    = frames;
         if (runner.AboutToCheck(nowSec) && m_hooks.checkInputs) m_hooks.checkInputs(ai);
 
@@ -113,7 +160,13 @@ public:
         case Runner::Action::StartFocus:
             std::snprintf(b, sizeof(b), "[AUTORUN] focus before run %d\n", runner.Ordinal());
             Line(b);
-            if (m_hooks.startFocus) m_hooks.startFocus();
+            if (m_baseline.set && m_baseline.at.focusPos >= 0 && m_hooks.focusAround) {
+                m_focusResult.store(false);
+                m_awaitResult = true; m_awaitSince = nowSec;
+                m_hooks.focusAround(m_baseline.at.focusPos);
+            }
+            else if (m_hooks.startFocus)
+                m_hooks.startFocus();
             break;
         case Runner::Action::StartRun: {
             m_pressing = true;
@@ -123,6 +176,11 @@ public:
                 m_seeing.BeginRun();
                 std::snprintf(b, sizeof(b), "[AUTORUN] run %d of %d\n", runner.Ordinal(), runner.Total());
                 Line(b);
+                if (m_baseline.set && m_hooks.snapshot) {
+                    raduk::core::RunsSnapshot now;
+                    m_hooks.snapshot(now);
+                    Line(raduk::core::DeltaLine(m_baseline, now, runner.Ordinal()) + "\n");
+                }
                 m_runNote.clear();
                 if (m_jupiter && m_hooks.runNote) {
                     m_runNote = m_hooks.runNote();
@@ -140,6 +198,7 @@ public:
             noteRun();
             break;
         case Runner::Action::AbortFocus:
+            m_awaitResult = false;
             if (m_hooks.abortFocus) m_hooks.abortFocus();
             break;
         default:
@@ -172,7 +231,7 @@ public:
         if (m_hooks.toolbar) m_hooks.toolbar(runner.Running(), runner.Ordinal());
         const bool ended = (m_shown || runningBefore) && !runner.Running();
         m_shown = runner.Running();
-        if (ended) Ended();
+        if (ended) { Ended(); m_baseline = {}; }
     }
 
 private:
@@ -238,6 +297,13 @@ private:
     bool              m_wasDeferring = false;
     bool              m_jupiter = false;
     std::atomic<bool> m_focusFailed{false};
+    std::atomic<bool> m_focusResult{false};
+    std::atomic<int>  m_focusPos{-1};
+    raduk::core::RunsBaseline m_baseline;
+    int               m_maxDrift = raduk::core::kRunsFocusMaxDriftDefault;
+    static constexpr double kAwaitResultSec = 10.0;
+    bool              m_awaitResult = false;
+    double            m_awaitSince = 0.0;
     std::vector<raduk::core::RunResult> m_results;
     std::string       m_lastPath;
     std::string       m_runNote;
