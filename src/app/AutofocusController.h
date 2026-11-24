@@ -50,6 +50,9 @@ struct AutofocusHooks {
     // 2026-11-15: a sweep succeeded and left the focuser at its best fit.
     // The focus readout takes its reference from the next live readings.
     std::function<void()>                   succeeded;
+    // 2026-11-24 (RUNS baseline): every sweep's ending with its position,
+    // success or not, so a sequence can judge it against its baseline.
+    std::function<void(bool ok, int pos)>   outcome;
 };
 
 template <class Routine, class Ae>
@@ -63,7 +66,11 @@ public:
           m_settleLimit(aeSettleLimitSec) {}
 
     void SetHooks(AutofocusHooks h) { m_hooks = std::move(h); }
+    const AutofocusHooks& Hooks() const { return m_hooks; }
     void SetClock(const IClock& c)  { m_clock = &c; }
+    // 2026-11-24: the next sweep is centred here rather than where the
+    // focuser happens to be (RUNS: the owner's baseline). One sweep only.
+    void CentreNextSweepAt(int pos) { m_centreNext = pos; }
     void SetUi(IUiSink& u)          { m_ui = &u; }
 
     // Autofocus is sweeping, or waiting for AE before it does.
@@ -109,6 +116,7 @@ public:
             Session("AutoFocus not started: " + why);
             Line("[AF] Not started: " + why + "\n");
             if (m_hooks.failed) m_hooks.failed();
+            NotStarted();
             return;
         }
         if (m_hooks.showAutoExposure) m_hooks.showAutoExposure();
@@ -166,9 +174,17 @@ public:
             Session("AutoFocus not started: the focuser's position could not be read");
             Line("[AF] Not started: the focuser's position could not be read\n");
             if (m_hooks.failed) m_hooks.failed();
+            NotStarted();
             return false;
         }
         char b[160];
+        if (m_centreNext >= 0 && !m_calibrate) {
+            std::snprintf(b, sizeof(b), "[AF] centred on the RUNS baseline %d (the focuser is at %d)\n",
+                          m_centreNext, pos);
+            Line(b);
+            pos = m_centreNext;
+        }
+        m_centreNext = -1;
         std::snprintf(b, sizeof(b), "[AF] AE %s after %.1fs; V-curve scan from pos=%d\n",
                       settled ? "settled" : "not settled, going anyway", waited, pos);
         Line(b);
@@ -199,6 +215,7 @@ public:
             Status("Autofocus could not start");
             Line("[AF] Not started: the routine refused (already running, or no focuser)\n");
             if (m_hooks.failed) m_hooks.failed();
+            NotStarted();
             return false;
         }
         return true;
@@ -287,14 +304,22 @@ private:
                           r.bestPosition, r.bestSharpness, r.improvement, sep, r.message.c_str());
             Line(b);
             if (m_hooks.succeeded) m_hooks.succeeded();
+            if (m_hooks.outcome) m_hooks.outcome(true, r.bestPosition);
         } else {
             Status(r.message);
             Session("AutoFocus failed: " + r.message);
             Line("[AF] Failed: " + r.message + "\n");
             if (m_hooks.failed) m_hooks.failed();
+            if (m_hooks.outcome) m_hooks.outcome(false, -1);
         }
     }
 
+
+    // A sweep that never started still ends, for whoever waits on it.
+    void NotStarted() {
+        m_centreNext = -1;
+        if (m_hooks.outcome) m_hooks.outcome(false, -1);
+    }
 
     void Status(const std::string& s)  { if (m_hooks.status) m_hooks.status(s); }
     void Session(const std::string& s) { if (m_hooks.session) m_hooks.session(s); }
@@ -310,6 +335,7 @@ private:
     bool                   m_waitingForAE = false;
     double                 m_waitStart = 0.0;
     double                 m_confirmUntil = -1e18;
+    int                    m_centreNext = -1;     // 2026-11-24: RUNS baseline centre, one sweep
     bool                   m_calibrate = false;   // phase 161.3: what Tick starts is a calibration
     std::mutex             m_resultMx;            // phase 161.1
     std::function<void()>  m_result;

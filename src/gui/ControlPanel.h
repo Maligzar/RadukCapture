@@ -480,6 +480,11 @@ public:
     void SetProfileNames(const std::vector<std::string>& names);
     void SetActiveProfile(int index);
 
+    // 2026-11-24: a stopped recording still draining from RAM to disk.
+    // The status line shows `line` (core/FlushStatus.h) and RECORD reads
+    // FLUSHING in amber until it ends.
+    void SetFlushStatus(bool flushing, const std::wstring& line);
+    bool Flushing() const { return m_flushOn; }
     void UpdateCaptureStatus(bool recording, uint32_t framesRecorded,
                               uint32_t framesDropped, double elapsedSec,
                               uint64_t bufferUsed, uint64_t bufferTotal,
@@ -637,6 +642,8 @@ private:
     double   m_paintDiskTotalGB = 1.0;
     bool     m_paintRecording   = false;
     bool     m_recordPaused     = false;  // Phase 41: amber PAUSED state on RECORD button
+    bool         m_flushOn = false;      // 2026-11-24
+    std::wstring m_flushLine;
     uint32_t m_paintFrames      = 0;
     uint32_t m_paintDrops       = 0;
     double   m_paintElapsed     = 0.0;

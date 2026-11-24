@@ -38,6 +38,7 @@ struct FakeCapture {
     uint32_t hx = 99, hy = 99; float hs = -1;
     bool StartRecording(int, int, int) { if (startOk) recording = true; return startOk; }
     void StopRecording(bool n) { recording = false; ++stops; lastNormal = n; }
+    void RequestStop(bool n)   { StopRecording(n); }
     bool IsRecording() const { return recording; }
     DiskStop DiskStopped() const { return disk; }
     bool LimitReached() const { return limit; }

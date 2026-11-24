@@ -386,6 +386,7 @@ LRESULT CALLBACK ControlPanel::PanelWndProc(HWND hwnd, UINT msg,
                 bool pressed = (dis->itemState & ODS_SELECTED) != 0;
                 bool rec     = self->m_status.recording;
                 bool paused  = self->m_recordPaused;
+                const bool flushing = self->m_flushOn && !rec;   // 2026-11-24
 
                 // Background
                 // Phase 132.3: tokens throughout. At rest a neutral face
@@ -394,7 +395,7 @@ LRESULT CALLBACK ControlPanel::PanelWndProc(HWND hwnd, UINT msg,
                 // control in night vision, where the signal colour is
                 // dimmer than text. Recording and paused tint the face.
                 const COLORREF face = Theme::NV(Theme::Rgb::PANEL);
-                COLORREF bg = paused ? Theme::Mix(face, Theme::NV(Theme::Rgb::AMBER), pressed ? 0.32f : 0.22f)
+                COLORREF bg = (paused || flushing) ? Theme::Mix(face, Theme::NV(Theme::Rgb::AMBER), pressed ? 0.32f : 0.22f)
                             : rec    ? Theme::Mix(face, Theme::NV(Theme::Rgb::RED),   pressed ? 0.38f : 0.28f)
                             :          (pressed ? Theme::NV(Theme::Rgb::BORDER) : face);
                 HBRUSH hbg = CreateSolidBrush(bg);
@@ -402,12 +403,12 @@ LRESULT CALLBACK ControlPanel::PanelWndProc(HWND hwnd, UINT msg,
                 DeleteObject(hbg);
 
                 // Border
-                COLORREF borderCol = paused ? Theme::NV(Theme::Rgb::AMBER)
+                COLORREF borderCol = (paused || flushing) ? Theme::NV(Theme::Rgb::AMBER)
                                    : rec    ? Theme::NV(Theme::Rgb::RED)
                                    :          Theme::NV(Theme::Rgb::ACCENT);
                 // The word in primary text at rest, so it is the brightest
                 // thing on the button by day and by night.
-                const COLORREF labelCol = (paused || rec) ? borderCol
+                const COLORREF labelCol = (paused || rec || flushing) ? borderCol
                                                           : Theme::NV(Theme::Rgb::TEXT);
                 HPEN pen = CreatePen(PS_SOLID, 2, borderCol);
                 HPEN oldPen = (HPEN)SelectObject(hdc, pen);
@@ -432,7 +433,8 @@ LRESULT CALLBACK ControlPanel::PanelWndProc(HWND hwnd, UINT msg,
                 HFONT oldf = f ? (HFONT)SelectObject(hdc, f) : nullptr;
                 SetBkMode(hdc, TRANSPARENT);
                 SetTextColor(hdc, labelCol);
-                const wchar_t* label = paused        ? L"\u23F8  PAUSED"
+                const wchar_t* label = flushing      ? L"FLUSHING TO DISK"
+                                     : paused        ? L"\u23F8  PAUSED"
                                      : rec           ? L"\u25A0  STOP RECORDING"
                                      :                 L"\u25BA  RECORD";
                 DrawTextW(hdc, label, -1, &r, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
@@ -1676,7 +1678,10 @@ void ControlPanel::UpdateCaptureStatus(bool recording, uint32_t framesRecorded,
         // already in hand and discarded the moment it mattered most --
         // right after a run, when the operator is deciding whether to
         // do another.
-        if (framesRecorded > 0 && m_paintElapsed > 0.0) {
+        if (m_flushOn) {
+            // 2026-11-24: still going from RAM to disk.
+            SetWindowTextW(m_lblRecStatus, m_flushLine.c_str());
+        } else if (framesRecorded > 0 && m_paintElapsed > 0.0) {
             swprintf(buf, 128, L"DONE  %02d:%02d",
                      (int)(m_paintElapsed / 60), (int)(m_paintElapsed) % 60);
             SetWindowTextW(m_lblRecStatus, buf);
@@ -1690,6 +1695,14 @@ void ControlPanel::UpdateCaptureStatus(bool recording, uint32_t framesRecorded,
             SetWindowTextW(m_lblRecFrames, L"");
         }
     }
+}
+
+void ControlPanel::SetFlushStatus(bool flushing, const std::wstring& line) {
+    const bool edge = flushing != m_flushOn;
+    m_flushOn = flushing;
+    m_flushLine = line;
+    if (flushing && m_lblRecStatus) SetWindowTextW(m_lblRecStatus, line.c_str());
+    if (edge && m_btnRecord) InvalidateRect(m_btnRecord, nullptr, FALSE);
 }
 
 // ── Capture config getters ─────────────────────────────────────
