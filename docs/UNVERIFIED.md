@@ -6,7 +6,7 @@ Line numbers are left out on purpose, so an edit elsewhere in a file does not ma
 
 A tag is removed when its clear-night item has been run and the value confirmed or replaced, with the night noted in the checklist.
 
-30 constants across 15 checklist items.
+31 constants across 16 checklist items.
 
 ## Item 1: SHARP_CEIL = 1000
 
@@ -106,6 +106,12 @@ A tag is removed when its clear-night item has been run and the value confirmed 
 | Constant | Value | File | What verifies it |
 |---|---|---|---|
 | `inline constexpr double kWindBandMph[4][2] = {{5, 8}, {10, 14}, {15, 22}, {20, 28}};` |  | `src/core/SkyWeather.h` | the tracking error and star shake at each band, on the real mount |
+
+## Item 65: RUNS from the owner's baseline
+
+| Constant | Value | File | What verifies it |
+|---|---|---|---|
+| `runsFocusMaxDrift` | `2000` | `src/core/RigConfig.h` | refocus results logged against the baseline over a sequence |
 
 ## Item 66: A lock held through the meridian
 

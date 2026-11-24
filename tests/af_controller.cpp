@@ -300,6 +300,34 @@ int main() {
               "and the next press, with a good read, sweeps from it");
     }
 
+    // 2026-11-24, the RUNS baseline: a sweep can be centred on a given
+    // position once, and every ending reports through `outcome`.
+    {
+        Rig r;
+        std::vector<std::pair<bool, int>> outcomes;
+        AutofocusHooks h = r.c.Hooks();
+        h.outcome = [&](bool ok, int pos) { outcomes.push_back({ok, pos}); };
+        r.c.SetHooks(h);
+        r.ae.settled = true;
+        r.c.CentreNextSweepAt(170923);
+        r.c.Start();
+        Check(r.c.Tick(false, false, true) && r.af.lastPos == 170923,
+              "centred on the baseline, not where the focuser is", std::to_string(r.af.lastPos));
+        Check(r.ui.Saw("centred on the RUNS baseline 170923 (the focuser is at 12345)"), "and it says so");
+        r.c.Start();
+        r.c.Tick(false, false, true);
+        Check(r.af.lastPos == 12345, "one sweep only: the next is from the focuser");
+        r.f.readFails = true;
+        r.c.CentreNextSweepAt(170923);
+        r.c.Start();
+        r.c.Tick(false, false, true);
+        Check(!outcomes.empty() && !outcomes.back().first, "a sweep that never started reports a failure");
+        r.f.readFails = false;
+        r.c.Start();
+        r.c.Tick(false, false, true);
+        Check(r.af.lastPos == 12345, "and its centre is not carried to the next");
+    }
+
     if (g_fail) { printf("af_controller: %d FAILED\n", g_fail); return 1; }
     printf("af_controller: all passed\n");
     return 0;

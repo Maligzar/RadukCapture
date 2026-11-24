@@ -96,7 +96,7 @@ struct CaptureStatus {
 class CaptureManager {
 public:
     CaptureManager() = default;
-    ~CaptureManager() { StopRecording(); }
+    ~CaptureManager() { StopRecording(); WaitForFlush(); }
 
     CaptureManager(const CaptureManager&) = delete;
     CaptureManager& operator=(const CaptureManager&) = delete;
@@ -159,8 +159,12 @@ public:
     // frameSizeBytes: expected bytes per frame (width * height * (bitDepth/8))
     bool StartRecording(int width, int height, int bitDepth);
 
-    // Stop recording. Drains remaining write buffer, closes the file.
+    // Stop recording. Drains remaining write buffer, closes the file, and
+    // waits for it (tests, leaving the app). The app's STOP uses RequestStop.
     void StopRecording(bool normal = true);
+    // 2026-11-24: stop taking frames and return; a drain still to do runs
+    // on the writer's thread and ServiceStop() finishes it (see Flushing()).
+    void RequestStop(bool normal = true);
     // 2026-11-22, 03:07 at the scope: a 1280x960 16-bit run at 114 fps
     // (280 MB/s) to a disk that could not keep up filled the 9.6 GB write
     // buffer, and StopRecording, on the window thread, waited for all of
@@ -170,6 +174,22 @@ public:
     // to write: the app keeps the mount's heartbeat and Windows' idea of a
     // live window going, and shows the progress.
     void SetDrainWaitHook(std::function<void(uint64_t pending)> h) { m_drainHook = std::move(h); }
+
+    // 2026-11-24, at the scope: STOP with the write buffer nearly full froze
+    // the app again, because the drain still ran on the window thread. Now
+    // STOP returns at once when frames are still in RAM: no new frames are
+    // taken, the writer keeps draining on its own thread, and the window
+    // keeps running and shows FLUSHING. ServiceStop(), called every pass of
+    // the main loop, finishes the file (closing it, the records, the
+    // completion callback) on the window thread once the writer is done.
+    // A new recording is refused until then. WaitForFlush() is the old
+    // blocking wait, for leaving the app.
+    bool     Flushing()      const { return m_stopPending.load(); }
+    uint64_t FlushPending()  const { return m_stopPending.load() ? m_writeBuffer.Pending() : 0; }
+    uint64_t FlushStartPending() const { return m_flushStartPending.load(); }
+    double   FlushElapsedSec() const;
+    bool     ServiceStop();          // true when it finished a stop just now
+    void     WaitForFlush();
 
     // ── Frame submission ───────────────────────────────────────
 
@@ -377,6 +397,12 @@ private:
     std::atomic<bool> m_writerRunning{false};
     std::atomic<bool> m_writerDone{true};      // set by WriterLoop as it returns
     std::function<void(uint64_t)> m_drainHook;
+    // 2026-11-24: a stop whose drain is still running (see Flushing()).
+    std::atomic<bool> m_stopPending{false};
+    bool              m_stopNormal = true;
+    std::atomic<uint64_t> m_flushStartPending{0};
+    std::chrono::steady_clock::time_point m_flushT0{};
+    void FinishStop(bool normal, uint64_t pending0, double drainSecs);
     WriteSpeedMeter m_speed;   // written by the writer thread, read after it is joined
     std::function<void(const std::string&, double)> m_speedReport;
     // Push failures repeat every frame; report the reason once.

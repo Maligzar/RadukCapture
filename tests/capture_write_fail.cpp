@@ -24,6 +24,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <thread>
+#include <chrono>
 #include <vector>
 
 using namespace raduk::core;
@@ -163,6 +165,48 @@ int main() {
         Check(w.written == accepted, "every accepted frame was written",
               std::to_string(w.written.load()) + " of " + std::to_string(accepted));
         Check(!cm.IsRecording(), "the run is closed");
+    }
+
+    printf("\n1c. STOP returns at once and the drain finishes later (2026-11-24)\n");
+    {
+        // The window thread waited for a full buffer to drain and the app
+        // froze again. RequestStop returns; Flushing() says the drain is on;
+        // a new recording is refused; ServiceStop() closes the file.
+        CaptureManager cm;
+        CaptureConfig cfg;
+        cfg.outputDir = dir; cfg.filePrefix = "wasync";
+        cfg.limitType = LimitType::Frames; cfg.limitFrames = 100000;
+        cm.SetConfig(cfg);
+        StubWriter w;                         // 2 ms a frame
+        cm.SetWriterOverride(&w);
+        cm.SetFreeSpaceProbe([](const std::string&) { return UINT64_MAX; });
+        std::atomic<int> completes{0};
+        cm.SetOnComplete([&](const std::string&, bool) { ++completes; });
+        Check(cm.StartRecording(W, H, 8), "recording starts");
+        int accepted = 0;
+        for (int i = 0; i < 300; ++i) {
+            slot.timestamp = (uint64_t)(30000 + i);
+            if (cm.SubmitFromCaptureThread(&slot)) ++accepted;
+        }
+        const auto t0 = std::chrono::steady_clock::now();
+        cm.RequestStop(true);
+        const double took = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+        Check(took < 0.1, "STOP returned at once", std::to_string(took) + " s");
+        Check(!cm.IsRecording() && cm.Flushing() && cm.FlushPending() > 0,
+              "no longer recording, and flushing", std::to_string(cm.FlushPending()) + " pending");
+        Check(cm.FlushStartPending() > 0, "with the count it started from");
+        Check(!cm.StartRecording(W, H, 8), "a new recording is refused while it flushes");
+        Check(completes.load() == 0, "the file is not finished yet");
+        int passes = 0;
+        while (!cm.ServiceStop() && passes < 2000) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            ++passes;
+        }
+        Check(!cm.Flushing() && completes.load() == 1, "the loop finished it, once");
+        Check(w.written == accepted, "every accepted frame was written",
+              std::to_string(w.written.load()) + " of " + std::to_string(accepted));
+        Check(cm.StartRecording(W, H, 8), "and the next recording can start");
+        cm.StopRecording(true);
     }
 
     printf("\n2. The disk runs low\n");
