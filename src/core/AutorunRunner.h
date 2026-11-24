@@ -77,6 +77,9 @@ public:
     struct Inputs {
         bool     recording   = false;
         bool     focusing    = false;
+        // 2026-11-24: the last run is still going from RAM to disk; the
+        // next sweep or run waits for it (a new recording is refused).
+        bool     flushing    = false;
         uint32_t frames      = 0;       // in the current or latest run
         bool     targetSeen  = false;
         double   altDeg      = -1.0;    // 0 or below is unknown
@@ -243,6 +246,7 @@ private:
             Fail("no room on the capture disk for another run");
             return Action::None;
         }
+        if (in.flushing) return Action::None;
         // 157.0c: ahead of the target, because on the wide frame the
         // target may not be found yet, and that is not it leaving.
         if (in.acquiring) {

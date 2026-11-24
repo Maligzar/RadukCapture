@@ -153,6 +153,7 @@
 #include "core/ADCAssistant.h"
 #include "core/DerotationLimit.h"
 #include "core/AutorunRunner.h"
+#include "core/FlushStatus.h"
 #include "core/SeeingMonitor.h"
 #include "core/SeeingTally.h"     // phase 138: forecast against the measured sky
 #include "core/AutoExposureAssistant.h"
@@ -4772,6 +4773,9 @@ static int RunApp(bool useEmulator) {
         }
         if (capturer.IsRecording()) {
             endRecording(true, "operator");
+        } else if (capturer.Flushing()) {
+            // 2026-11-24: the last recording is still going to disk.
+            notifBar.NotifyWarn(L"Still writing the last recording to disk: RECORD is back when FLUSHING ends");
         } else {
             CaptureConfig cfg = capturer.Config();
             cfg.filePrefix    = controls.GetFilePrefix();
@@ -7535,6 +7539,7 @@ static int RunApp(bool useEmulator) {
             ai.altDeg     = preview.MountAltitude();
             ai.seeingOpen = seeing.Open(core.Clock().Now());
             ai.acquiring  = tracker.AutoAdvancing();   // phase 157.0c
+            ai.flushing   = capturer.Flushing();         // 2026-11-24
             if (core.arCtl.Jupiter())
                 ai.prime = jupiterDisc(raduk::sky::PreciseJdNow()).Prime();
             // A disk that will not answer is not a reason to stop.
@@ -10598,6 +10603,19 @@ static int RunApp(bool useEmulator) {
                 adcAlignWindow.Update(ad);
             }
 
+            // 2026-11-24: a stop whose drain is still running finishes here,
+            // on this thread, and the panel says FLUSHING until it does.
+            {
+                const bool wasFlushing = controls.Flushing();
+                if (capturer.ServiceStop())
+                    Log("[REC] flush finished: the recording is closed\n");
+                const bool flushing = capturer.Flushing();
+                controls.SetFlushStatus(flushing, flushing
+                    ? raduk::core::FlushLine(capturer.FlushPending(), capturer.FlushStartPending(),
+                                             capturer.FlushElapsedSec())
+                    : std::wstring());
+                if (wasFlushing && !flushing) notifBar.NotifyInfo(L"Recording written to disk");
+            }
             // Capture status panel
             bool limitByFrames = (capturer.GetLimitType() == LimitType::Frames);
             controls.UpdateCaptureStatus(
