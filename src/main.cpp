@@ -136,6 +136,7 @@
 #include "core/FocusHistory.h"       // Phase 174.0
 #include "core/FocusTempModel.h"     // Phase 174.1
 #include "core/ScreenRotation.h"     // screen-burn rotation
+#include "core/GoToMiss.h"           // a GoTo that put nothing in the frame (2026-11-24)
 #include "core/TrackingConfirm.h"
 #include "gui/StatusBar.h"
 #include "gui/HelpWindow.h"
@@ -1925,6 +1926,14 @@ static int RunApp(bool useEmulator) {
     // is on the hand control rather than in here. Say so at the point
     // it matters, and translate "point the tube north" into the
     // landmarks actually in front of the user.
+    // 2026-11-24: a hand control already aligned when the app starts is
+    // carrying an alignment from an earlier setup. It is right only if
+    // neither the mount nor the tube has moved since; at the scope tonight
+    // it was stale and every GoTo went to the horizon.
+    const bool alignedAtStart = mount && mount->IsConnected() && mount->IsAligned();
+    if (alignedAtStart)
+        Log("[ALIGN] The mount was already aligned when the app started - an alignment from "
+            "before; if the mount or tube moved since, power-cycle it and run Quick Align\n");
     {
         auto& rig = raduk::core::RigConfig::Get();
         if (rig.showAlignHelper && mount && mount->IsConnected()
@@ -1958,6 +1967,7 @@ static int RunApp(bool useEmulator) {
         ri.focusPos       = focuser.IsOpen() ? focuser.GetPosition() : 0;
         ri.mountConnected = mount && mount->IsConnected();
         ri.mountAligned   = ri.mountConnected && mount->IsAligned();
+        ri.alignedBeforeStart = alignedAtStart && ri.mountAligned;
         ri.trackingKnown  = ri.mountConnected && mount->TrackingModeKnown();
         // PLANET LOCK driving the axes is tracking (core/TrackingState.h).
         ri.trackingOn     = (ri.trackingKnown &&
@@ -2091,9 +2101,17 @@ static int RunApp(bool useEmulator) {
         objectInfo.ShowObject(name, alt, az, mag);
     });
 
+    // 2026-11-24: a bright target still not in the frame after a GoTo is
+    // the mark of a stale alignment (core/GoToMiss.h).
+    static raduk::core::GoToMissWatch gotoMiss;
+    static std::mutex gotoMissMx;   // the GoTo callback and the readout tick may be different threads
+    auto gotoMissNow = []() -> double {
+        return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    };
     gotoPanel.SetGoToCompleteCallback([&](const std::string& target) {
         Log("[GOTO] Slew to '%s' complete — starting acquisition in 3s\n",
             target.c_str());
+        { std::lock_guard<std::mutex> lk(gotoMissMx); gotoMiss.GoToComplete(target, gotoMissNow()); }
         slog.Mount("GoTo complete: %s — acquisition armed", target.c_str());
 
         tracker.Reset();
@@ -3112,6 +3130,10 @@ static int RunApp(bool useEmulator) {
         }
         if (report.AnyFailed())
             slog.System("Not ready: %s", report.Summary().c_str());
+        if (alignedAtStart)
+            notifBar.NotifyWarn(L"The mount was already aligned when RadukCapture started. That alignment is "
+                                L"only right if the mount and tube haven't moved since - if they have, "
+                                L"power-cycle the mount and run Quick Align.");
 
         // Phase 68 step 3: interrupt only when something is actually
         // wrong. Manual items never qualify on their own -- they are
@@ -9852,6 +9874,19 @@ static int RunApp(bool useEmulator) {
 
             controls.UpdateReadouts();
             mountCtrl.UpdateReadouts();
+
+            // 2026-11-24: a GoTo that "completed" with nothing in the frame.
+            {
+                std::string miss;
+                {
+                    std::lock_guard<std::mutex> lk(gotoMissMx);
+                    miss = gotoMiss.Tick(gotoMissNow(), lastAnalysis.valid && lastAnalysis.targetFound);
+                }
+                if (!miss.empty()) {
+                    Log("[GOTO] %s\n", miss.c_str());
+                    notifBar.NotifyWarn(raduk::core::ToWide(miss).c_str());
+                }
+            }
 
             // Screen-burn rotation: put off while a mouse button is held
             // (something is being dragged or resized).

@@ -83,7 +83,14 @@ The telescope does not know which way it is facing when it wakes up. Until it
 does, it cannot follow anything and **it will refuse to track**.
 
 On the hand controller: **Align → Quick Align**, and accept the prompts. This
-needs no stars and takes under a minute. If you skip this, everything later
+needs no stars and takes under a minute.
+
+**An old alignment is worse than none.** If the hand controller says it's
+already aligned but the mount or tube has moved since, its model of the sky is
+wrong: every GoTo reports "complete" and points somewhere else, the horizon on
+2026-11-23. Power-cycle the mount and run Quick Align again. RadukCapture warns at startup
+when the mount was already aligned, and again when a GoTo to a planet or the
+Moon leaves nothing in the frame. If you skip this, everything later
 appears to work and then quietly does not — this is the single most common
 reason a night produces nothing.
 
@@ -3658,6 +3665,7 @@ un-soak.ps1` runs the emulator for hours through GoTo, lock, autofocus and runs,
 | 3.3.73 | 172 (finding 5) | **`guide_report.py` allows for the guider's deadband.** Under 0.6" of total error PLANET LOCK sends no proportional correction, only the integral. Lines inside that band made the loop look weak: 0.10 /s on altitude in the owner's 2026-11-23 run, against the loop's real 0.3. The report now gives the share of lines inside the deadband, takes the loop's lean only from the lines outside it, and reads a slow wander mostly inside the band as the deadband working as designed. |
 | 3.3.74 | 171 (fix) | **REPORT opens.** The window closed itself the instant it appeared: its text box shared an internal id with the CANCEL button, so putting the cursor in the box counted as pressing CANCEL. The controls have their own ids now, and only a real click on SEND or CANCEL acts. Every REPORT press since 3.3.48 had this. Gated by `report_dialog`. |
 | 3.3.75 | rig setup | **The Rig setup drawing says what each mark is.** At the scope the green line was labelled "scope". It reads as where the scope stands, but it is where the tube points, so a correct setup looked wrong. Now the dot in the middle is labelled "scope", the green line reads "facing 121° (any height)" (the plan shows the direction only, so the line is full length at any altitude; the sky map shows height), "you" sits halfway along its own line instead of on top of the compass letter, and the clipped three-line note above the fields is one wrapping note that says what the white and green lines are. |
+| 3.3.76 | alignment | **A stale alignment is caught.** On 2026-11-23 the hand controller was still aligned from an earlier setup. The app took its word, and four GoTos reported complete while the tube pointed at the horizon. Now three things flag it. At startup, a mount that was already aligned gets a notice, and the readiness check lists it to confirm by hand. And 20 seconds after a GoTo to a planet or the Moon, if nothing is in the frame, a notice says the alignment is probably stale; a second miss in a row says it is almost certainly so. Logged under `[ALIGN]` and `[GOTO]`. Gated by `goto_miss`. |
 
 ---
 
