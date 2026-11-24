@@ -58,6 +58,7 @@ $Tests = @(
     @{ Name = "af_controller";     Sources = @() }
     @{ Name = "rec_controller";    Sources = @() }
     @{ Name = "autorun_controller"; Sources = @() }
+    @{ Name = "status_fit";      Sources = @() }
     @{ Name = "runs_baseline"; Sources = @() }
     @{ Name = "recording_cap";   Sources = @() }
     @{ Name = "hand_step";       Sources = @() }
