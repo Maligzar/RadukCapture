@@ -32,6 +32,17 @@ struct GuideLawParams {
     float maxCorr = 30.0f;   // "/s either way
     float maxInteg = 15.0f;  // the integral's own clamp
     bool  antiWindup = true; // false: the law before 2026-11-22, for the test's comparison
+    // 2026-11-24, 20:32 at the scope: the never-reverse rule holds only
+    // while the axis's tracking rate is at least this fast. Saturn was
+    // about 15 minutes from the meridian, where its altitude rate falls
+    // through zero and changes sign. The base was -3.19 "/s, so the
+    // correction was capped at +2.19 (the command could not rise above
+    // -1 "/s), the planet drifted up 8 "/s against the cap, and the lock
+    // was abandoned as "corrections were making it worse". Near zero the
+    // sky itself reverses the axis, so the backlash of a reversal is a
+    // cost that has to be paid; losing the lock is not.
+    // UNVERIFIED(item 66): a lock held through a meridian crossing on the alt-az mount
+    float reverseGuardMinBase = 5.0f;   // "/s; 0 guards always (the law before)
 };
 
 struct GuideAxisState {
@@ -44,7 +55,10 @@ struct GuideAxisState {
 inline float GuideAxisStep(float err, float base, float dt, const GuideLawParams& p,
                            GuideAxisState& st) {
     auto clampf = [](float v, float m) { return v > m ? m : (v < -m ? -m : v); };
-    auto reverseClamp = [base](float c) {
+    const bool guard = !(p.reverseGuardMinBase > 0.0f) ||
+                       base >= p.reverseGuardMinBase || base <= -p.reverseGuardMinBase;
+    auto reverseClamp = [base, guard](float c) {
+        if (!guard) return c;   // a slow axis may cross zero (2026-11-24)
         if (base > 1.0f && base + c < 1.0f)   return 1.0f - base;
         if (base < -1.0f && base + c > -1.0f) return -1.0f - base;
         return c;
