@@ -1980,9 +1980,9 @@ D2D1_RECT_F PreviewRenderer::CalculateZoomedRect(int frameW, int frameH,
         case ZoomMode::Two:  destW=(float)frameW*2.0f; destH=(float)frameH*2.0f; break;
         case ZoomMode::Four: destW=(float)frameW*4.0f; destH=(float)frameH*4.0f; break;
         default: {
-            if (m_holdW > 0 && m_holdH > 0) {
+            if (m_viewHoldW > 0 && m_viewHoldH > 0) {
                 // 2026-11-24: FIT as it was for the frame before the widen.
-                const float sc = (std::min)(availW / (float)m_holdW, availH / (float)m_holdH);
+                const float sc = (std::min)(availW / (float)m_viewHoldW, availH / (float)m_viewHoldH);
                 destW = (float)frameW * sc; destH = (float)frameH * sc;
                 break;
             }

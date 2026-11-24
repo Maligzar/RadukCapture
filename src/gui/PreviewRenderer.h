@@ -291,8 +291,8 @@ public:
     // While the frame is widened, FIT keeps the scale it had for the frame
     // before (w x h): the wide frame is centred where that one was, so the
     // view is the same picture. 0, 0 lets go.
-    void HoldViewScale(int w, int h) { m_holdW = w > 0 ? w : 0; m_holdH = h > 0 ? h : 0; }
-    bool ViewScaleHeld() const { return m_holdW > 0 && m_holdH > 0; }
+    void HoldViewScale(int w, int h) { m_viewHoldW = w > 0 ? w : 0; m_viewHoldH = h > 0 ? h : 0; }
+    bool ViewScaleHeld() const { return m_viewHoldW > 0 && m_viewHoldH > 0; }
     const wchar_t* ZoomLabel() const {
         switch (m_zoom) {
             case ZoomMode::Fit:  return L"FIT";
@@ -657,7 +657,7 @@ private:
     float                   m_reticleDY     = 0.0f;   // fraction of height
     float                   m_reticleRot    = 0.0f;   // degrees
     ZoomMode                m_zoom          = ZoomMode::Fit;
-    int                     m_holdW = 0, m_holdH = 0;   // 2026-11-24: FIT's scale held through a wide acquisition
+    int                     m_viewHoldW = 0, m_viewHoldH = 0;   // 2026-11-24: FIT's scale held through a wide acquisition
     DebayerMode             m_debayerMode   = DebayerMode::Color;
 
     // ADC overlay
