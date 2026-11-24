@@ -1,0 +1,23 @@
+{
+"format":"raduk-problem-report","version":1,
+"stamp":"20261124_032510","night":"20261123","app":"3.3.86","emulator":false,
+"description":"Focuser is working oddly.  The num,bers displayted are not the same as the amoujnt of turns.  This needs to be examined ",
+"state":{
+ "target":"Jupiter",
+ "profile":"Jupiter",
+ "camera":"open",
+ "exposure":"7.17 ms, gain 197",
+ "frame":"640x480 16-bit",
+ "capture":"138.2 fps, 0 dropped",
+ "recording":"no",
+ "auto exposure":"manual",
+ "focuser":"172806",
+ "autofocus":"idle",
+ "mount":"connected",
+ "tracker":"LOCKED",
+ "sky run":"idle",
+ "park":"idle",
+ "screenshots":"10"
+},
+"files":["log_tail.txt","rig_redacted.ini"]
+}
