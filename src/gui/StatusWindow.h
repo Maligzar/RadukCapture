@@ -49,6 +49,7 @@
 #include "WindowChrome.h"
 #include "Theme.h"
 #include "core/SkyConditions.h"
+#include "core/TempText.h"
 
 #pragma comment(lib, "dwmapi.lib")
 
@@ -547,7 +548,8 @@ private:
                          w.verdict[0] ? w.verdict : "--", w.cloudPct, w.windMph,
                          w.dewRisk[0] ? w.dewRisk : "?", w.ageMin);
                 strcpy_s(r.rightLabel, "AIR");
-                snprintf(r.rightValue, sizeof(r.rightValue), "%.0fF", w.tempF);
+                snprintf(r.rightValue, sizeof(r.rightValue), "%.0fF %.0fC", w.tempF,
+                         raduk::core::FToC(w.tempF));   // 2026-11-24: both units
                 r.rightClr = strcmp(w.dewRisk, "warning") == 0 ? Theme::NV(Theme::Rgb::ACCENT4)
                            : strcmp(w.dewRisk, "elevated") == 0 ? Theme::NV(Theme::Rgb::ACCENT2)
                                                                 : Theme::NV(Theme::Rgb::TEXT);  // 132.3c: no dew risk is a plain reading

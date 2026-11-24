@@ -22,6 +22,7 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
+#include "../core/TempText.h"
 #include <windows.h>
 #include <d2d1.h>
 #include <dwrite.h>
@@ -102,20 +103,21 @@ inline void Draw(ID2D1RenderTarget* rt, IDWriteTextFormat* font,
 
     font->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
     if (br.dim) {
-        swprintf(buf, 64, L"%.0f°-%.0f°", tMin, tMin + tRange);
+        swprintf(buf, 64, L"%.0f-%.0f\u00B0C", tMin, tMin + tRange);
         rt->DrawText(buf, (UINT32)wcslen(buf), font,
                      D2D1::RectF(x, labY, x + fs * 7.0f, labY + labelH), br.dim);
     }
     if (br.cam) {
-        swprintf(buf, 64, L"CAM %.1f°", camNow);
+        // 2026-11-24: Celsius and Fahrenheit.
+        swprintf(buf, 64, L"CAM %ls", raduk::core::TempCFShort(camNow).c_str());
         rt->DrawText(buf, (UINT32)wcslen(buf), font,
-                     D2D1::RectF(x + w - fs * 13.0f, labY,
-                                 x + w - fs * 6.5f, labY + labelH), br.cam);
+                     D2D1::RectF(x + w - fs * 21.0f, labY,
+                                 x + w - fs * 10.5f, labY + labelH), br.cam);
     }
     if (br.foc) {
-        swprintf(buf, 64, L"FOC %.1f°", focNow);
+        swprintf(buf, 64, L"FOC %ls", raduk::core::TempCFShort(focNow).c_str());
         rt->DrawText(buf, (UINT32)wcslen(buf), font,
-                     D2D1::RectF(x + w - fs * 6.3f, labY, x + w, labY + labelH),
+                     D2D1::RectF(x + w - fs * 10.3f, labY, x + w, labY + labelH),
                      br.foc);
     }
 }

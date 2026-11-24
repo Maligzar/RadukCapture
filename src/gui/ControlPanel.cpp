@@ -9,6 +9,7 @@
 #include "ToolbarLayout.h"
 #include "ControlPanel.h"
 #include "core/TrackingConfirm.h"
+#include "core/TempText.h"
 #include "../core/ExposureScale.h"
 #include "../core/CameraEntry.h"
 #include "Theme.h"
@@ -1496,8 +1497,7 @@ void ControlPanel::UpdateReadouts() {
         if (m_lblFocusState)
             SetWindowTextW(m_lblFocusState, raduk::core::FocusStateLine(
                 true, m_focuser->PositionTrusted(), m_focuser->IsMoving()).c_str());
-        swprintf(buf, 64, L"%.1f C", m_focuser->GetTemperature());
-        SetWindowTextW(m_lblFocusTemp, buf);
+        SetWindowTextW(m_lblFocusTemp, raduk::core::TempCF(m_focuser->GetTemperature()).c_str());   // 2026-11-24: C and F
     }
     // Mount — NexStar returns from cache (instant)
     if (m_mount) {
@@ -2656,7 +2656,7 @@ void ControlPanel::RebuildControls(int clientW, bool fromResize) {
     TagControl(m_lblFocusLast, Section::EAF);
     y += SH + 2;
     TagControl(MakeLabel(L"TEMP:", x, y, 46, SH), Section::EAF);
-    m_lblFocusTemp = MakeValueLabel(L"--\u00B0C", x+48, y, 70, SH, ID_LBL_FOCUS_TEMP);
+    m_lblFocusTemp = MakeValueLabel(L"--", x+48, y, 150, SH, ID_LBL_FOCUS_TEMP);   // "17.0°C / 62.6°F"
     y += SH + 4;
 
     m_btnAutofocus = MakeButton(L"AUTO FOCUS", x, y, w, BH+2, ID_BTN_AUTOFOCUS);
