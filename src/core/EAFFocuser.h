@@ -87,6 +87,8 @@ private:
     // Phase 169.1: a new move stops the one in flight and replaces it.
     static constexpr int kReplaceWaitMs = 3000;
     bool ReplaceMoveInFlight(int position);
+    // 2026-11-24: the motor's own answer, true only when it says moving.
+    bool RawMoving() const;
     std::atomic<int> m_lastReplaced{-1};
 public:
     int LastReplacedTarget() const override { return m_lastReplaced.load(); }

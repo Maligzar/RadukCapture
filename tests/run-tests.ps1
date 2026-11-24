@@ -60,6 +60,7 @@ $Tests = @(
     @{ Name = "autorun_controller"; Sources = @() }
     @{ Name = "runs_baseline"; Sources = @() }
     @{ Name = "recording_cap";   Sources = @() }
+    @{ Name = "hand_step";       Sources = @() }
     @{ Name = "emu_fault";         Sources = @() }
     @{ Name = "slew_watch";        Sources = @() }
     @{ Name = "device_identity";   Sources = @() }
