@@ -108,6 +108,7 @@ inline void Draw(ID2D1RenderTarget* rt, IDWriteTextFormat* font,
                      D2D1::RectF(x, labY, x + fs * 7.0f, labY + labelH), br.dim);
     }
     if (br.cam) {
+<<<<<<< HEAD
         (void)camNow; (void)focNow;   // shown in the status bar now
         // 2026-11-24: a key, not a readout. The values are in the status
         // bar (both units); repeated here they ran into each other.
@@ -119,6 +120,19 @@ inline void Draw(ID2D1RenderTarget* rt, IDWriteTextFormat* font,
         rt->DrawText(L"FOC", 3, font,
                      D2D1::RectF(x + w - fs * 3.4f, labY, x + w, labY + labelH), br.foc,
                      D2D1_DRAW_TEXT_OPTIONS_CLIP);
+=======
+        // 2026-11-24: Celsius and Fahrenheit.
+        swprintf(buf, 64, L"CAM %ls", raduk::core::TempCFShort(camNow).c_str());
+        rt->DrawText(buf, (UINT32)wcslen(buf), font,
+                     D2D1::RectF(x + w - fs * 21.0f, labY,
+                                 x + w - fs * 10.5f, labY + labelH), br.cam);
+    }
+    if (br.foc) {
+        swprintf(buf, 64, L"FOC %ls", raduk::core::TempCFShort(focNow).c_str());
+        rt->DrawText(buf, (UINT32)wcslen(buf), font,
+                     D2D1::RectF(x + w - fs * 10.3f, labY, x + w, labY + labelH),
+                     br.foc);
+>>>>>>> origin/claude/wide-view-hold
     }
 }
 

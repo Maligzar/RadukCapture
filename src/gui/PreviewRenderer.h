@@ -283,6 +283,16 @@ public:
         }
     }
     ZoomMode CurrentZoom() const { return m_zoom; }
+    // 2026-11-24, the owner: "I clicked CENTROID and the planet became out
+    // of focus without the focuser moving at all." Acquisition widens the
+    // camera's frame to the whole sensor to find and calibrate (phase
+    // 157.0c); at FIT the preview then drew six times the area in the same
+    // window, so the planet shrank to a third and its detail averaged away.
+    // While the frame is widened, FIT keeps the scale it had for the frame
+    // before (w x h): the wide frame is centred where that one was, so the
+    // view is the same picture. 0, 0 lets go.
+    void HoldViewScale(int w, int h) { m_viewHoldW = w > 0 ? w : 0; m_viewHoldH = h > 0 ? h : 0; }
+    bool ViewScaleHeld() const { return m_viewHoldW > 0 && m_viewHoldH > 0; }
     const wchar_t* ZoomLabel() const {
         switch (m_zoom) {
             case ZoomMode::Fit:  return L"FIT";
@@ -647,6 +657,7 @@ private:
     float                   m_reticleDY     = 0.0f;   // fraction of height
     float                   m_reticleRot    = 0.0f;   // degrees
     ZoomMode                m_zoom          = ZoomMode::Fit;
+    int                     m_viewHoldW = 0, m_viewHoldH = 0;   // 2026-11-24: FIT's scale held through a wide acquisition
     DebayerMode             m_debayerMode   = DebayerMode::Color;
 
     // ADC overlay
