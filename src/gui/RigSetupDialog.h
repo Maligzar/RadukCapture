@@ -158,7 +158,10 @@ inline void ShowRigSetupDialog(HWND owner, HWND panel,
                 // tube points. The scope is the dot in the middle.
                 int lx, ly; pt(az, R * 0.62, lx, ly);
                 wchar_t pl[32];
-                swprintf(pl, 32, L"pointing %.0f\u00B0", az);
+                // 2026-11-24, the owner again: "look where the scope is
+                // pointed. at the horizon." A ground plan shows the bearing
+                // only; the line is full length at any altitude. Say so on it.
+                swprintf(pl, 32, L"facing %.0f\u00B0 (any height)", az);
                 SetTextColor(dc, Theme::NV(Theme::Rgb::GREEN));
                 TextOutW(dc, lx + 4, ly + 4, pl, (int)wcslen(pl));
             }
@@ -218,9 +221,9 @@ inline void ShowRigSetupDialog(HWND owner, HWND panel,
     // 2026-11-24: the three fixed 16 px lines clipped their tops at the
     // scope's DPI, and the drawing needed a key. One wrapping label, sized
     // for four lines, that says what each mark is.
-    label(L"Ground plan, north up, east to the right. The dot in the middle is "
-          L"the scope. White: the direction to you. Green: where the tube "
-          L"points now. Check it against what is in front of you.", 84);
+    label(L"Ground plan seen from above, north up, east to the right. The dot "
+          L"is the scope. White: the direction to you. Green: the direction the "
+          L"tube faces now, whatever its height (the sky map shows height).", 84);
     fy += 6;
 
     wchar_t b[32];
