@@ -6,7 +6,7 @@ Line numbers are left out on purpose, so an edit elsewhere in a file does not ma
 
 A tag is removed when its clear-night item has been run and the value confirmed or replaced, with the night noted in the checklist.
 
-30 constants across 15 checklist items.
+31 constants across 16 checklist items.
 
 ## Item 1: SHARP_CEIL = 1000
 
@@ -112,3 +112,9 @@ A tag is removed when its clear-night item has been run and the value confirmed 
 | Constant | Value | File | What verifies it |
 |---|---|---|---|
 | `runsFocusMaxDrift` | `2000` | `src/core/RigConfig.h` | refocus results logged against the baseline over a sequence |
+
+## Item 66: A lock held through the meridian
+
+| Constant | Value | File | What verifies it |
+|---|---|---|---|
+| `reverseGuardMinBase` | `5.0f` | `src/core/GuideLaw.h` | a lock held through a meridian crossing on the alt-az mount |
