@@ -62,6 +62,7 @@ $Tests = @(
     @{ Name = "recording_cap";   Sources = @() }
     @{ Name = "hand_step";       Sources = @() }
     @{ Name = "flush_status";    Sources = @() }
+    @{ Name = "focus_panel_text"; Sources = @() }
     @{ Name = "emu_fault";         Sources = @() }
     @{ Name = "slew_watch";        Sources = @() }
     @{ Name = "device_identity";   Sources = @() }
