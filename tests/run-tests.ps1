@@ -58,6 +58,12 @@ $Tests = @(
     @{ Name = "af_controller";     Sources = @() }
     @{ Name = "rec_controller";    Sources = @() }
     @{ Name = "autorun_controller"; Sources = @() }
+    @{ Name = "runs_baseline"; Sources = @() }
+    @{ Name = "recording_cap";   Sources = @() }
+    @{ Name = "hand_step";       Sources = @() }
+    @{ Name = "flush_status";    Sources = @() }
+    @{ Name = "focus_panel_text"; Sources = @() }
+    @{ Name = "temp_text";       Sources = @() }
     @{ Name = "clock_text";      Sources = @() }
     @{ Name = "emu_fault";         Sources = @() }
     @{ Name = "slew_watch";        Sources = @() }
@@ -148,6 +154,7 @@ $Tests = @(
     @{ Name = "ae_rebalance"; Sources = @() }
     @{ Name = "seeing_display"; Sources = @() }
     @{ Name = "log_archive"; Sources = @() }
+    @{ Name = "goto_miss"; Sources = @() }
     @{ Name = "autofocus_saturn"; Sources = @() }
     @{ Name = "focus_metric";     Sources = @() }
     @{ Name = "focus_metric_compare"; Sources = @() }

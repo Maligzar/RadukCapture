@@ -103,6 +103,38 @@ inline int RelativeBase(int commandedTarget, int position) {
     return commandedTarget >= 0 ? commandedTarget : position;
 }
 
+// 2026-11-24: the owner pressed for 10 steps in and the image went
+// entirely out of focus. A hand step (button, key, Dash) now plans from
+// what the motor is doing, not from what the app last asked of it:
+//   - the motor really moving, or the second leg of a one-sided move
+//     still to come: the step adds to that move's target, so quick
+//     presses add up (the reason RelativeBase exists);
+//   - otherwise: from the position read now. A target left over from an
+//     earlier command is never a base for a step, however the "is it
+//     moving" question was answered.
+// A step that cannot read where it is goes nowhere.
+struct HandStep {
+    bool ok = false;
+    int  base = -1, to = -1;
+    bool fromTarget = false;    // added to the move in flight
+    bool staleTarget = false;   // a target was left over and ignored
+};
+
+inline HandStep PlanHandStep(int steps, bool inFlight, int commandedTarget, bool posKnown, int pos) {
+    HandStep h;
+    if (inFlight && commandedTarget >= 0) {
+        h.base = commandedTarget; h.fromTarget = true;
+    } else if (posKnown) {
+        h.base = pos;
+        h.staleTarget = commandedTarget >= 0 && std::abs(commandedTarget - pos) > kArrivalToleranceSteps;
+    } else {
+        return h;
+    }
+    h.ok = true;
+    h.to = h.base + steps;
+    return h;
+}
+
 // Thread-safe: autofocus's thread and the UI both use the focuser.
 class MoveLedger {
 public:

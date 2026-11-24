@@ -228,7 +228,17 @@ bool EAFFocuser::Command(int position, bool oneSided, bool pastGuard, const unsi
         return false;
     }
     m_ledger.Commanded(position, leg);
+    // 2026-11-24: every move but a sweep's own, in the main log, so a
+    // move nobody remembers asking for can be found.
+    if (!sequence && !relative)
+        raduk::core::CoreLog("[EAFFocuser] move to %d from %s\n", position,
+                             known ? std::to_string(from).c_str() : "an unread position");
     return true;
+}
+
+bool EAFFocuser::RawMoving() const {
+    bool moving = false, hand = false;
+    return EAFIsMoving(m_focuserId, &moving, &hand) == EAF_SUCCESS && moving;
 }
 
 // Phase 169.1: true when the motor is free for a new move (it was idle,
@@ -275,18 +285,21 @@ bool EAFFocuser::MoveInSequence(unsigned generation, int position, bool oneSided
 bool EAFFocuser::MoveRelative(int steps) {
     std::lock_guard<std::recursive_mutex> cmd(m_cmd);
     if (!m_isOpen) { m_ledger.Refuse(MoveRefusal::NotOpen, 0, 0, 0); return false; }
-    // While a move is in flight a step adds to where that move ends, not
-    // to wherever the motor is (which may be the overshoot leg).
-    int target = m_ledger.Target();
-    if (target >= 0 && !IsMoving()) target = -1;   // it has finished
+    // 2026-11-24: from the motor's own state (core/FocuserGuard.h, PlanHandStep).
+    const bool inFlight = RawMoving() || m_approach.Pending();
     int position = 0;
-    if (target < 0 && !TryGetPosition(position)) {
+    const bool known = TryGetPosition(position);
+    const auto h = raduk::core::PlanHandStep(steps, inFlight, m_ledger.Target(), known, position);
+    if (!h.ok) {
         m_ledger.Refuse(MoveRefusal::PositionUnknown, 0, 0, 0);
         raduk::core::CoreLog("[EAFFocuser] relative move of %d refused: %s\n", steps,
                              m_ledger.LastRefusalText().c_str());
         return false;
     }
-    return Command(RelativeBase(target, position) + steps, true, false, nullptr, true);
+    raduk::core::CoreLog("[EAFFocuser] hand step %+d: at %d, %s %d -> %d%s\n", steps, position,
+                         h.fromTarget ? "added to the move in flight to" : "from", h.base, h.to,
+                         h.staleTarget ? " (an old target was ignored)" : "");
+    return Command(h.to, true, false, nullptr, true);
 }
 
 bool EAFFocuser::Stop() {

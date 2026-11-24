@@ -37,6 +37,10 @@ public:
         double runSec        = 0.0;    // how long one run should take
         double gapSec        = 15.0;   // AE gets this to correct
         int    refocusEvery  = 3;      // 0 never focuses
+        // 2026-11-24: RUNS is pressed with the target centred and in focus
+        // (core/RunsBaseline.h), so the first run needs no sweep before it.
+        // True keeps the old order (focus, then run 1).
+        bool   focusFirst    = true;
         double minAltDeg     = 20.0;
 
         // A target that has left the frame gets this long to come back.
@@ -77,6 +81,9 @@ public:
     struct Inputs {
         bool     recording   = false;
         bool     focusing    = false;
+        // 2026-11-24: the last run is still going from RAM to disk; the
+        // next sweep or run waits for it (a new recording is refused).
+        bool     flushing    = false;
         uint32_t frames      = 0;       // in the current or latest run
         bool     targetSeen  = false;
         double   altDeg      = -1.0;    // 0 or below is unknown
@@ -109,7 +116,7 @@ public:
         m_emptyRow  = 0;
         m_focusBad  = 0;
         m_sinceFocus = 0;
-        m_focusDue  = c.refocusEvery > 0;
+        m_focusDue  = c.refocusEvery > 0 && c.focusFirst;
         m_held      = false;
         m_seeingHeld   = false;
         m_seeingWaived = false;
@@ -243,6 +250,7 @@ private:
             Fail("no room on the capture disk for another run");
             return Action::None;
         }
+        if (in.flushing) return Action::None;
         // 157.0c: ahead of the target, because on the wide frame the
         // target may not be found yet, and that is not it leaving.
         if (in.acquiring) {
