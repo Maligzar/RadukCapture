@@ -1429,3 +1429,13 @@ the bench already showed, so the night only has to confirm it. The plan is
     `WeatherSource=internal`, and Elminster no longer needs to be awake
     for the scope. Also check the first start with `Offline=1`: the `WX`
     row says offline and nothing is fetched.
+
+65. **RUNS from the owner's baseline** (added 2026-11-24). Centre the
+    target and focus it by hand, then press RUNS with at least three runs
+    and `AutorunRefocusEvery=1`. The log should show `[RUNS] baseline`
+    with the focuser position, no sweep before run 1, each refocus
+    `[AF] centred on the RUNS baseline`, a `[RUNS] refocus:` verdict after
+    it, and a `[RUNS] run N against the baseline` line at every run.
+    Compare the refocus results with the baseline: if good sweeps land
+    well inside `RunsFocusMaxDrift` (2000 steps), it can come down; if a
+    good sweep was sent back, it goes up.

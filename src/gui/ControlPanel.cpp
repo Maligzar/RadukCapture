@@ -387,6 +387,7 @@ LRESULT CALLBACK ControlPanel::PanelWndProc(HWND hwnd, UINT msg,
                 bool pressed = (dis->itemState & ODS_SELECTED) != 0;
                 bool rec     = self->m_status.recording;
                 bool paused  = self->m_recordPaused;
+                const bool flushing = self->m_flushOn && !rec;   // 2026-11-24
 
                 // Background
                 // Phase 132.3: tokens throughout. At rest a neutral face
@@ -395,7 +396,7 @@ LRESULT CALLBACK ControlPanel::PanelWndProc(HWND hwnd, UINT msg,
                 // control in night vision, where the signal colour is
                 // dimmer than text. Recording and paused tint the face.
                 const COLORREF face = Theme::NV(Theme::Rgb::PANEL);
-                COLORREF bg = paused ? Theme::Mix(face, Theme::NV(Theme::Rgb::AMBER), pressed ? 0.32f : 0.22f)
+                COLORREF bg = (paused || flushing) ? Theme::Mix(face, Theme::NV(Theme::Rgb::AMBER), pressed ? 0.32f : 0.22f)
                             : rec    ? Theme::Mix(face, Theme::NV(Theme::Rgb::RED),   pressed ? 0.38f : 0.28f)
                             :          (pressed ? Theme::NV(Theme::Rgb::BORDER) : face);
                 HBRUSH hbg = CreateSolidBrush(bg);
@@ -403,12 +404,12 @@ LRESULT CALLBACK ControlPanel::PanelWndProc(HWND hwnd, UINT msg,
                 DeleteObject(hbg);
 
                 // Border
-                COLORREF borderCol = paused ? Theme::NV(Theme::Rgb::AMBER)
+                COLORREF borderCol = (paused || flushing) ? Theme::NV(Theme::Rgb::AMBER)
                                    : rec    ? Theme::NV(Theme::Rgb::RED)
                                    :          Theme::NV(Theme::Rgb::ACCENT);
                 // The word in primary text at rest, so it is the brightest
                 // thing on the button by day and by night.
-                const COLORREF labelCol = (paused || rec) ? borderCol
+                const COLORREF labelCol = (paused || rec || flushing) ? borderCol
                                                           : Theme::NV(Theme::Rgb::TEXT);
                 HPEN pen = CreatePen(PS_SOLID, 2, borderCol);
                 HPEN oldPen = (HPEN)SelectObject(hdc, pen);
@@ -433,7 +434,8 @@ LRESULT CALLBACK ControlPanel::PanelWndProc(HWND hwnd, UINT msg,
                 HFONT oldf = f ? (HFONT)SelectObject(hdc, f) : nullptr;
                 SetBkMode(hdc, TRANSPARENT);
                 SetTextColor(hdc, labelCol);
-                const wchar_t* label = paused        ? L"\u23F8  PAUSED"
+                const wchar_t* label = flushing      ? L"FLUSHING TO DISK"
+                                     : paused        ? L"\u23F8  PAUSED"
                                      : rec           ? L"\u25A0  STOP RECORDING"
                                      :                 L"\u25BA  RECORD";
                 DrawTextW(hdc, label, -1, &r, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
@@ -1005,11 +1007,18 @@ bool ControlPanel::HandleCommand(WPARAM wParam, LPARAM lParam) {
             if (m_focuser && m_editFocusGoto) {
                 wchar_t buf[32] = {};
                 GetWindowTextW(m_editFocusGoto, buf, 32);
+                if (!buf[0]) {   // 2026-11-24: never a GO TO to 0 from an empty box
+                    SetFocusLast(L"Last: GO TO needs a position typed in MOVE TO");
+                    return true;
+                }
                 int pos = _wtoi(buf);
+                int gotoFrom = -1;
+                if (!m_focuser->TryGetPosition(gotoFrom)) gotoFrom = -1;
                 pos = (pos < 0) ? 0 : (pos > 600000) ? 600000 : pos;
                 // Phase 161.0a: past the travel guard, GO TO asks for a
                 // second press and then makes the move.
                 if (m_focuser->MoveTo(pos)) {
+                    SetFocusLast(raduk::core::FocusGotoLine(pos, gotoFrom, true, ""));
                     FocusMoveSaid(true);
                 } else if (m_focuser->LastRefusalKind() == raduk::core::MoveRefusal::Untrusted &&
                            m_trustPrompt && m_trustPrompt()) {
@@ -1023,6 +1032,7 @@ bool ControlPanel::HandleCommand(WPARAM wParam, LPARAM lParam) {
                                             L". Press GO TO again within 5 s to move anyway").c_str());
                     }
                 } else {
+                    SetFocusLast(raduk::core::FocusGotoLine(pos, gotoFrom, false, m_focuser->LastRefusal()));
                     FocusMoveSaid(false);
                 }
             }
@@ -1481,19 +1491,12 @@ void ControlPanel::UpdateReadouts() {
         int pos = m_focuser->GetPosition();
         swprintf(buf, 64, L"%d", pos);
         SetWindowTextW(m_lblFocusPos, buf);
-        // Keep the GoTo box showing the live position so GO TO never
-        // fires at a stale target - but NEVER while the user is typing
-        // in it.
-        //
-        // This ran unconditionally on every readout tick (~500ms), so
-        // a typed target was overwritten within half a second and the
-        // field could not be edited at all: the only way to reach a
-        // position was the fixed +/-10 and +/-1K buttons. Gating on
-        // focus keeps the original intent - the box reads the current
-        // position whenever you are not editing it - while letting a
-        // value actually be typed.
-        if (m_editFocusGoto && GetFocus() != m_editFocusGoto)
-            SetWindowTextW(m_editFocusGoto, buf);
+        // 2026-11-24: the MOVE TO box is no longer kept at the position: a
+        // box that looked like the position and was GO TO's target let GO TO
+        // send a number nobody had typed. The state line says what it does.
+        if (m_lblFocusState)
+            SetWindowTextW(m_lblFocusState, raduk::core::FocusStateLine(
+                true, m_focuser->PositionTrusted(), m_focuser->IsMoving()).c_str());
         SetWindowTextW(m_lblFocusTemp, raduk::core::TempCF(m_focuser->GetTemperature()).c_str());   // 2026-11-24: C and F
     }
     // Mount — NexStar returns from cache (instant)
@@ -1675,7 +1678,10 @@ void ControlPanel::UpdateCaptureStatus(bool recording, uint32_t framesRecorded,
         // already in hand and discarded the moment it mattered most --
         // right after a run, when the operator is deciding whether to
         // do another.
-        if (framesRecorded > 0 && m_paintElapsed > 0.0) {
+        if (m_flushOn) {
+            // 2026-11-24: still going from RAM to disk.
+            SetWindowTextW(m_lblRecStatus, m_flushLine.c_str());
+        } else if (framesRecorded > 0 && m_paintElapsed > 0.0) {
             swprintf(buf, 128, L"DONE  %02d:%02d",
                      (int)(m_paintElapsed / 60), (int)(m_paintElapsed) % 60);
             SetWindowTextW(m_lblRecStatus, buf);
@@ -1689,6 +1695,14 @@ void ControlPanel::UpdateCaptureStatus(bool recording, uint32_t framesRecorded,
             SetWindowTextW(m_lblRecFrames, L"");
         }
     }
+}
+
+void ControlPanel::SetFlushStatus(bool flushing, const std::wstring& line) {
+    const bool edge = flushing != m_flushOn;
+    m_flushOn = flushing;
+    m_flushLine = line;
+    if (flushing && m_lblRecStatus) SetWindowTextW(m_lblRecStatus, line.c_str());
+    if (edge && m_btnRecord) InvalidateRect(m_btnRecord, nullptr, FALSE);
 }
 
 // ── Capture config getters ─────────────────────────────────────
@@ -2301,6 +2315,7 @@ void ControlPanel::RebuildControls(int clientW, bool fromResize) {
     m_btnFocusIn1000 = m_btnFocusIn10 = nullptr;
     m_btnFocusOut10  = m_btnFocusOut1000 = nullptr;
     m_editFocusGoto  = m_btnFocusGoto    = nullptr;
+    m_lblFocusState  = m_lblFocusLast    = nullptr;
     m_btnAutofocus   = m_lblAFStatus     = nullptr;
     m_lblADCStatus   = nullptr;
     m_btnAEAuto      = m_lblAEStatus     = nullptr;
@@ -2598,26 +2613,51 @@ void ControlPanel::RebuildControls(int clientW, bool fromResize) {
     if (!IsCollapsed(Section::EAF)) {
     m_lblFocusPos = MakeValueLabel(L"0", x, y, w, 36, ID_LBL_FOCUS_POS);
     TagControl(m_lblFocusPos, Section::EAF);
-    y += 40;
+    y += 38;
+    // 2026-11-24, the owner: "this panel of the focuser is inconsistent ...
+    // make it more obvious what is going on". The state under the number;
+    // one row of steps in order, each with its number, IN and OUT named;
+    // MOVE TO with its own GO TO; and what the last press did.
+    m_lblFocusState = MakeLabel(L"", x, y, w, SH, ID_LBL_FOCUS_STATE);
+    TagControl(m_lblFocusState, Section::EAF);
+    y += SH + 2;
+    TagControl(MakeLabel(L"\u25C0 IN  (lower numbers)", x, y, w / 2, SH), Section::EAF);
     {
-        int bW5 = (w - 4) / 5;
-        m_btnFocusIn5000  = MakeButton(L"\u00AB\u00AB", x,           y, bW5, BH, ID_BTN_FOCUS_IN5000);
-        m_btnFocusIn100   = MakeButton(L"\u00AB",        x+bW5+1,     y, bW5, BH, ID_BTN_FOCUS_IN100);
-        m_btnFocusStop    = MakeButton(L"STOP",           x+(bW5+1)*2, y, bW5, BH, ID_BTN_FOCUS_STOP);
-        m_btnFocusOut100  = MakeButton(L"\u00BB",        x+(bW5+1)*3, y, bW5, BH, ID_BTN_FOCUS_OUT100);
-        m_btnFocusOut5000 = MakeButton(L"\u00BB\u00BB", x+(bW5+1)*4, y, bW5, BH, ID_BTN_FOCUS_OUT5000);
-        y += BH + 2;
-        m_btnFocusIn1000  = MakeButton(L"< 1K",  x,           y, bW5, BH, ID_BTN_FOCUS_IN1000);
-        m_btnFocusIn10    = MakeButton(L"< 10",  x+bW5+1,     y, bW5, BH, ID_BTN_FOCUS_IN10);
-        m_editFocusGoto   = MakeEditBox(L"0", x+(bW5+1)*2, y-1, bW5, BH, ID_EDIT_FOCUS_GOTO);
-        m_btnFocusOut10   = MakeButton(L"10 >",  x+(bW5+1)*3, y, bW5, BH, ID_BTN_FOCUS_OUT10);
-        m_btnFocusOut1000 = MakeButton(L"1K >",  x+(bW5+1)*4, y, bW5, BH, ID_BTN_FOCUS_OUT1000);
-        y += BH + 1;
+        HWND outL = MakeLabel(L"(higher numbers)  OUT \u25B6", x + w / 2, y, w - w / 2, SH);
+        SetWindowLongPtr(outL, GWL_STYLE, (GetWindowLongPtr(outL, GWL_STYLE) & ~SS_LEFT) | SS_RIGHT);
+        TagControl(outL, Section::EAF);
     }
+    y += SH + 1;
+    {
+        const int n = 9, bW = (w - (n - 1)) / n;
+        HWND* slots[9] = { &m_btnFocusIn5000, &m_btnFocusIn1000, &m_btnFocusIn100, &m_btnFocusIn10,
+                           &m_btnFocusStop,
+                           &m_btnFocusOut10, &m_btnFocusOut100, &m_btnFocusOut1000, &m_btnFocusOut5000 };
+        const int ids[9] = { ID_BTN_FOCUS_IN5000, ID_BTN_FOCUS_IN1000, ID_BTN_FOCUS_IN100, ID_BTN_FOCUS_IN10,
+                             ID_BTN_FOCUS_STOP,
+                             ID_BTN_FOCUS_OUT10, ID_BTN_FOCUS_OUT100, ID_BTN_FOCUS_OUT1000, ID_BTN_FOCUS_OUT5000 };
+        for (int i = 0; i < n; ++i) {
+            const std::wstring label = raduk::core::FocusStepLabel(raduk::core::kFocusPanelSteps[i]);
+            const int bx = x + i * (bW + 1);
+            *slots[i] = MakeButton(label.c_str(), bx, y, i == n - 1 ? x + w - bx : bW, BH, ids[i]);
+        }
+        y += BH + 3;
+    }
+    {
+        const int lw = 72, gw = 96;
+        TagControl(MakeLabel(L"MOVE TO", x, y + 2, lw, SH), Section::EAF);
+        // Empty until typed: it no longer copies the position, so GO TO
+        // can only send a number someone entered.
+        m_editFocusGoto = MakeEditBox(L"", x + lw, y - 1, w - lw - gw - 4, BH, ID_EDIT_FOCUS_GOTO);
+        m_btnFocusGoto  = MakeButton(L"GO TO", x + w - gw, y - 1, gw, BH, ID_BTN_FOCUS_GOTO);
+        y += BH + 3;
+    }
+    m_lblFocusLast = MakeLabel(L"Last: nothing yet", x, y, w, SH, ID_LBL_FOCUS_LAST);
+    TagControl(m_lblFocusLast, Section::EAF);
+    y += SH + 2;
     TagControl(MakeLabel(L"TEMP:", x, y, 46, SH), Section::EAF);
     m_lblFocusTemp = MakeValueLabel(L"--", x+48, y, 150, SH, ID_LBL_FOCUS_TEMP);   // "17.0°C / 62.6°F"
-    m_btnFocusGoto = MakeButton(L"GO TO", x+w-96, y-2, 96, BH, ID_BTN_FOCUS_GOTO);
-    y += BH + 2;
+    y += SH + 4;
 
     m_btnAutofocus = MakeButton(L"AUTO FOCUS", x, y, w, BH+2, ID_BTN_AUTOFOCUS);
     SetWindowLongW(m_btnAutofocus, GWL_STYLE,
@@ -2924,7 +2964,7 @@ void ControlPanel::RebuildControls(int clientW, bool fromResize) {
     } // end Notes
 
     // Tag sections
-    TagControls({ m_lblFocusPos, m_lblFocusTemp }, Section::EAF);
+    TagControls({ m_lblFocusPos, m_lblFocusTemp, m_lblFocusState, m_lblFocusLast }, Section::EAF);
     TagControls({ m_lblMountRA, m_lblMountDec,
                   m_lblMountTrack, m_lblMountControl }, Section::Mount);
 

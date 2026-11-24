@@ -44,6 +44,7 @@ struct Rig {
     bool     seeing     = true;
     bool     prime      = false;
     bool     acquiring  = false;
+    bool     flushing   = false;   // 2026-11-24
 
     bool     recording = false;
     bool     focusing  = false;
@@ -79,6 +80,7 @@ struct Rig {
             in.seeingOpen  = seeing;
             in.prime       = prime;
             in.acquiring   = acquiring;
+            in.flushing    = flushing;
         }
         switch (ar.Tick(now, in)) {
         case AR::Action::StartRun:
@@ -380,6 +382,20 @@ static void TestSeeingHold() {
 // Phase 157.0c, found by the 4-hour soak: RUNS pressed while acquisition
 // was on its wide frame started a sweep, and the lock put the profile's
 // frame back under it, 28 times in 30.
+// 2026-11-24: the last run still going from RAM to disk holds the next.
+static void TestWaitsForFlush() {
+    printf("waiting for the last run to reach disk\n");
+    Rig r;
+    auto c = r.Config(); c.refocusEvery = 0;
+    r.flushing = true;
+    r.ar.Start(c, r.now);
+    r.RunFor(120.0);
+    Check(r.runsStarted == 0 && r.ar.Running(), "no run while flushing, and the sequence waits");
+    r.flushing = false;
+    r.RunFor(3.0);
+    Check(r.runsStarted == 1, "the run starts when the flush ends");
+}
+
 static void TestWaitsForAcquisition() {
     printf("waiting for acquisition to end\n");
     {
@@ -720,6 +736,7 @@ int main() {
     TestTargetLost();
     TestSeeingHold();
     TestWaitsForAcquisition();
+    TestWaitsForFlush();
     TestRefusedRun();
     TestCameraDied();
     TestFocus();

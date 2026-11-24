@@ -16,6 +16,7 @@
 #include <commctrl.h>
 #include <functional>
 #include "../core/TestProbe.h"
+#include "../core/FocusPanelText.h"
 #include <vector>
 #include <string>
 #include <array>
@@ -479,6 +480,11 @@ public:
     void SetProfileNames(const std::vector<std::string>& names);
     void SetActiveProfile(int index);
 
+    // 2026-11-24: a stopped recording still draining from RAM to disk.
+    // The status line shows `line` (core/FlushStatus.h) and RECORD reads
+    // FLUSHING in amber until it ends.
+    void SetFlushStatus(bool flushing, const std::wstring& line);
+    bool Flushing() const { return m_flushOn; }
     void UpdateCaptureStatus(bool recording, uint32_t framesRecorded,
                               uint32_t framesDropped, double elapsedSec,
                               uint64_t bufferUsed, uint64_t bufferTotal,
@@ -636,6 +642,8 @@ private:
     double   m_paintDiskTotalGB = 1.0;
     bool     m_paintRecording   = false;
     bool     m_recordPaused     = false;  // Phase 41: amber PAUSED state on RECORD button
+    bool         m_flushOn = false;      // 2026-11-24
+    std::wstring m_flushLine;
     uint32_t m_paintFrames      = 0;
     uint32_t m_paintDrops       = 0;
     double   m_paintElapsed     = 0.0;
@@ -823,8 +831,16 @@ private:
         SetAutofocusStatus((L"Focuser did not move: " +
                             raduk::core::ToWide(m_focuser->LastRefusal())).c_str());
     }
+    // 2026-11-24: every press says what it did on the panel's Last line.
     void FocusStep(int steps) {
-        if (m_focuser) FocusMoveSaid(m_focuser->MoveRelative(steps), true);
+        if (!m_focuser) return;
+        int from = -1;
+        if (!m_focuser->TryGetPosition(from)) from = -1;
+        const bool moved = m_focuser->MoveRelative(steps);
+        SetFocusLast(raduk::core::FocusLastLine(steps, from, moved,
+                     moved ? std::string() : m_focuser->LastRefusal(),
+                     moved ? m_focuser->LastReplacedTarget() : -1));
+        FocusMoveSaid(moved, true);
     }
     raduk::core::IMount*       m_mount   = nullptr;
 
@@ -853,6 +869,8 @@ private:
     HWND m_lblFocusPos = nullptr, m_lblFocusTemp = nullptr;
     HWND m_editFocusGoto = nullptr, m_btnFocusGoto = nullptr;
     HWND m_btnFocusStop = nullptr;
+    HWND m_lblFocusState = nullptr, m_lblFocusLast = nullptr;   // 2026-11-24
+    void SetFocusLast(const std::wstring& t) { if (m_lblFocusLast) SetWindowTextW(m_lblFocusLast, t.c_str()); }
     HWND m_btnFocusIn5000 = nullptr, m_btnFocusIn1000 = nullptr;
     HWND m_btnFocusOut1000 = nullptr, m_btnFocusOut5000 = nullptr;
     HWND m_btnFocusIn100 = nullptr, m_btnFocusIn10 = nullptr;
@@ -1032,6 +1050,8 @@ private:
         ID_EDIT_NOTES = 1900,
         ID_BTN_TO_SER,          // 2026-11-11: FITS cubes to SER
         ID_BTN_PLAY,            // 2026-11-10: a SER in the PLAY window
+        ID_LBL_FOCUS_STATE,     // 2026-11-24: the FOCUSER panel's state line
+        ID_LBL_FOCUS_LAST,      // and what the last press did
     };
 
     // ── Callbacks ─────────────────────────────────────────────
