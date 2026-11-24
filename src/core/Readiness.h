@@ -109,6 +109,9 @@ struct ReadyInputs {
     int    focusPos       = 0;
     bool   mountConnected = false;
     bool   mountAligned   = false;
+    // 2026-11-24: aligned already when the app started, so an alignment
+    // from an earlier setup. Right only if nothing has moved since.
+    bool   alignedBeforeStart = false;
     bool   trackingKnown  = false;
     bool   trackingOn     = false;
     bool   siteSet        = false;
@@ -168,6 +171,13 @@ inline ReadyReport EvaluateReadiness(const ReadyInputs& in) {
             r.Add("Alignment", ReadyState::Fail,
                   "mount reports NOT aligned - hand control, "
                   "Align > Quick Align (needs no stars)",
+                  "Mount will not track (TRK stays OFF)");
+        } else if (in.alignedBeforeStart) {
+            // Only a person can say whether the mount moved since. A
+            // reminder, so it never interrupts on its own (Manual).
+            r.Add("Alignment", ReadyState::Manual,
+                  "aligned before the app started - right only if the mount and "
+                  "tube have not moved since; if they have, power-cycle and Quick Align",
                   "Mount will not track (TRK stays OFF)");
         } else {
             r.Add("Alignment", ReadyState::Pass, "mount reports aligned");

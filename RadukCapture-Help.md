@@ -83,7 +83,14 @@ The telescope does not know which way it is facing when it wakes up. Until it
 does, it cannot follow anything and **it will refuse to track**.
 
 On the hand controller: **Align → Quick Align**, and accept the prompts. This
-needs no stars and takes under a minute. If you skip this, everything later
+needs no stars and takes under a minute.
+
+**An old alignment is worse than none.** If the hand controller says it's
+already aligned but the mount or tube has moved since, its model of the sky is
+wrong: every GoTo reports "complete" and points somewhere else, the horizon on
+2026-11-23. Power-cycle the mount and run Quick Align again. RadukCapture warns at startup
+when the mount was already aligned, and again when a GoTo to a planet or the
+Moon leaves nothing in the frame. If you skip this, everything later
 appears to work and then quietly does not — this is the single most common
 reason a night produces nothing.
 
@@ -3656,6 +3663,7 @@ un-soak.ps1` runs the emulator for hours through GoTo, lock, autofocus and runs,
 | 3.3.71 | 172 (finding 5) | **`guide_report.py` says why it found nothing.** When no locked stretch turns up it names the reason: no `[GUIDE]` lines in the file (try the other log; each launch moves the last run to `raduk_log.prev.txt`), lines in a format it can't read (it shows one), every line outside `--from`/`--to` (it says when the guide lines actually run), or no LOCKED stage among them (it lists the stages it saw). |
 | 3.3.72 | logs | **Every run's log is kept by date.** Each launch used to move the last run's log to `raduk_log.prev.txt`, replacing the one before, so a night survived a single restart. The 2026-11-22 night was lost that way before `guide_report.py` could read it. Now the outgoing log is also copied into `logs\history\`, named for when that run ended (e.g. `raduk_log_20261122-031005.txt`), and the newest 30 runs are kept. `raduk_log.prev.txt` works as before. Point any tool at a night's file there, e.g. `python tools\guide_report.py logs\history\raduk_log_20261122-031005.txt`. Gated by `log_archive` and `crash_diag`. |
 | 3.3.73 | 172 (finding 5) | **`guide_report.py` allows for the guider's deadband.** Under 0.6" of total error PLANET LOCK sends no proportional correction, only the integral. Lines inside that band made the loop look weak: 0.10 /s on altitude in the owner's 2026-11-23 run, against the loop's real 0.3. The report now gives the share of lines inside the deadband, takes the loop's lean only from the lines outside it, and reads a slow wander mostly inside the band as the deadband working as designed. |
+| 3.3.76 | alignment | **A stale alignment is caught.** On 2026-11-23 the hand controller was still aligned from an earlier setup. The app took its word, and four GoTos reported complete while the tube pointed at the horizon. Now three things flag it. At startup, a mount that was already aligned gets a notice, and the readiness check lists it to confirm by hand. And 20 seconds after a GoTo to a planet or the Moon, if nothing is in the frame, a notice says the alignment is probably stale; a second miss in a row says it is almost certainly so. Logged under `[ALIGN]` and `[GOTO]`. Gated by `goto_miss`. |
 
 ---
 
