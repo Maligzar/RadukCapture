@@ -539,8 +539,10 @@ AE holds during a recording. **AUTO FOCUS** turns AE to AUTO and opens this sect
 
 ### FOCUSER
 - **Position readout** — Current EAF stepper position (0–500000).
-- **`<< < STOP > >>`** — Step buttons: 1K / 10 / manual / 10 / 1K steps.
-- **Input box** — Type a target position and click `GO TO` for a direct move.
+- **State line** — `AT REST`, `MOVING`, or `POSITION NOT TRUSTED` (confirm the position before moving; see the startup check).
+- **Step row** — `−5000 −1000 −100 −10 STOP +10 +100 +1000 +5000`, in order, each labelled with the steps it moves. Minus is IN (lower numbers), plus is OUT (higher numbers). A press while the focuser is still moving adds to that move. Every move ends travelling OUT (`FocuserFinalDirection`), so an IN step goes a little past and comes back: that is the backlash being taken up, not an extra move.
+- **MOVE TO / GO TO** — Type a position in MOVE TO and press GO TO. The box stays as you typed it; it is not the position readout, and an empty box sends nothing. A move past `FocuserMaxTravelSteps` asks for a second press.
+- **Last** — What the last press did: `Last: −10 from 170933 to 170923`, or why it did not move.
 - **TEMP** — Current EAF temperature in °C.
 - **AUTO FOCUS** — Runs the built-in V-curve autofocus routine. Steps outward, measures sharpness at each position, fits a parabola, moves to the computed best focus. Abortable mid-run.
 - **ADC: severity (N.N")** — Live atmospheric dispersion measurement. Computed from mount altitude using the Edlen 1966 model, with air pressure derived from your site elevation (T=288K). Shows NONE / MINOR / MODERATE / SIGNIFICANT / SEVERE. Use as a guide for when to apply an ADC or use RGB Align.
@@ -3656,6 +3658,7 @@ un-soak.ps1` runs the emulator for hours through GoTo, lock, autofocus and runs,
 | 3.3.71 | 172 (finding 5) | **`guide_report.py` says why it found nothing.** When no locked stretch turns up it names the reason: no `[GUIDE]` lines in the file (try the other log; each launch moves the last run to `raduk_log.prev.txt`), lines in a format it can't read (it shows one), every line outside `--from`/`--to` (it says when the guide lines actually run), or no LOCKED stage among them (it lists the stages it saw). |
 | 3.3.72 | logs | **Every run's log is kept by date.** Each launch used to move the last run's log to `raduk_log.prev.txt`, replacing the one before, so a night survived a single restart. The 2026-11-22 night was lost that way before `guide_report.py` could read it. Now the outgoing log is also copied into `logs\history\`, named for when that run ended (e.g. `raduk_log_20261122-031005.txt`), and the newest 30 runs are kept. `raduk_log.prev.txt` works as before. Point any tool at a night's file there, e.g. `python tools\guide_report.py logs\history\raduk_log_20261122-031005.txt`. Gated by `log_archive` and `crash_diag`. |
 | 3.3.73 | 172 (finding 5) | **`guide_report.py` allows for the guider's deadband.** Under 0.6" of total error PLANET LOCK sends no proportional correction, only the integral. Lines inside that band made the loop look weak: 0.10 /s on altitude in the owner's 2026-11-23 run, against the loop's real 0.3. The report now gives the share of lines inside the deadband, takes the loop's lean only from the lines outside it, and reads a slow wander mostly inside the band as the deadband working as designed. |
+| 3.3.81 | 172 (the owner's direction, 2026-11-24) | **The FOCUSER panel says what it does.** The step buttons were two rows mixed by size (5000 and 100 on one, 1000 and 10 on the other) labelled with chevrons, and the box between them looked like the position but was GO TO's target, copied from the position whenever it was not being typed in, so GO TO could send a number nobody had entered. Now: a state line under the position (`AT REST`, `MOVING`, `POSITION NOT TRUSTED`); one row of steps in order, each with its number (`−5000 … −10 STOP +10 … +5000`), with IN and OUT named; MOVE TO beside its own GO TO, empty until typed in; and a `Last:` line after every press saying where it moved from and to, or why it did not move. |
 
 ---
 

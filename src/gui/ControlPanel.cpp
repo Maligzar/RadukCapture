@@ -1004,11 +1004,18 @@ bool ControlPanel::HandleCommand(WPARAM wParam, LPARAM lParam) {
             if (m_focuser && m_editFocusGoto) {
                 wchar_t buf[32] = {};
                 GetWindowTextW(m_editFocusGoto, buf, 32);
+                if (!buf[0]) {   // 2026-11-24: never a GO TO to 0 from an empty box
+                    SetFocusLast(L"Last: GO TO needs a position typed in MOVE TO");
+                    return true;
+                }
                 int pos = _wtoi(buf);
+                int gotoFrom = -1;
+                if (!m_focuser->TryGetPosition(gotoFrom)) gotoFrom = -1;
                 pos = (pos < 0) ? 0 : (pos > 600000) ? 600000 : pos;
                 // Phase 161.0a: past the travel guard, GO TO asks for a
                 // second press and then makes the move.
                 if (m_focuser->MoveTo(pos)) {
+                    SetFocusLast(raduk::core::FocusGotoLine(pos, gotoFrom, true, ""));
                     FocusMoveSaid(true);
                 } else if (m_focuser->LastRefusalKind() == raduk::core::MoveRefusal::Untrusted &&
                            m_trustPrompt && m_trustPrompt()) {
@@ -1022,6 +1029,7 @@ bool ControlPanel::HandleCommand(WPARAM wParam, LPARAM lParam) {
                                             L". Press GO TO again within 5 s to move anyway").c_str());
                     }
                 } else {
+                    SetFocusLast(raduk::core::FocusGotoLine(pos, gotoFrom, false, m_focuser->LastRefusal()));
                     FocusMoveSaid(false);
                 }
             }
@@ -1480,19 +1488,12 @@ void ControlPanel::UpdateReadouts() {
         int pos = m_focuser->GetPosition();
         swprintf(buf, 64, L"%d", pos);
         SetWindowTextW(m_lblFocusPos, buf);
-        // Keep the GoTo box showing the live position so GO TO never
-        // fires at a stale target - but NEVER while the user is typing
-        // in it.
-        //
-        // This ran unconditionally on every readout tick (~500ms), so
-        // a typed target was overwritten within half a second and the
-        // field could not be edited at all: the only way to reach a
-        // position was the fixed +/-10 and +/-1K buttons. Gating on
-        // focus keeps the original intent - the box reads the current
-        // position whenever you are not editing it - while letting a
-        // value actually be typed.
-        if (m_editFocusGoto && GetFocus() != m_editFocusGoto)
-            SetWindowTextW(m_editFocusGoto, buf);
+        // 2026-11-24: the MOVE TO box is no longer kept at the position: a
+        // box that looked like the position and was GO TO's target let GO TO
+        // send a number nobody had typed. The state line says what it does.
+        if (m_lblFocusState)
+            SetWindowTextW(m_lblFocusState, raduk::core::FocusStateLine(
+                true, m_focuser->PositionTrusted(), m_focuser->IsMoving()).c_str());
         swprintf(buf, 64, L"%.1f C", m_focuser->GetTemperature());
         SetWindowTextW(m_lblFocusTemp, buf);
     }
@@ -2301,6 +2302,7 @@ void ControlPanel::RebuildControls(int clientW, bool fromResize) {
     m_btnFocusIn1000 = m_btnFocusIn10 = nullptr;
     m_btnFocusOut10  = m_btnFocusOut1000 = nullptr;
     m_editFocusGoto  = m_btnFocusGoto    = nullptr;
+    m_lblFocusState  = m_lblFocusLast    = nullptr;
     m_btnAutofocus   = m_lblAFStatus     = nullptr;
     m_lblADCStatus   = nullptr;
     m_btnAEAuto      = m_lblAEStatus     = nullptr;
@@ -2598,26 +2600,51 @@ void ControlPanel::RebuildControls(int clientW, bool fromResize) {
     if (!IsCollapsed(Section::EAF)) {
     m_lblFocusPos = MakeValueLabel(L"0", x, y, w, 36, ID_LBL_FOCUS_POS);
     TagControl(m_lblFocusPos, Section::EAF);
-    y += 40;
+    y += 38;
+    // 2026-11-24, the owner: "this panel of the focuser is inconsistent ...
+    // make it more obvious what is going on". The state under the number;
+    // one row of steps in order, each with its number, IN and OUT named;
+    // MOVE TO with its own GO TO; and what the last press did.
+    m_lblFocusState = MakeLabel(L"", x, y, w, SH, ID_LBL_FOCUS_STATE);
+    TagControl(m_lblFocusState, Section::EAF);
+    y += SH + 2;
+    TagControl(MakeLabel(L"\u25C0 IN  (lower numbers)", x, y, w / 2, SH), Section::EAF);
     {
-        int bW5 = (w - 4) / 5;
-        m_btnFocusIn5000  = MakeButton(L"\u00AB\u00AB", x,           y, bW5, BH, ID_BTN_FOCUS_IN5000);
-        m_btnFocusIn100   = MakeButton(L"\u00AB",        x+bW5+1,     y, bW5, BH, ID_BTN_FOCUS_IN100);
-        m_btnFocusStop    = MakeButton(L"STOP",           x+(bW5+1)*2, y, bW5, BH, ID_BTN_FOCUS_STOP);
-        m_btnFocusOut100  = MakeButton(L"\u00BB",        x+(bW5+1)*3, y, bW5, BH, ID_BTN_FOCUS_OUT100);
-        m_btnFocusOut5000 = MakeButton(L"\u00BB\u00BB", x+(bW5+1)*4, y, bW5, BH, ID_BTN_FOCUS_OUT5000);
-        y += BH + 2;
-        m_btnFocusIn1000  = MakeButton(L"< 1K",  x,           y, bW5, BH, ID_BTN_FOCUS_IN1000);
-        m_btnFocusIn10    = MakeButton(L"< 10",  x+bW5+1,     y, bW5, BH, ID_BTN_FOCUS_IN10);
-        m_editFocusGoto   = MakeEditBox(L"0", x+(bW5+1)*2, y-1, bW5, BH, ID_EDIT_FOCUS_GOTO);
-        m_btnFocusOut10   = MakeButton(L"10 >",  x+(bW5+1)*3, y, bW5, BH, ID_BTN_FOCUS_OUT10);
-        m_btnFocusOut1000 = MakeButton(L"1K >",  x+(bW5+1)*4, y, bW5, BH, ID_BTN_FOCUS_OUT1000);
-        y += BH + 1;
+        HWND outL = MakeLabel(L"(higher numbers)  OUT \u25B6", x + w / 2, y, w - w / 2, SH);
+        SetWindowLongPtr(outL, GWL_STYLE, (GetWindowLongPtr(outL, GWL_STYLE) & ~SS_LEFT) | SS_RIGHT);
+        TagControl(outL, Section::EAF);
     }
+    y += SH + 1;
+    {
+        const int n = 9, bW = (w - (n - 1)) / n;
+        HWND* slots[9] = { &m_btnFocusIn5000, &m_btnFocusIn1000, &m_btnFocusIn100, &m_btnFocusIn10,
+                           &m_btnFocusStop,
+                           &m_btnFocusOut10, &m_btnFocusOut100, &m_btnFocusOut1000, &m_btnFocusOut5000 };
+        const int ids[9] = { ID_BTN_FOCUS_IN5000, ID_BTN_FOCUS_IN1000, ID_BTN_FOCUS_IN100, ID_BTN_FOCUS_IN10,
+                             ID_BTN_FOCUS_STOP,
+                             ID_BTN_FOCUS_OUT10, ID_BTN_FOCUS_OUT100, ID_BTN_FOCUS_OUT1000, ID_BTN_FOCUS_OUT5000 };
+        for (int i = 0; i < n; ++i) {
+            const std::wstring label = raduk::core::FocusStepLabel(raduk::core::kFocusPanelSteps[i]);
+            const int bx = x + i * (bW + 1);
+            *slots[i] = MakeButton(label.c_str(), bx, y, i == n - 1 ? x + w - bx : bW, BH, ids[i]);
+        }
+        y += BH + 3;
+    }
+    {
+        const int lw = 72, gw = 96;
+        TagControl(MakeLabel(L"MOVE TO", x, y + 2, lw, SH), Section::EAF);
+        // Empty until typed: it no longer copies the position, so GO TO
+        // can only send a number someone entered.
+        m_editFocusGoto = MakeEditBox(L"", x + lw, y - 1, w - lw - gw - 4, BH, ID_EDIT_FOCUS_GOTO);
+        m_btnFocusGoto  = MakeButton(L"GO TO", x + w - gw, y - 1, gw, BH, ID_BTN_FOCUS_GOTO);
+        y += BH + 3;
+    }
+    m_lblFocusLast = MakeLabel(L"Last: nothing yet", x, y, w, SH, ID_LBL_FOCUS_LAST);
+    TagControl(m_lblFocusLast, Section::EAF);
+    y += SH + 2;
     TagControl(MakeLabel(L"TEMP:", x, y, 46, SH), Section::EAF);
     m_lblFocusTemp = MakeValueLabel(L"--\u00B0C", x+48, y, 70, SH, ID_LBL_FOCUS_TEMP);
-    m_btnFocusGoto = MakeButton(L"GO TO", x+w-96, y-2, 96, BH, ID_BTN_FOCUS_GOTO);
-    y += BH + 2;
+    y += SH + 4;
 
     m_btnAutofocus = MakeButton(L"AUTO FOCUS", x, y, w, BH+2, ID_BTN_AUTOFOCUS);
     SetWindowLongW(m_btnAutofocus, GWL_STYLE,
@@ -2924,7 +2951,7 @@ void ControlPanel::RebuildControls(int clientW, bool fromResize) {
     } // end Notes
 
     // Tag sections
-    TagControls({ m_lblFocusPos, m_lblFocusTemp }, Section::EAF);
+    TagControls({ m_lblFocusPos, m_lblFocusTemp, m_lblFocusState, m_lblFocusLast }, Section::EAF);
     TagControls({ m_lblMountRA, m_lblMountDec,
                   m_lblMountTrack, m_lblMountControl }, Section::Mount);
 
