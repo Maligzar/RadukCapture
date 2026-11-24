@@ -4255,11 +4255,16 @@ static int RunApp(bool useEmulator) {
         using Act = raduk::core::WideAcquire::Act;
         if (o.act == Act::None) return;
         if (o.act == Act::Forget) {
+            preview.HoldViewScale(0, 0);   // the operator changed the frame: their view
             Log("[ACQUIRE] %s\n", o.why);
             return;
         }
         const int fromW = roiWidth, fromH = roiHeight;
         const char* tag = (o.act == Act::Widen) ? "acquire wide" : "acquire restore";
+        // 2026-11-24: the preview keeps the view it had; only the camera
+        // reads wide (PreviewRenderer::HoldViewScale).
+        if (o.act == Act::Widen) preview.HoldViewScale(fromW, fromH);
+        else                     preview.HoldViewScale(0, 0);
         applyFormat(o.w, o.h, roiBits, o.cx, o.cy, tag);
         if (o.act == Act::Widen) wideAcq.NoteApplied(roiWidth, roiHeight);
         Log("[ACQUIRE] %s: %dx%d -> %dx%d\n", o.why, fromW, fromH, roiWidth, roiHeight);
