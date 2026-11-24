@@ -284,6 +284,8 @@ private:
             return false;
         }
         m_ledger.Commanded(position, leg);
+        if (!sequence && !relative)
+            raduk::core::CoreLog("[EAFEmulator] move to %d from %d\n", position, known ? from : -1);
         return true;
     }
 
@@ -342,16 +344,21 @@ public:
     bool MoveRelative(int steps) override {
         std::lock_guard<std::recursive_mutex> cmd(m_cmd);
         if (!m_isOpen) { m_ledger.Refuse(MoveRefusal::NotOpen, 0, 0, 0); return false; }
-        int target = m_ledger.Target();
-        if (target >= 0 && !IsMoving()) target = -1;   // it has finished
+        // 2026-11-24: from the motor's own state (core/FocuserGuard.h, PlanHandStep).
+        const bool inFlight = MotorBusy() || m_approach.Pending();
         int position = 0;
-        if (target < 0 && !TryGetPosition(position)) {
+        const bool known = TryGetPosition(position);
+        const auto h = raduk::core::PlanHandStep(steps, inFlight, m_ledger.Target(), known, position);
+        if (!h.ok) {
             m_ledger.Refuse(MoveRefusal::PositionUnknown, 0, 0, 0);
             raduk::core::CoreLog("[EAFEmulator] relative move of %d refused: %s\n", steps,
                                  m_ledger.LastRefusalText().c_str());
             return false;
         }
-        return Command(RelativeBase(target, position) + steps, true, false, nullptr, true);
+        raduk::core::CoreLog("[EAFEmulator] hand step %+d: at %d, %s %d -> %d%s\n", steps, position,
+                             h.fromTarget ? "added to the move in flight to" : "from", h.base, h.to,
+                             h.staleTarget ? " (an old target was ignored)" : "");
+        return Command(h.to, true, false, nullptr, true);
     }
 
     bool Stop() override {
