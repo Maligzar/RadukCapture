@@ -168,117 +168,85 @@ public:
             D2D1::Point2F(w, y),
             m_borderBrush, 1.0f);
 
-        // Build status segments and draw left-to-right with separators
+        // 2026-11-24, the owner: the clock and Fahrenheit made the fields
+        // overlap. Every field used to have a guessed fixed width, and the
+        // EAF field grew past its slot over the mount's RA. Now each field
+        // is measured, the camera and focuser temperatures are one field
+        // (the temperature chart no longer repeats them), and when the bar
+        // is too narrow the least important fields go first, whole
+        // (core/StatusFit.h). Each is drawn clipped to its own width.
+        const float h = (float)STATUS_BAR_HEIGHT;
+        const float gap = 18.0f;            // room for a separator between two fields
         float x = 8.0f;
-        float h = (float)STATUS_BAR_HEIGHT;
-
-        // Reserve the right-aligned profile label's space BEFORE the
-        // left-to-right run, and stop the run there.
-        //
-        // Every field width below is a hardcoded constant scaled by the
-        // font size, so the run's total length is fixed while the space
-        // it has to fit in is not: the bar is previewW wide, which
-        // changes with the window and the control panel. At 13px the run
-        // ends about where the profile label begins, and on anything
-        // narrower than this screen it would simply draw over it --
-        // RA/DEC and the profile name interleaved into unreadable mush.
-        // Clipping to a limit degrades instead: the last field that
-        // fits gets what room is left and loses its tail, which for the
-        // mount field is well past the end of the text anyway.
-        const float profW = 100.0f * STATUS_W_SCALE;
-        // 2026-11-24, the owner: the time on the main app. Local with
-        // seconds, and UTC, just left of the profile.
-        const float clockW = 158.0f * STATUS_W_SCALE;
-        const float clockX = (m_profileName.empty() ? w - 8.0f : w - profW - 16.0f) - clockW;
-        m_rightLimit = clockX - 8.0f;
-
         // ── Live indicator ─────────────────────────────────────
-        auto dot = m_emulator
-            ? Theme::Color(Theme::AMBER)   // caution = emulator
-            : Theme::Color(Theme::GREEN);  // live = real hardware
         ID2D1SolidColorBrush* dotBrush = m_emulator ? m_amberBrush : m_greenBrush;
-
-        // Draw filled circle as live dot
-        D2D1_ELLIPSE ellipse = D2D1::Ellipse(
-            D2D1::Point2F(x + 5, y + h / 2.0f), 4.0f, 4.0f);
-        m_rt->FillEllipse(ellipse, dotBrush);
+        m_rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(x + 5, y + h / 2.0f), 4.0f, 4.0f), dotBrush);
         x += 14.0f;
 
-        wchar_t buf[512];
-        const wchar_t* SEP = L"  |  ";
-
-        // ── Mode label ─────────────────────────────────────────
-        const wchar_t* modeLabel = m_emulator ? L"EMU" : L"LIVE";
-        ID2D1SolidColorBrush* modeBrush = m_emulator ? m_amberBrush : m_greenBrush;
-        swprintf(buf, 8, L"%s", modeLabel);
-        DrawText(buf, x, y, 35.0f * STATUS_W_SCALE, h, modeBrush);
-        x += 38.0f  * STATUS_W_SCALE;
-
-        DrawSep(x, y, h); x += 9.0f * STATUS_W_SCALE;
-
-        // ── FPS ────────────────────────────────────────────────
-        ID2D1SolidColorBrush* fpsBrush = (m_fps > 30) ? m_accentBrush : m_amberBrush;
-        swprintf(buf, 32, L"%.1f FPS", m_fps);
-        DrawText(buf, x, y, 62.0f * STATUS_W_SCALE, h, fpsBrush);
-        x += 66.0f  * STATUS_W_SCALE;
-
-        // ── Drops ──────────────────────────────────────────────
-        ID2D1SolidColorBrush* dropBrush = (m_drops == 0) ? m_dimBrush : m_amberBrush;
-        swprintf(buf, 32, L"DROPS: %d", m_drops);
-        DrawText(buf, x, y, 70.0f * STATUS_W_SCALE, h, dropBrush);
-        x += 74.0f  * STATUS_W_SCALE;
-
-        DrawSep(x, y, h); x += 9.0f * STATUS_W_SCALE;
-
-        // ── Resolution ─────────────────────────────────────────
-        const wchar_t* fmt = (m_bitDepth == 16) ? L"%dx%d RAW16" : L"%dx%d RAW8";
-        swprintf(buf, 64, fmt, m_roiW, m_roiH);
-        DrawText(buf, x, y, 96.0f * STATUS_W_SCALE, h, m_textBrush);
-        x += 100.0f * STATUS_W_SCALE;
-
-        // ── Sensor temp ────────────────────────────────────────
-        // 2026-11-24: Celsius and Fahrenheit.
-        swprintf(buf, 32, L"%ls", raduk::core::TempCFShort(m_sensorTemp).c_str());
-        DrawText(buf, x, y, 104.0f * STATUS_W_SCALE, h, m_dimBrush);
-        x += 108.0f * STATUS_W_SCALE;
-
-        DrawSep(x, y, h); x += 9.0f * STATUS_W_SCALE;
-
-        // ── EAF ────────────────────────────────────────────────
-        if (m_eafPos >= 0) {
-            ID2D1SolidColorBrush* eafBrush = m_eafMoving ? m_amberBrush : m_textBrush;
-            swprintf(buf, 64, L"EAF: %d  %ls%s",
-                m_eafPos, raduk::core::TempCFShort(m_eafTemp).c_str(), m_eafMoving ? L" [MOVING]" : L"");
-            DrawText(buf, x, y, 146.0f * STATUS_W_SCALE, h, eafBrush);
-            x += 150.0f * STATUS_W_SCALE;
-
-            DrawSep(x, y, h); x += 9.0f * STATUS_W_SCALE;
-        }
-
-        // ── Mount ──────────────────────────────────────────────
+        struct Field { std::wstring text; ID2D1SolidColorBrush* brush; int prio; bool right; };
+        std::vector<Field> f;
+        wchar_t buf[256];
+        f.push_back({ m_emulator ? L"EMU" : L"LIVE", m_emulator ? m_amberBrush : m_greenBrush, 1, false });
+        swprintf(buf, 64, L"%.1f FPS", m_fps);
+        f.push_back({ buf, (m_fps > 30) ? m_accentBrush : m_amberBrush, 2, false });
+        swprintf(buf, 64, L"DROPS %d", m_drops);
+        f.push_back({ buf, (m_drops == 0) ? m_dimBrush : m_amberBrush, m_drops > 0 ? 3 : 6, false });
+        swprintf(buf, 64, (m_bitDepth == 16) ? L"%dx%d RAW16" : L"%dx%d RAW8", m_roiW, m_roiH);
+        f.push_back({ buf, m_textBrush, 7, false });
         if (m_mountConn) {
-            swprintf(buf, 128, L"RA: %hs  DEC: %hs  %hs",
-                m_ra.c_str(), m_dec.c_str(), m_tracking.c_str());
-            DrawText(buf, x, y, 290.0f * STATUS_W_SCALE, h, m_textBrush);
-            x += 294.0f * STATUS_W_SCALE;
-
-            DrawSep(x, y, h); x += 9.0f * STATUS_W_SCALE;
+            swprintf(buf, 256, L"RA %hs  DEC %hs  %hs", m_ra.c_str(), m_dec.c_str(), m_tracking.c_str());
+            f.push_back({ buf, m_textBrush, 3, false });
         }
-
-        // ── Clock (2026-11-24) ─────────────────────────────────
+        if (m_eafPos >= 0) {
+            swprintf(buf, 64, L"EAF %d%s", m_eafPos, m_eafMoving ? L"  MOVING" : L"");
+            f.push_back({ buf, m_eafMoving ? m_amberBrush : m_textBrush, 4, false });
+        }
         {
-            const float keep = m_rightLimit;
-            m_rightLimit = clockX + clockW;
-            DrawText(raduk::core::ClockLine().c_str(), clockX, y, clockW, h, m_textBrush);
-            m_rightLimit = keep;
+            std::wstring t = L"CAM " + raduk::core::TempCFShort(m_sensorTemp);
+            if (m_eafPos >= 0) t += L"   FOC " + raduk::core::TempCFShort(m_eafTemp);
+            f.push_back({ t, m_dimBrush, 5, false });
+        }
+        f.push_back({ raduk::core::ClockLine(), m_textBrush, 2, true });
+        if (!m_profileName.empty()) {
+            swprintf(buf, 128, L"[%hs]", m_profileName.c_str());
+            f.push_back({ buf, m_accentBrush, 6, true });
         }
 
-        // ── Profile (right-aligned) ────────────────────────────
-        if (!m_profileName.empty()) {
-            swprintf(buf, 64, L"[%hs]", m_profileName.c_str());
-            m_rightLimit = w;            // this one IS the right edge
-            DrawText(buf, w - profW - 8.0f, y, profW, h, m_accentBrush);
+        std::vector<float> widths; std::vector<int> prios;
+        for (const auto& fd : f) { widths.push_back(Measure(fd.text) + 2.0f); prios.push_back(fd.prio); }
+        const std::vector<bool> keep = raduk::core::FitByPriority(widths, prios, gap, (w - 8.0f) - x);
+
+        m_rightLimit = w;
+        // Right-aligned fields, from the right edge inward.
+        float rx = w - 8.0f;
+        for (size_t i = f.size(); i-- > 0;) {
+            if (!keep[i] || !f[i].right) continue;
+            rx -= widths[i];
+            DrawText(f[i].text.c_str(), rx, y, widths[i], h, f[i].brush);
+            rx -= gap;
         }
+        // The rest, left to right, a separator between each.
+        bool first = true;
+        for (size_t i = 0; i < f.size(); ++i) {
+            if (!keep[i] || f[i].right) continue;
+            if (!first) { DrawSep(x + gap / 2.0f - 4.0f, y, h); x += gap; }
+            DrawText(f[i].text.c_str(), x, y, widths[i], h, f[i].brush);
+            x += widths[i];
+            first = false;
+        }
+    }
+
+    // A field's width as the font will draw it.
+    float Measure(const std::wstring& t) {
+        if (!m_dw || !m_font || t.empty()) return 0.0f;
+        IDWriteTextLayout* lay = nullptr;
+        if (FAILED(m_dw->CreateTextLayout(t.c_str(), (UINT32)t.size(), m_font, 4000.0f,
+                                          (float)STATUS_BAR_HEIGHT, &lay)) || !lay)
+            return (float)t.size() * 8.0f;
+        DWRITE_TEXT_METRICS m{};
+        lay->GetMetrics(&m);
+        lay->Release();
+        return m.widthIncludingTrailingWhitespace;
     }
 
 private:
@@ -287,7 +255,8 @@ private:
         if (x >= m_rightLimit) return;                  // no room left
         if (x + w > m_rightLimit) w = m_rightLimit - x; // clip the tail
         D2D1_RECT_F r = D2D1::RectF(x, y, x + w, y + h);
-        m_rt->DrawText(text, (UINT32)wcslen(text), m_font, r, brush);
+        m_rt->DrawText(text, (UINT32)wcslen(text), m_font, r, brush,
+                       D2D1_DRAW_TEXT_OPTIONS_CLIP);   // never past its own space
     }
 
     void DrawSep(float x, float y, float h) {
