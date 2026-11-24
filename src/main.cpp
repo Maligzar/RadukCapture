@@ -153,6 +153,7 @@
 #include "core/ADCAssistant.h"
 #include "core/DerotationLimit.h"
 #include "core/AutorunRunner.h"
+#include "core/RecordingCap.h"
 #include "core/SeeingMonitor.h"
 #include "core/SeeingTally.h"     // phase 138: forecast against the measured sky
 #include "core/AutoExposureAssistant.h"
@@ -1548,6 +1549,9 @@ static int RunApp(bool useEmulator) {
     auto& ring = core.ring;               // phase 153.0: owned by AppCore
     ring.Allocate(DEFAULT_RING_SIZE, frameSizeBytes);
     auto& capture = core.capture;
+    // 2026-11-24: the owner's limit while a recording runs to the
+    // derotation window instead (core/RecordingCap.h); put back after.
+    struct { bool active = false; bool byFrames = true; uint32_t frames = 0; double sec = 0.0; } ownLimit;
     capture.Start(cam, ring, 8.0);
     Log("[INIT] Capture thread started\n");
 
@@ -3347,12 +3351,14 @@ static int RunApp(bool useEmulator) {
         // one. These three are the whole overlap between the two
         // sections that were merged.
         p->filePrefix = controls.GetFilePrefix();
+        // 2026-11-24: during a recording held to the derotation window the
+        // panel shows the window's figure; the profile keeps the owner's.
         if (controls.GetLimitByFrames()) {
             p->limitType  = "frames";
-            p->limitValue = (int)controls.GetLimitFrames();
+            p->limitValue = ownLimit.active ? (int)ownLimit.frames : (int)controls.GetLimitFrames();
         } else {
             p->limitType  = "time";
-            p->limitValue = (int)controls.GetLimitTimeSec();
+            p->limitValue = ownLimit.active ? (int)ownLimit.sec : (int)controls.GetLimitTimeSec();
         }
         // Notes are the one field SAVE cannot simply read off the
         // rig. The box holds a note for ONE profile, and it is empty
@@ -4805,6 +4811,24 @@ static int RunApp(bool useEmulator) {
             // past it is what a sequence exists to prevent.
             const bool stopAtWindow = rig.derotationStop || autorun.Running();
             cfg.derotationStopSec = stopAtWindow ? core.recCtl.DerotWindowSec() : 0.0;
+            // 2026-11-24: when the window comes first, the limit the run
+            // goes to and the one shown in OUTPUT become the window, so
+            // the frame count and the countdown are what will happen.
+            {
+                const auto cap = raduk::core::CapForWindow(
+                    cfg.limitType == LimitType::Frames, cfg.limitFrames, cfg.limitTimeSec,
+                    cfg.derotationStopSec, capture.Stats().fps.load(), core.recCtl.DerotBody());
+                if (cap.capped) {
+                    ownLimit.active   = true;
+                    ownLimit.byFrames = cfg.limitType == LimitType::Frames;
+                    ownLimit.frames   = cfg.limitFrames;
+                    ownLimit.sec      = cfg.limitTimeSec;
+                    cfg.limitFrames   = cap.frames;
+                    cfg.limitTimeSec  = cap.sec;
+                    controls.SetCaptureLimit(ownLimit.byFrames, cap.frames, cap.sec);
+                    Log("[DEROT] limit for this recording: %s\n", cap.why.c_str());
+                }
+            }
             cfg.winJuposNames     = rig.winJuposNames;
             capturer.SetConfig(cfg);
             CreateDirectoryA(cfg.outputDir.c_str(), nullptr);
@@ -10598,6 +10622,13 @@ static int RunApp(bool useEmulator) {
                 adcAlignWindow.Update(ad);
             }
 
+            // 2026-11-24: the owner's own limit back once the recording
+            // that ran to the derotation window has ended.
+            if (ownLimit.active && !capturer.IsRecording()) {
+                ownLimit.active = false;
+                controls.SetCaptureLimit(ownLimit.byFrames, ownLimit.frames, ownLimit.sec);
+                Log("[DEROT] limit back to %u frames / %.0f s\n", ownLimit.frames, ownLimit.sec);
+            }
             // Capture status panel
             bool limitByFrames = (capturer.GetLimitType() == LimitType::Frames);
             controls.UpdateCaptureStatus(
