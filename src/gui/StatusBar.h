@@ -17,6 +17,8 @@
 #include "../core/DeviceFactory.h"
 #include "../core/TempText.h"
 #include "../core/ClockText.h"
+#include "../core/StatusFit.h"   // 2026-11-24: fields fit by priority
+#include <vector>
 
 namespace raduk::gui {
 
