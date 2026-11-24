@@ -3,6 +3,10 @@
 // EN_SETFOCUS), which the dialog read as CANCEL and hid the window at once:
 // "[REPORT] could not be shown (error 0)", visible-style 0, on every press.
 #include "gui/ReportDialog.h"
+#ifdef _MSC_VER
+#pragma comment(lib, "user32.lib")
+#pragma comment(lib, "gdi32.lib")
+#endif
 #include <cstdio>
 #include <string>
 
