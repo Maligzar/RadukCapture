@@ -278,6 +278,11 @@ struct RigConfig {
     // (the Red Spot near the meridian, a moon or shadow on the disc) for
     // this many minutes at most. 0 never waits. A starting figure.
     float       autorunPrimeDeferMin = 30.0f;
+    // 2026-11-24: RUNS is pressed centred and in focus, and that focuser
+    // position is the sequence's baseline. A refocus that fails, or ends
+    // further than this many steps from it, goes back to the baseline.
+    // UNVERIFIED(item 65): refocus results logged against the baseline over a sequence
+    int         runsFocusMaxDrift    = 2000;
     // Phase 128: near-Earth objects fainter than this stay off the sky
     // map. 16 is a guess at what the 8SE and the 678MC show in a few
     // seconds of video; the night will say.
@@ -619,6 +624,7 @@ struct RigConfig {
         wf("AutorunSeeingPct", autorunSeeingPct);
         wf("AutorunSeeingHoldSec", autorunSeeingHoldSec);
         wf("AutorunPrimeDeferMin", autorunPrimeDeferMin);
+        wf("RunsFocusMaxDrift", runsFocusMaxDrift);
         wf("FocuserBacklashSteps", focuserBacklashSteps);
         ws("FocuserOneSidedMoves", focuserOneSidedMoves ? "1" : "0");
         wf("FocuserMaxTravelSteps", focuserMaxTravelSteps);
@@ -856,6 +862,8 @@ private:
         cfg.autorunSeeingHoldSec  = (float)rf("AutorunSeeingHoldSec", cfg.autorunSeeingHoldSec);
         cfg.autorunPrimeDeferMin  = (float)rf("AutorunPrimeDeferMin", cfg.autorunPrimeDeferMin);
         if (!(cfg.autorunPrimeDeferMin >= 0.0f) || cfg.autorunPrimeDeferMin > 120.0f) cfg.autorunPrimeDeferMin = 30.0f;
+        cfg.runsFocusMaxDrift     = (int)rf("RunsFocusMaxDrift", cfg.runsFocusMaxDrift);
+        if (cfg.runsFocusMaxDrift < 100 || cfg.runsFocusMaxDrift > 50000) cfg.runsFocusMaxDrift = 2000;
         cfg.focuserBacklashSteps  = (int)rf("FocuserBacklashSteps", cfg.focuserBacklashSteps);
         if (cfg.focuserBacklashSteps < -1 || cfg.focuserBacklashSteps > 20000) cfg.focuserBacklashSteps = -1;
         cfg.focuserOneSidedMoves  = rs("FocuserOneSidedMoves", cfg.focuserOneSidedMoves ? "1" : "0") == "1";
