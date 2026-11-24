@@ -65,3 +65,21 @@ The log, in both sessions:
 - **The log says which window opened.**
 
 **Owes:** one press at the scope. The log line names the cause for the code to fix properly.
+
+## The cause, found at the scope (2026-11-24, 3.3.74)
+The 3.3.57 diagnostics told the story. Three presses gave the same result: the window existed (`IsWindow 1`), centred at 680,350, with no error, but `visible-style 0`. The plain fallback did exactly the same.
+
+**The window hid itself in the instant it was shown.**
+- `Show()` gives the text box the focus.
+- The text box tells its parent with `WM_COMMAND`, carrying its control id and `EN_SETFOCUS`.
+- The text box's id was 2, which is `IDCANCEL`, and `WM_COMMAND` checked only the id.
+- So focusing the box was read as CANCEL, and the window hid.
+
+The label had id 1, `IDOK`. Typing would have closed the window too, through `EN_CHANGE`.
+
+**The fix.**
+- The controls now have their own ids: 101, 102 and 103.
+- SEND and CANCEL act only on `BN_CLICKED`.
+- `tests/report_dialog.cpp` shows the dialog, sends the text box's focus and change notifications plus id-1 and id-2 non-clicks, and checks it stays open. CANCEL and SEND still work.
+
+Every version since 3.3.48 had this bug. The topmost change (3.3.49) and the plain fallback (3.3.57) were both answers to the wrong question, though the fallback's diagnostics are what found the real one.
