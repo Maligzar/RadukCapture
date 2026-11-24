@@ -153,6 +153,7 @@
 #include "core/ADCAssistant.h"
 #include "core/DerotationLimit.h"
 #include "core/AutorunRunner.h"
+#include "core/RunsBaseline.h"
 #include "core/SeeingMonitor.h"
 #include "core/SeeingTally.h"     // phase 138: forecast against the measured sky
 #include "core/AutoExposureAssistant.h"
@@ -5215,6 +5216,8 @@ static int RunApp(bool useEmulator) {
         };
         h.session = [&](const std::string& t) { slog.Focuser("%s", t.c_str()); };
         h.failed  = [&]() { core.arCtl.NoteFocusFailed(); skyAfOk = false; ++skyAfSeq; };
+        // 2026-11-24: every sweep's ending, judged against the RUNS baseline.
+        h.outcome = [&](bool ok, int pos) { core.arCtl.NoteFocusResult(ok, pos); };
         h.succeeded = [&]() {
             skyAfOk = true; ++skyAfSeq;   // phase 156.2b: the sky run reads each sweep's result
             // Phase 167.5 (2026-11-22): a sweep that kept its fit after the
@@ -7453,7 +7456,31 @@ static int RunApp(bool useEmulator) {
     // the mount. It stops on the same press.
     // Phase 163: the start of a sequence, apart from the button, so the
     // night plan starts exactly what RUNS starts. False with the reason.
-    std::function<bool(std::string&)> startRuns = [&](std::string& why) -> bool {
+    // 2026-11-24: the rig's state now, for the RUNS baseline and each run
+    // measured against it.
+    auto runsSnapshot = [&](raduk::core::RunsSnapshot& r) {
+        int fp = -1;
+        if (focuser.IsOpen() && focuser.TryGetPosition(fp)) r.focusPos = fp;
+        if (focuser.IsOpen()) {
+            const float tc = focuser.GetTemperature();
+            if (tc > -100.0f) r.focuserTempC = tc;
+        }
+        r.altDeg = preview.MountAltitude();
+        if (lastAnalysis.valid) {
+            r.sharpPct = lastAnalysis.sharpnessPct;
+            r.targetSeen = lastAnalysis.centroidValid;
+            r.targetX = lastAnalysis.centroidX;
+            r.targetY = lastAnalysis.centroidY;
+        }
+        if (cam.IsOpen()) {
+            r.exposureMs = cam.GetControlValue(ControlId::ExposureUs) / 1000.0;
+            r.gain = (int)cam.GetControlValue(ControlId::Gain);
+        }
+    };
+    // `fromPress`: the owner pressed RUNS, with the target centred and in
+    // focus (2026-11-24), so that moment is the sequence's baseline. The
+    // night plan starts runs without one.
+    std::function<bool(std::string&, bool)> startRunsAs = [&](std::string& why, bool fromPress) -> bool {
         const double nowSec = std::chrono::duration<double>(
             std::chrono::steady_clock::now().time_since_epoch()).count();
         if (capturer.IsRecording() || gotoPanel.MosaicRunning() ||
@@ -7488,6 +7515,18 @@ static int RunApp(bool useEmulator) {
             controls.GetLimitFrames(), controls.GetLimitTimeSec(),
             capture.Stats().fps.load());
 
+        if (fromPress) {
+            raduk::core::RunsBaseline b;
+            b.set = true;
+            b.target = targetNow();
+            runsSnapshot(b.at);
+            core.arCtl.SetBaseline(b, rig.runsFocusMaxDrift);
+            // The focus readout measures from the owner's focus, not the
+            // last sweep's.
+            focusRef.ArmAfterAutofocus();
+        } else {
+            core.arCtl.ClearBaseline();
+        }
         if (!core.arCtl.Start(c, nowSec, onJupiter, rig.autorunSeeingPct / 100.0)) {
             why = autorun.Reason();
             return false;
@@ -7509,13 +7548,14 @@ static int RunApp(bool useEmulator) {
         notifBar.NotifyInfo(msg);
         return true;
     };
+    std::function<bool(std::string&)> startRuns = [&](std::string& why) { return startRunsAs(why, false); };
     toolbar.SetRunsCallback([&]() {
         if (autorun.Running()) {
             autorun.Abort("stopped by the operator");
             return;
         }
         std::string why;
-        if (startRuns(why)) return;
+        if (startRunsAs(why, true)) return;
         if (why == "finish what is running first") {
             notifBar.NotifyWarn(L"Finish what is running first");
             return;
@@ -7549,6 +7589,14 @@ static int RunApp(bool useEmulator) {
         };
         h.startFocus = [&]() { startAutofocus(); };
         h.abortFocus = [&]() { abortAutofocus(); };
+        // 2026-11-24: the RUNS baseline.
+        h.snapshot = [&](raduk::core::RunsSnapshot& r) { runsSnapshot(r); };
+        h.focusAround = [&](int centre) { core.afCtl.CentreNextSweepAt(centre); startAutofocus(); };
+        h.moveFocuser = [&](int pos) {
+            if (!focuser.IsOpen() || !focuser.MoveTo(pos))
+                Log("[RUNS] could not move the focuser back to %d: %s\n", pos, focuser.LastRefusal().c_str());
+        };
+        h.focuserMoving = [&]() { return focuser.IsOpen() && focuser.IsMoving(); };
         h.startRecording = [&]() { doRecord(); return capturer.IsRecording(); };
         h.stopRecording = [&]() {
             endRecording(true, "sequence");
